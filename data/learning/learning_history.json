@@ -1,0 +1,73 @@
+[
+  {
+    "timestamp": "2026-06-16T16:18:51.083517",
+    "material_code": "014090100000000014",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 5,
+    "successful_learning": 5,
+    "seasonal_learnings": [
+      {
+        "key": "Ambalaj Malzemeleri_M06_YUKSEK_DEGISKEN",
+        "multiplier": 1.3328486610929358,
+        "ai_ss": 467.67,
+        "actual_need": 623.3333333333333
+      },
+      {
+        "key": "Ambalaj Malzemeleri_M06_YUKSEK_DEGISKEN",
+        "multiplier": 1.4706365638042656,
+        "ai_ss": 405.72,
+        "actual_need": 596.6666666666666
+      },
+      {
+        "key": "Ambalaj Malzemeleri_M06_DEGISKEN",
+        "multiplier": 2.530780815749841,
+        "ai_ss": 214.69,
+        "actual_need": 543.3333333333334
+      },
+      {
+        "key": "Ambalaj Malzemeleri_M06_DEGISKEN",
+        "multiplier": 3.0,
+        "ai_ss": 177.6,
+        "actual_need": 543.3333333333334
+      },
+      {
+        "key": "Ambalaj Malzemeleri_M06_DEGISKEN",
+        "multiplier": 3.0,
+        "ai_ss": 151.6,
+        "actual_need": 513.3333333333334
+      }
+    ],
+    "pattern_learnings": [
+      {
+        "key": "Ambalaj Malzemeleri_YUKSEK_DEGISKEN",
+        "multiplier": 1.3328486610929358,
+        "ai_ss": 467.67,
+        "actual_need": 623.3333333333333
+      },
+      {
+        "key": "Ambalaj Malzemeleri_YUKSEK_DEGISKEN",
+        "multiplier": 1.4706365638042656,
+        "ai_ss": 405.72,
+        "actual_need": 596.6666666666666
+      },
+      {
+        "key": "Ambalaj Malzemeleri_DEGISKEN",
+        "multiplier": 2.530780815749841,
+        "ai_ss": 214.69,
+        "actual_need": 543.3333333333334
+      },
+      {
+        "key": "Ambalaj Malzemeleri_DEGISKEN",
+        "multiplier": 3.0,
+        "ai_ss": 177.6,
+        "actual_need": 543.3333333333334
+      },
+      {
+        "key": "Ambalaj Malzemeleri_DEGISKEN",
+        "multiplier": 3.0,
+        "ai_ss": 151.6,
+        "actual_need": 513.3333333333334
+      }
+    ]
+  }
+]

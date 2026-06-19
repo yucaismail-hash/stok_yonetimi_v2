@@ -1,0 +1,130 @@
+from fastapi import APIRouter, HTTPException, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime, timedelta
+from jose import jwt, JWTError
+from app.database import get_db
+from app.models import User, Sector
+from app.auth import get_password_hash, verify_password
+import os
+
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 30
+
+auth_router = APIRouter()
+security = HTTPBearer(auto_error=False)
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str = ""
+    company_name: str = ""
+    sector_id: Optional[int] = None
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+@auth_router.post("/register")
+def register(request: RegisterRequest, db: Session = Depends(get_db)):
+    existing = db.query(User).filter(User.email == request.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Bu email zaten kayıtlı")
+    
+    sector_id = request.sector_id
+    if sector_id is None:
+        default = db.query(Sector).filter(Sector.name == "DIGER").first()
+        sector_id = default.id if default else 1
+    
+    new_user = User(
+        email=request.email,
+        hashed_password=get_password_hash(request.password),
+        full_name=request.full_name or "",
+        company_name=request.company_name or "",
+        sector_id=sector_id,
+        token_balance=100
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+    
+    return {
+        "msg": "Kullanıcı oluşturuldu",
+        "user_id": new_user.id,
+        "token_balance": new_user.token_balance,
+        "full_name": new_user.full_name,
+        "company_name": new_user.company_name,
+        "sector_id": new_user.sector_id
+    }
+
+
+@auth_router.post("/login")
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user or not verify_password(request.password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="Geçersiz email veya şifre")
+    
+    token = create_access_token({"sub": user.email, "user_id": user.id})
+    
+    sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
+    sector_name = sector.name if sector else None
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "token_balance": user.token_balance,
+        "full_name": user.full_name or "",
+        "company_name": user.company_name or "",
+        "sector_id": user.sector_id,
+        "sector_name": sector_name
+    }
+
+
+@auth_router.get("/me")
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security), 
+    db: Session = Depends(get_db)
+):
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Token gerekli")
+    
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(status_code=401, detail="Geçersiz token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Geçersiz token")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı")
+    
+    sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
+    sector_name = sector.name if sector else None
+    
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name or "",
+        "company_name": user.company_name or "",
+        "sector_id": user.sector_id,
+        "sector_name": sector_name,
+        "token_balance": user.token_balance,
+        "created_at": user.created_at.isoformat()
+    }

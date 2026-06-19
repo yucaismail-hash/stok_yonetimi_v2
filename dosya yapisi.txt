@@ -1,0 +1,28 @@
+stok_yonetimi_v2/               (yeni repo)
+├── app/
+│   ├── __init__.py
+│   ├── main.py                  # FastAPI giriş noktası
+│   ├── database.py              # PostgreSQL bağlantısı
+│   ├── models.py                # SQLAlchemy modelleri (User, Material, Query)
+│   ├── auth.py                  # JWT, şifreleme
+│   ├── analysis/
+│   │   ├── pattern.py           # EM_Stok'dan taşı
+│   │   ├── safety_stock.py      # EM_Stok'dan taşı
+│   │   ├── forecast.py          # YENİ (Holt-Winters, ARIMA)
+│   │   └── regime.py            # HMM rejim (Core'dan)
+│   ├── simulation/
+│   │   └── monte_carlo.py       # Core'dan taşı (simülasyon kısmı)
+│   ├── api/
+│   │   ├── endpoints/
+│   │   │   ├── upload.py        # CSV/Excel yükleme
+│   │   │   ├── forecast.py
+│   │   │   ├── simulate.py
+│   │   │   └── report.py
+│   │   └── dependencies.py
+│   └── utils/
+│       ├── file_handlers.py     # CSV/Excel okuma
+│       └── token_manager.py     # Token hesaplama
+├── tests/
+├── requirements.txt
+├── .env                         (DATABASE_URL, SECRET_KEY)
+└── README.md
