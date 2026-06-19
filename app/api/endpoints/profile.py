@@ -21,12 +21,14 @@ class PasswordChangeRequest(BaseModel):
     new_password: str
 
 
-@router.get("")
+@router.get("/profile")
 def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Kullanıcı profil bilgilerini getir"""
     sector_name = current_user.sector.name if current_user.sector else None
+    
     return {
         "id": current_user.id,
         "email": current_user.email,
@@ -39,18 +41,22 @@ def get_profile(
     }
 
 
-@router.put("")
+@router.put("/profile")
 def update_profile(
     request: ProfileUpdateRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Kullanıcı profilini güncelle"""
     current_user.full_name = request.full_name
     current_user.company_name = request.company_name
     current_user.sector_id = request.sector_id
     db.commit()
     db.refresh(current_user)
+    
+    # Güncellenmiş kullanıcı bilgilerini döndür
     sector_name = current_user.sector.name if current_user.sector else None
+    
     return {
         "message": "Profil başarıyla güncellendi",
         "full_name": current_user.full_name,
@@ -61,30 +67,31 @@ def update_profile(
     }
 
 
-@router.put("/password")
+@router.put("/profile/password")
 def change_password(
     request: PasswordChangeRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Kullanıcı şifresini değiştir"""
     if not verify_password(request.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Mevcut şifre yanlış")
+    
     current_user.hashed_password = get_password_hash(request.new_password)
     db.commit()
+    
     return {"message": "Şifre başarıyla değiştirildi"}
 
 
-@router.get("/token-history")
+@router.get("/profile/token-history")
 def get_token_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Token harcama geçmişini getir"""
     history = db.query(TokenHistory).filter(
         TokenHistory.user_id == current_user.id
     ).order_by(TokenHistory.created_at.desc()).limit(50).all()
-    
-    if not history:
-        return []
     
     return [
         {
@@ -98,17 +105,15 @@ def get_token_history(
     ]
 
 
-@router.get("/purchase-history")
+@router.get("/profile/purchase-history")
 def get_purchase_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Token satın alma geçmişini getir"""
     purchases = db.query(TokenPurchase).filter(
         TokenPurchase.user_id == current_user.id
     ).order_by(TokenPurchase.created_at.desc()).limit(20).all()
-    
-    if not purchases:
-        return []
     
     return [
         {

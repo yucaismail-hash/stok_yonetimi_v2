@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import {
   Box,
@@ -41,8 +40,6 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useQuery } from '@tanstack/react-query';
 
-
-
 interface TokenHistoryItem {
   id: number;
   date: string;
@@ -61,38 +58,46 @@ interface TokenPurchaseItem {
 }
 
 export default function ProfilePage() {
-  const { user, logout, token, updateUser, refreshToken } = useAuth();
+  const { user, logout, token } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [openPasswordDialog, setOpenPasswordDialog] = useState(false);
   const [sectors, setSectors] = useState<any[]>([]);
+  const [currentUser, setCurrentUser] = useState<any>(null);
   
   const [formData, setFormData] = useState({
-    fullName: user?.full_name || '',
-    companyName: user?.company_name || '',
-    sectorId: user?.sector_id || '',
+    fullName: '',
+    companyName: '',
+    sectorId: '',
     currentPassword: '',
     newPassword: '',
     confirmPassword: '',
   });
 
-  // ProfilePage.tsx en başına:
-  console.log('🔥 PROFILE PAGE YÜKLENDİ!');
-  console.log('👤 user:', user);
-
+  // Kullanıcı bilgilerini güncel çek
   useEffect(() => {
-    setFormData({
-      fullName: user?.full_name || '',
-      companyName: user?.company_name || '',
-      sectorId: user?.sector_id || '',
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    });
-  }, [user]);
+    const fetchUser = async () => {
+      if (token) {
+        try {
+          const res = await api.get('/auth/me');
+          setCurrentUser(res.data);
+          setFormData(prev => ({
+            ...prev,
+            fullName: res.data.full_name || '',
+            companyName: res.data.company_name || '',
+            sectorId: res.data.sector_id || '',
+          }));
+        } catch (error) {
+          console.error('Kullanıcı bilgileri alınamadı:', error);
+        }
+      }
+    };
+    fetchUser();
+  }, [token]);
 
+  // Sektör listesini al
   useEffect(() => {
     const fetchSectors = async () => {
       try {
@@ -106,7 +111,7 @@ export default function ProfilePage() {
   }, []);
 
   // Token geçmişini getir
-  const { data: tokenHistory, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+  const { data: tokenHistory, isLoading: historyLoading } = useQuery({
     queryKey: ['token-history'],
     queryFn: async (): Promise<TokenHistoryItem[]> => {
       try {
@@ -150,13 +155,12 @@ export default function ProfilePage() {
     setError(null);
     setSuccess(false);
     try {
-      await api.put('/api/profile', {
+      const res = await api.put('/api/profile', {
         full_name: formData.fullName,
         company_name: formData.companyName,
         sector_id: formData.sectorId ? parseInt(formData.sectorId) : null,
       });
-      const userRes = await api.get('/auth/me');
-      updateUser(userRes.data);
+      setCurrentUser(res.data);
       setSuccess(true);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Güncelleme başarısız');
@@ -197,19 +201,11 @@ export default function ProfilePage() {
     navigate('/');
   };
 
+  const displayUser = currentUser || user;
+
+  // Toplam harcama hesapla
   const totalSpent = tokenHistory?.reduce((sum: number, item: TokenHistoryItem) => sum + item.cost, 0) || 0;
   const totalPurchased = purchaseHistory?.reduce((sum: number, item: TokenPurchaseItem) => sum + item.amount, 0) || 0;
-
-  // Token harcama sonrası profil bilgilerini güncelle
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (token) {
-        refreshToken();
-        refetchHistory();
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [token, refreshToken, refetchHistory]);
 
   return (
     <Box>
@@ -218,25 +214,26 @@ export default function ProfilePage() {
       </Typography>
 
       <Grid container spacing={3}>
+        {/* Sol: Profil Bilgileri */}
         <Grid size={{ xs: 12, lg: 4 }}>
           <Card>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
                 <Avatar sx={{ width: 64, height: 64, bgcolor: 'primary.main' }}>
-                  {user?.email?.charAt(0).toUpperCase()}
+                  {displayUser?.email?.charAt(0).toUpperCase()}
                 </Avatar>
                 <Box>
                   <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                    {user?.full_name || user?.email}
+                    {displayUser?.full_name || displayUser?.email}
                   </Typography>
                   <Chip
-                    label={user?.email === 'admin@stok.com' ? 'Admin' : 'Kullanıcı'}
-                    color={user?.email === 'admin@stok.com' ? 'primary' : 'default'}
+                    label={displayUser?.email === 'admin@stok.com' ? 'Admin' : 'Kullanıcı'}
+                    color={displayUser?.email === 'admin@stok.com' ? 'primary' : 'default'}
                     size="small"
                   />
-                  {user?.sector_name && (
+                  {displayUser?.sector_name && (
                     <Chip
-                      label={user?.sector_name}
+                      label={displayUser?.sector_name}
                       color="info"
                       variant="outlined"
                       size="small"
@@ -252,7 +249,7 @@ export default function ProfilePage() {
                 💰 Token Bakiyesi
               </Typography>
               <Typography variant="h4" sx={{ fontWeight: 'bold', color: 'primary.main', mb: 3 }}>
-                {user?.token_balance || 0} 🪙
+                {displayUser?.token_balance || 0} 🪙
               </Typography>
 
               <TextField
@@ -327,6 +324,7 @@ export default function ProfilePage() {
           </Card>
         </Grid>
 
+        {/* Sağ: Token Geçmişi */}
         <Grid size={{ xs: 12, lg: 8 }}>
           <Card sx={{ mb: 3 }}>
             <CardContent>
@@ -381,7 +379,7 @@ export default function ProfilePage() {
                   Toplam Harcama: {totalSpent} 🪙
                 </Typography>
                 <Chip
-                  label={`Kalan: ${user?.token_balance || 0} 🪙`}
+                  label={`Kalan: ${displayUser?.token_balance || 0} 🪙`}
                   color="primary"
                   variant="outlined"
                 />
@@ -389,6 +387,7 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
+          {/* Satın Alma Geçmişi */}
           <Card>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
@@ -453,6 +452,7 @@ export default function ProfilePage() {
         </Grid>
       </Grid>
 
+      {/* Şifre Değiştirme Dialog */}
       <Dialog open={openPasswordDialog} onClose={() => setOpenPasswordDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>

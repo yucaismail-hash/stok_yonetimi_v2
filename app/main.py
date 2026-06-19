@@ -19,12 +19,8 @@ app = FastAPI(title="Stok Yönetim Sistemi v2", version="0.1.0")
 
 @app.middleware("http")
 async def token_middleware(request: Request, call_next):
-    if (request.url.path.startswith("/admin") or 
-        request.url.path.startswith("/auth") or 
-        request.url.path.startswith("/docs") or 
-        request.url.path.startswith("/openapi.json") or 
-        request.url.path.startswith("/api/sectors") or
-        request.url.path.startswith("/api/profile")):
+    # Admin, auth, docs, sectors endpoint'lerini muaf tut
+    if request.url.path.startswith("/admin") or request.url.path.startswith("/auth") or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi.json") or request.url.path.startswith("/api/sectors"):
         return await call_next(request)
     
     auth_header = request.headers.get("Authorization")
@@ -54,6 +50,7 @@ async def token_middleware(request: Request, call_next):
         
         print(f"🔍 Endpoint: {endpoint_path}, Method: {method}")
         
+        # Sadece /api/ ile başlayan endpoint'ler için token kontrolü yap
         if endpoint_path.startswith("/api/"):
             token_cost = db.query(TokenCost).filter(
                 TokenCost.endpoint == endpoint_path,
@@ -123,7 +120,7 @@ app.include_router(supplier.router, prefix="/api", tags=["supplier"])
 app.include_router(learning.router, prefix="/api", tags=["learning"])
 app.include_router(export.router, prefix="/api", tags=["export"])
 app.include_router(payment.router, prefix="/api", tags=["payment"])
-app.include_router(profile.router, prefix="/api/profile", tags=["profile"])
+app.include_router(profile.router, prefix="/api", tags=["profile"])
 
 
 @app.get("/")

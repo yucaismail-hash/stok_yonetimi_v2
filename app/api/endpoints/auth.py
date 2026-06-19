@@ -40,26 +40,47 @@ def create_access_token(data: dict):
 
 @auth_router.post("/register")
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
+
+    # ============ DEBUG ============
+    print("=" * 50)
+    print("📝 KAYIT İSTEĞİ:")
+    print(f"  Email: {request.email}")
+    print(f"  Full Name: {request.full_name}")
+    print(f"  Company Name: {request.company_name}")
+    print(f"  Sector ID (gelen): {request.sector_id}")
+    print(f"  Sector ID Type: {type(request.sector_id)}")
+    # ===============================
+    
     existing = db.query(User).filter(User.email == request.email).first()
     if existing:
         raise HTTPException(status_code=400, detail="Bu email zaten kayıtlı")
     
-    sector_id = request.sector_id
-    if sector_id is None:
-        default = db.query(Sector).filter(Sector.name == "DIGER").first()
-        sector_id = default.id if default else 1
+    # Zorla sektör ID ata
+    sector_id = request.sector_id if request.sector_id else 32
+    
+    print(f"🔥 Kullanılacak sector_id: {sector_id}")
     
     new_user = User(
         email=request.email,
         hashed_password=get_password_hash(request.password),
-        full_name=request.full_name or "",
-        company_name=request.company_name or "",
+        full_name=request.full_name,
+        company_name=request.company_name,
         sector_id=sector_id,
         token_balance=100
-    )
+    ) 
+    
+    # ============ DEBUG: KAYDETMEDEN ÖNCE ============
+    print(f"💾 Kaydedilecek sector_id: {new_user.sector_id}")
+    # =================================================
+    
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # ============ DEBUG: KAYDETTİKTEN SONRA ============
+    print(f"✅ Kaydedilen sector_id: {new_user.sector_id}")
+    print("=" * 50)
+    # ===================================================
     
     return {
         "msg": "Kullanıcı oluşturuldu",
@@ -79,8 +100,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     
     token = create_access_token({"sub": user.email, "user_id": user.id})
     
-    sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
-    sector_name = sector.name if sector else None
+    sector_name = user.sector.name if user.sector else None
     
     return {
         "access_token": token,
@@ -115,8 +135,12 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı")
     
-    sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
-    sector_name = sector.name if sector else None
+    # ==================== MANUEL SECTOR SORGUSU ====================
+    sector_name = None
+    if user.sector_id:
+        sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
+        sector_name = sector.name if sector else None
+    # ================================================================
     
     return {
         "id": user.id,

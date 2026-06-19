@@ -25,16 +25,15 @@ export const useAuth = create<AuthState>()(
       isLoading: false,
       error: null,
       login: async (email, password) => {
-        console.log('🔥 LOGIN FONKSİYONU ÇAĞRILDI!');  // BU SATIRI EKLE
         set({ isLoading: true, error: null });
         try {
           const data = await apiLogin(email, password);
-          // Login'den gelen token ile /auth/me'yi çağır
+          // Kullanıcı bilgilerini /auth/me'den al
           const userData = await getUser(data.access_token);
-          console.log('👤 /auth/me cevabı:', userData);  // Konsolda gör
+          console.log('👤 Login sonrası user:', userData);
           set({
             token: data.access_token,
-            user: userData,  // ✅ Direkt kullan
+            user: userData,
             isLoading: false,
           });
           return true;
@@ -47,7 +46,6 @@ export const useAuth = create<AuthState>()(
           return false;
         }
       },
-
       register: async (email, password, fullName = '', companyName = '', sectorId = null) => {
         set({ isLoading: true, error: null });
         try {

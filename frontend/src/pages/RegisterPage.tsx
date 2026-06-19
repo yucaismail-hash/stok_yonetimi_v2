@@ -132,6 +132,16 @@ export default function RegisterPage() {
 
   const handleSubmit = async () => {
     setError(null);
+
+      // ============ DEBUG ALERT ============
+    alert(`📝 Kayıt Verileri:
+    Email: ${formData.email}
+    Full Name: ${formData.fullName}
+    Company: ${formData.companyName}
+    Sector ID: ${formData.sectorId}
+    Sector ID Type: ${typeof formData.sectorId}
+    `);
+  
     try {
       const registerData = {
         email: formData.email,
@@ -140,6 +150,9 @@ export default function RegisterPage() {
         company_name: formData.companyName,
         sector_id: formData.sectorId ? parseInt(formData.sectorId) : null,
       };
+
+      alert(`📤 Backend'e Gönderilen Veri:
+      ${JSON.stringify(registerData, null, 2)}`);
 
       console.log('Kayıt verisi:', registerData);
 
