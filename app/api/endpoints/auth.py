@@ -77,7 +77,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     
     token = create_access_token({"sub": user.email, "user_id": user.id})
     
-    # ✅ MANUEL SECTOR SORGUSU (ilişki olmadığı için)
+    # ✅ MANUEL SECTOR SORGUSU (ForeignKey olmadığı için)
     sector_name = None
     if user.sector_id:
         sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
@@ -116,7 +116,7 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı")
     
-    # ✅ MANUEL SECTOR SORGUSU (ilişki olmadığı için)
+    # ✅ MANUEL SECTOR SORGUSU (ForeignKey olmadığı için)
     sector_name = None
     if user.sector_id:
         sector = db.query(Sector).filter(Sector.id == user.sector_id).first()
