@@ -77,7 +77,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     print("🚀🚀🚀 LOGIN ENDPOINT ÇALIŞTI - YENİ VERSİYON! 🚀🚀🚀")
     print(f"📧 Email: {request.email}")
     print("=" * 60)
-    
+
     user = db.query(User).filter(User.email == request.email).first()
     if not user or not verify_password(request.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Geçersiz email veya şifre")
@@ -92,7 +92,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     
     return {
         "access_token": token,
-        "token_type": "bearer",
+        "token_type": "Bunasilbiris",
         "user_id": user.id,
         "token_balance": user.token_balance,
         "full_name": user.full_name or "",
