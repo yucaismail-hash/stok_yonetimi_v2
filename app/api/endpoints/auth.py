@@ -71,6 +71,13 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @auth_router.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
+
+     # 🔥🔥🔥 TEST LOG'U - BU SATIR EKLENECEK 🔥🔥🔥
+    print("=" * 60)
+    print("🚀🚀🚀 LOGIN ENDPOINT ÇALIŞTI - YENİ VERSİYON! 🚀🚀🚀")
+    print(f"📧 Email: {request.email}")
+    print("=" * 60)
+    
     user = db.query(User).filter(User.email == request.email).first()
     if not user or not verify_password(request.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Geçersiz email veya şifre")
