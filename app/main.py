@@ -1,21 +1,3 @@
-from app.database import engine
-from sqlalchemy import text
-
-def update_database():
-    with engine.connect() as conn:
-        try:
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR"))
-            conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS company_name VARCHAR"))
-            conn.execute(text("ALTER TABLE sectors ADD COLUMN IF NOT EXISTS description VARCHAR"))
-            conn.execute(text("ALTER TABLE sectors ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
-            conn.commit()
-            print("✅ Veritabanı güncellendi")
-        except Exception as e:
-            print(f"⚠️ Veritabanı güncelleme hatası: {e}")
-
-# app.main başlangıcında çağır
-update_database()
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
