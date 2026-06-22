@@ -4,7 +4,7 @@ import { useState } from 'react';
 import * as XLSX from 'xlsx';
 
 interface FileUploaderProps {
-  onDataExtracted: (data: any[], columns: string[]) => void;
+  onDataExtracted: (file: File) => void;  // ✅ Değişti: dosya nesnesi alıyor
   accept?: string;
 }
 
@@ -34,32 +34,9 @@ export default function FileUploader({ onDataExtracted, accept = '.xlsx,.xls,.cs
   const onDrop = async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
-    setLoading(true);
-    try {
-      const data = await readExcel(file);
-      const columns = Object.keys(data[0] || {});
-      onDataExtracted(data, columns);
-    } catch (error) {
-      console.error('Dosya okuma hatası', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const readExcel = (file: File): Promise<any[]> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(worksheet);
-        resolve(json);
-      };
-      reader.onerror = reject;
-      reader.readAsBinaryString(file);
-    });
+    
+    // ✅ Doğrudan dosyayı parent'a gönder
+    onDataExtracted(file);
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ 

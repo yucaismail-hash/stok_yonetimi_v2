@@ -69,5 +69,239 @@
         "actual_need": 513.3333333333334
       }
     ]
+  },
+  {
+    "timestamp": "2026-06-22T12:14:24.141507",
+    "material_code": "013060600000000083",
+    "group": "Aksesuar Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:14:32.050913",
+    "material_code": "013030400000000177",
+    "group": "Aksesuar Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:14:44.904000",
+    "material_code": "014090100000000026",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:14:56.718668",
+    "material_code": "014090100000000008",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:06.865332",
+    "material_code": "014090200000000022",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:17.142249",
+    "material_code": "014090100000000018",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:26.444544",
+    "material_code": "014090100000000004",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:34.947733",
+    "material_code": "014090100000000025",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:43.109950",
+    "material_code": "014090100000000014",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:50.471611",
+    "material_code": "014090100000000023",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:15:58.708310",
+    "material_code": "014090100000000010",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:16:07.758745",
+    "material_code": "014090100000000017",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:16:14.972091",
+    "material_code": "014090100000000015",
+    "group": "Ambalaj Malzemeleri",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:16:26.042744",
+    "material_code": "0130202UCGN0000000",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:16:36.875122",
+    "material_code": "0130202GIZLI000260",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:16:47.550846",
+    "material_code": "0130202GIZLI000276",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:16:55.657046",
+    "material_code": "0130202GIZLI000259",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:04.387467",
+    "material_code": "0130202GIZLI000270",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:12.331046",
+    "material_code": "0130202GIZLI000256",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:20.010902",
+    "material_code": "0130202GIZL0000001",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:22.951056",
+    "material_code": "01302020000BORM004",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:33.023362",
+    "material_code": "01302020000LXAC000",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:41.193067",
+    "material_code": "01302020000LAVS001",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:49.657376",
+    "material_code": "0130202GIZLI000229",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:17:58.177115",
+    "material_code": "01302020000LXMM002",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
+  },
+  {
+    "timestamp": "2026-06-22T12:18:06.424930",
+    "material_code": "01302020000MITM001",
+    "group": "Ayaklar",
+    "total_windows": 145,
+    "successful_learning": 0,
+    "seasonal_learnings": [],
+    "pattern_learnings": []
   }
 ]
