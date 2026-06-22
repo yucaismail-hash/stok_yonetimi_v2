@@ -58,7 +58,7 @@ interface TokenPurchaseItem {
 }
 
 export default function ProfilePage() {
-  const { user, logout, token } = useAuth();
+  const { user, logout, token, updateUser } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -66,6 +66,7 @@ export default function ProfilePage() {
   const [openPasswordDialog, setOpenPasswordDialog] = useState(false);
   const [sectors, setSectors] = useState<any[]>([]);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [fetching, setFetching] = useState(true);
   
   const [formData, setFormData] = useState({
     fullName: '',
@@ -76,28 +77,41 @@ export default function ProfilePage() {
     confirmPassword: '',
   });
 
-  // Kullanıcı bilgilerini güncel çek
+  // ✅ Kullanıcı bilgilerini çek
   useEffect(() => {
     const fetchUser = async () => {
-      if (token) {
-        try {
-          const res = await api.get('/auth/me');
-          setCurrentUser(res.data);
-          setFormData(prev => ({
-            ...prev,
-            fullName: res.data.full_name || '',
-            companyName: res.data.company_name || '',
-            sectorId: res.data.sector_id || '',
-          }));
-        } catch (error) {
-          console.error('Kullanıcı bilgileri alınamadı:', error);
+      if (!token) {
+        console.warn('⚠️ Token yok, kullanıcı bilgileri çekilemedi');
+        setFetching(false);
+        return;
+      }
+      try {
+        console.log('🔄 Kullanıcı bilgileri çekiliyor...');
+        const res = await api.get('/auth/me');
+        console.log('✅ /auth/me cevabı:', res.data);
+        
+        setCurrentUser(res.data);
+        setFormData(prev => ({
+          ...prev,
+          fullName: res.data.full_name || '',
+          companyName: res.data.company_name || '',
+          sectorId: res.data.sector_id?.toString() || '',
+        }));
+      } catch (error: any) {
+        console.error('❌ Kullanıcı bilgileri alınamadı:', error);
+        if (error.response?.status === 401) {
+          console.error('🔴 Token geçersiz, çıkış yapılıyor...');
+          logout();
+          navigate('/login');
         }
+      } finally {
+        setFetching(false);
       }
     };
     fetchUser();
-  }, [token]);
+  }, [token, logout, navigate]);
 
-  // Sektör listesini al
+  // ✅ Sektör listesini al (/api/sectors)
   useEffect(() => {
     const fetchSectors = async () => {
       try {
@@ -110,7 +124,7 @@ export default function ProfilePage() {
     fetchSectors();
   }, []);
 
-  // Token geçmişini getir
+  // ✅ Token geçmişini getir (/api/profile/token-history)
   const { data: tokenHistory, isLoading: historyLoading } = useQuery({
     queryKey: ['token-history'],
     queryFn: async (): Promise<TokenHistoryItem[]> => {
@@ -124,7 +138,7 @@ export default function ProfilePage() {
     enabled: !!token,
   });
 
-  // Token satın alma geçmişi
+  // ✅ Token satın alma geçmişi (/api/profile/purchase-history)
   const { data: purchaseHistory, isLoading: purchaseLoading } = useQuery({
     queryKey: ['purchase-history'],
     queryFn: async (): Promise<TokenPurchaseItem[]> => {
@@ -138,6 +152,7 @@ export default function ProfilePage() {
     enabled: !!token,
   });
 
+  // ✅ Form alanları değişiklikleri
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
     setError(null);
@@ -150,6 +165,7 @@ export default function ProfilePage() {
     setSuccess(false);
   };
 
+  // ✅ PROFİLİ GÜNCELLE (/api/profile)
   const handleUpdateProfile = async () => {
     setLoading(true);
     setError(null);
@@ -160,8 +176,18 @@ export default function ProfilePage() {
         company_name: formData.companyName,
         sector_id: formData.sectorId ? parseInt(formData.sectorId) : null,
       });
+      
+      // Güncel kullanıcı bilgilerini state'e yaz
       setCurrentUser(res.data);
+      updateUser(res.data);
       setSuccess(true);
+      
+      // Formdaki sectorId'yi güncelle
+      setFormData(prev => ({
+        ...prev,
+        sectorId: res.data.sector_id?.toString() || '',
+      }));
+      
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Güncelleme başarısız');
     } finally {
@@ -169,6 +195,7 @@ export default function ProfilePage() {
     }
   };
 
+  // ✅ ŞİFRE DEĞİŞTİR (/api/profile/password)
   const handleChangePassword = async () => {
     if (formData.newPassword !== formData.confirmPassword) {
       setError('Şifreler eşleşmiyor');
@@ -196,12 +223,38 @@ export default function ProfilePage() {
     }
   };
 
+  // ✅ ÇIKIŞ YAP
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
+  // ✅ displayUser: önce currentUser, yoksa user
   const displayUser = currentUser || user;
+
+  // ✅ Sektör adını ayrıca al
+  const sectorName = currentUser?.sector_name || user?.sector_name || null;
+
+  // Yükleniyor durumu
+  if (fetching) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Kullanıcı yoksa
+  if (!displayUser) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh', flexDirection: 'column', gap: 2 }}>
+        <Typography color="error">Kullanıcı bilgileri yüklenemedi.</Typography>
+        <Button variant="contained" onClick={() => navigate('/login')}>
+          Tekrar Giriş Yap
+        </Button>
+      </Box>
+    );
+  }
 
   // Toplam harcama hesapla
   const totalSpent = tokenHistory?.reduce((sum: number, item: TokenHistoryItem) => sum + item.cost, 0) || 0;
@@ -227,13 +280,13 @@ export default function ProfilePage() {
                     {displayUser?.full_name || displayUser?.email}
                   </Typography>
                   <Chip
-                    label={displayUser?.email === 'admin@stok.com' ? 'Admin' : 'Kullanıcı'}
-                    color={displayUser?.email === 'admin@stok.com' ? 'primary' : 'default'}
+                    label={displayUser?.role === 'admin' ? 'Admin' : 'Kullanıcı'}
+                    color={displayUser?.role === 'admin' ? 'primary' : 'default'}
                     size="small"
                   />
-                  {displayUser?.sector_name && (
+                  {sectorName && (
                     <Chip
-                      label={displayUser?.sector_name}
+                      label={sectorName}
                       color="info"
                       variant="outlined"
                       size="small"
@@ -252,6 +305,7 @@ export default function ProfilePage() {
                 {displayUser?.token_balance || 0} 🪙
               </Typography>
 
+              {/* 📝 Profil Güncelleme Formu */}
               <TextField
                 fullWidth
                 label="Ad Soyad"
@@ -452,7 +506,7 @@ export default function ProfilePage() {
         </Grid>
       </Grid>
 
-      {/* Şifre Değiştirme Dialog */}
+      {/* 🔐 Şifre Değiştirme Dialog */}
       <Dialog open={openPasswordDialog} onClose={() => setOpenPasswordDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
