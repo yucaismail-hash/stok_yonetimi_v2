@@ -11,6 +11,26 @@ interface FileUploaderProps {
 export default function FileUploader({ onDataExtracted, accept = '.xlsx,.xls,.csv' }: FileUploaderProps) {
   const [loading, setLoading] = useState(false);
 
+  // ✅ react-dropzone için doğru accept formatı
+  const getAccept = () => {
+    if (!accept) return undefined;
+    
+    const acceptMap: Record<string, string[]> = {};
+    const extensions = accept.split(',').map(ext => ext.trim());
+    
+    extensions.forEach(ext => {
+      if (ext === '.xlsx') {
+        acceptMap['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'] = ['.xlsx'];
+      } else if (ext === '.xls') {
+        acceptMap['application/vnd.ms-excel'] = ['.xls'];
+      } else if (ext === '.csv') {
+        acceptMap['text/csv'] = ['.csv'];
+      }
+    });
+    
+    return acceptMap;
+  };
+
   const onDrop = async (acceptedFiles: File[]) => {
     const file = acceptedFiles[0];
     if (!file) return;
@@ -42,7 +62,10 @@ export default function FileUploader({ onDataExtracted, accept = '.xlsx,.xls,.cs
     });
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+    onDrop, 
+    accept: getAccept()
+  });
 
   return (
     <Box {...getRootProps()} sx={{ border: '2px dashed #ccc', p: 4, textAlign: 'center', cursor: 'pointer', borderRadius: 2 }}>
