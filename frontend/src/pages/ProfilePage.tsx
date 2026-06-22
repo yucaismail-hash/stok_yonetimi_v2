@@ -39,6 +39,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useQuery } from '@tanstack/react-query';
+import Swal from 'sweetalert2';
 
 interface TokenHistoryItem {
   id: number;
@@ -165,8 +166,24 @@ export default function ProfilePage() {
     setSuccess(false);
   };
 
-  // ✅ PROFİLİ GÜNCELLE (/api/profile)
+  // ✅ PROFİLİ GÜNCELLE (/api/profile) + SweetAlert2 Onay
   const handleUpdateProfile = async () => {
+    // 📌 SweetAlert2 onay penceresi
+    const result = await Swal.fire({
+      title: '⚠️ Uyarı!',
+      text: 'Profil bilgilerinizi güncellemek istediğinize emin misiniz?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#3085d6',
+      cancelButtonColor: '#d33',
+      confirmButtonText: 'Evet, Güncelle!',
+      cancelButtonText: 'Vazgeç'
+    });
+
+    if (!result.isConfirmed) {
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(false);
@@ -177,18 +194,32 @@ export default function ProfilePage() {
         sector_id: formData.sectorId ? parseInt(formData.sectorId) : null,
       });
       
-      // Güncel kullanıcı bilgilerini state'e yaz
-      setCurrentUser(res.data);
-      updateUser(res.data);
-      setSuccess(true);
+      console.log('📦 Profil güncelleme cevabı:', res.data);
       
-      // Formdaki sectorId'yi güncelle
-      setFormData(prev => ({
-        ...prev,
-        sectorId: res.data.sector_id?.toString() || '',
-      }));
+      // ✅ Başarılı
+      if (res.status >= 200 && res.status < 300) {
+        setSuccess(true);
+        
+        if (res.data) {
+          setCurrentUser(res.data);
+          updateUser(res.data);
+          setFormData(prev => ({
+            ...prev,
+            sectorId: res.data.sector_id?.toString() || '',
+          }));
+        }
+        
+        // SweetAlert2 başarılı mesajı
+        await Swal.fire({
+          title: '✅ Başarılı!',
+          text: 'Profil bilgileriniz başarıyla güncellendi.',
+          icon: 'success',
+          confirmButtonText: 'Tamam'
+        });
+      }
       
     } catch (err: any) {
+      console.error('❌ Profil güncelleme hatası:', err);
       setError(err.response?.data?.detail || 'Güncelleme başarısız');
     } finally {
       setLoading(false);

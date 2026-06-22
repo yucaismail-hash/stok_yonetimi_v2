@@ -23,6 +23,7 @@
     "react-dropzone": "^14.4.1",
     "react-router-dom": "^7.17.0",
     "recharts": "^2.15.4",
+    "sweetalert2": "^11.26.25",
     "xlsx": "^0.18.5",
     "zustand": "^4.4.7"
   },
