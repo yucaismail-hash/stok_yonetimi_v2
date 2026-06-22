@@ -1,4 +1,3 @@
-// src/components/Results/RecommendationDialog.tsx
 import {
   Dialog,
   DialogTitle,
@@ -7,8 +6,6 @@ import {
   Typography,
   Button,
   Box,
-  Grid,
-  Divider,
   Chip,
   List,
   ListItem,
@@ -16,7 +13,6 @@ import {
   ListItemText,
   Paper,
   Alert,
-  Stack,
 } from '@mui/material';
 import {
   CheckCircle,
@@ -106,15 +102,17 @@ export default function RecommendationDialog({
       onClose={onClose}
       maxWidth="md"
       fullWidth
-      PaperProps={{
-        sx: { borderRadius: 3 },
+      slotProps={{
+        paper: {
+          sx: { borderRadius: 3 },
+        },
       }}
     >
       <DialogTitle>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Box display="flex" alignItems="center" gap={1}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Lightbulb color="warning" />
-            <Typography variant="h6" fontWeight="bold">
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
               Stok Optimizasyon Önerileri
             </Typography>
           </Box>
@@ -140,10 +138,10 @@ export default function RecommendationDialog({
 
         {/* Pay Değişim Aralığı */}
         <Paper sx={{ p: 2, mb: 3, bgcolor: 'grey.50' }}>
-          <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+          <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }} gutterBottom>
             🔄 Tedarikçi Pay Değişim Aralığı
           </Typography>
-          <Box display="flex" alignItems="center" gap={2}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Chip label="Min %2" size="small" color="info" />
             <Box sx={{ flex: 1, height: 8, bgcolor: 'grey.300', borderRadius: 4 }}>
               <Box
@@ -163,7 +161,7 @@ export default function RecommendationDialog({
         </Paper>
 
         {/* Aksiyon Planı */}
-        <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
+        <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }} gutterBottom>
           📋 Adım Adım Aksiyon Planı
         </Typography>
         <List disablePadding>
@@ -178,8 +176,8 @@ export default function RecommendationDialog({
               </ListItemIcon>
               <ListItemText
                 primary={
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Typography variant="body2" fontWeight="medium">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
                       {action.id}. {action.title}
                     </Typography>
                     <Chip
@@ -190,7 +188,7 @@ export default function RecommendationDialog({
                   </Box>
                 }
                 secondary={
-                  <Box display="flex" gap={2} mt={1}>
+                  <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
                     <Typography variant="caption" color="text.secondary">
                       Mevcut: {action.current.toFixed(0)} {action.unit}
                     </Typography>
@@ -200,7 +198,7 @@ export default function RecommendationDialog({
                     <Typography
                       variant="caption"
                       color={action.change > 0 ? 'success.main' : 'error.main'}
-                      fontWeight="bold"
+                      sx={{ fontWeight: 'bold' }}
                     >
                       {action.change > 0 ? '+' : ''}{action.change.toFixed(0)} {action.unit}
                     </Typography>
