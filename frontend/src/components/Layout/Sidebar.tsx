@@ -23,7 +23,6 @@ const menuItems = [
   { path: '/simulation', label: 'Simülasyon', icon: <TuneIcon /> },
   { path: '/backtest', label: 'Backtest', icon: <BackpackIcon /> },
   { path: '/supplier', label: 'Tedarikçi', icon: <LocalShippingIcon /> },
-  { path: '/risk', label: 'Risk Metrikleri', icon: <WarningIcon /> },
 ];
 
 const adminItem = { path: '/admin', label: 'Admin Panel', icon: <AdminPanelSettingsIcon /> };

@@ -10,7 +10,6 @@ import ForecastPage from './pages/ForecastPage';
 import SimulationPage from './pages/SimulationPage';
 import BacktestPage from './pages/BacktestPage';
 import SupplierPage from './pages/SupplierPage';
-import RiskPage from './pages/RiskPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
@@ -48,7 +47,6 @@ function App() {
               <Route path="/simulation" element={<SimulationPage />} />
               <Route path="/backtest" element={<BacktestPage />} />
               <Route path="/supplier" element={<SupplierPage />} />
-              <Route path="/risk" element={<RiskPage />} />
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/profile" element={<ProfilePage />} />
             </Route>

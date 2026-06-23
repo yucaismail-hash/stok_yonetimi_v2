@@ -1,79 +1,92 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from app.analysis.safety_stock import ComprehensiveSafetyStockOptimizer
+from app.auth import get_current_user
+from app.models import User
+from app.database import get_db
+from sqlalchemy.orm import Session
+from datetime import datetime, timedelta
+from app.api.endpoints.upload import get_user_upload_data
 
 router = APIRouter()
 optimizer = ComprehensiveSafetyStockOptimizer()
 
-class SafetyStockRequest(BaseModel):
-    weekly_data: List[float]
-    lead_time_days: int = 14
-    service_level: float = 0.95
-    n_bootstrap_iterations: Optional[int] = 2000  # Bootstrap için iterasyon sayısı
 
-class SafetyStockResponse(BaseModel):
-    classic_ss: float
-    croston_ss: float
-    syntetos_boylan_ss: float
-    bootstrapping_ss: float
-    ml_ss: float
-    hybrid_ss: float
-
-@router.post("/safety-stock", response_model=SafetyStockResponse)
-def calculate_safety_stock(request: SafetyStockRequest):
+@router.post("/safety-stock/batch")
+def calculate_safety_stock_batch(
+    request: Dict[str, Any],
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
-    Tüm emniyet stoğu hesaplama metodlarını çalıştırır.
-    
-    - **classic_ss**: Klasik normal dağılım formülü
-    - **croston_ss**: Kesikli/aralıklı talep için Croston metodu
-    - **syntetos_boylan_ss**: Croston'ın bias düzeltilmiş versiyonu
-    - **bootstrapping_ss**: Bootstrap simülasyonu ile
-    - **ml_ss**: Makine öğrenmesi özellik tabanlı
-    - **hybrid_ss**: Tüm metodların ağırlıklı ortalaması
+    Toplu Safety Stock analizi - Cache'ten verileri alır.
+    Token maliyeti: 10 token
     """
     try:
-        # Önce feature'ları hesapla (opsiyonel, şimdilik doğrudan çağırıyoruz)
-        result = optimizer.calculate_all_methods(
-            request.weekly_data,
-            request.lead_time_days,
-            request.service_level
-        )
+        # 1. Cache'ten verileri al
+        cached_data = get_user_upload_data(current_user.id)
+        if not cached_data:
+            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
         
-        # Bootstrap için özel iterasyon sayısını kullan (isteğe bağlı)
-        if request.n_bootstrap_iterations != 2000:
-            bootstrapping_ss = optimizer.bootstrapping_method(
-                request.weekly_data,
-                request.lead_time_days,
-                request.service_level,
-                n_iterations=request.n_bootstrap_iterations
+        materials = cached_data.get('materials', [])
+        if not materials:
+            raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
+        
+        service_level = request.get('service_level', 0.95)
+        
+        # 2. Analiz
+        results = []
+        for material in materials:
+            weekly_data = material.get('historical_demand', [])
+            lead_time = material.get('lead_time_days', 14)
+            
+            if len(weekly_data) < 4:
+                continue
+            
+            ss_result = optimizer.calculate_all_methods(
+                weekly_data,
+                lead_time,
+                service_level
             )
-            result['bootstrapping_ss'] = round(bootstrapping_ss, 2)
-            # Hybrid'i yeniden hesapla (çünkü bootstrap değişti)
-            result['hybrid_ss'] = round(optimizer.hybrid_safety_stock(
-                request.weekly_data, request.lead_time_days, request.service_level
-            ), 2)
+            
+            results.append({
+                'material_code': material.get('code', ''),
+                'group': material.get('group', 'GENEL'),
+                'lead_time_days': lead_time,
+                'classic_ss': ss_result.get('classic_ss', 0),
+                'croston_ss': ss_result.get('croston_ss', 0),
+                'syntetos_boylan_ss': ss_result.get('syntetos_boylan_ss', 0),
+                'bootstrapping_ss': ss_result.get('bootstrapping_ss', 0),
+                'ml_ss': ss_result.get('ml_ss', 0),
+                'hybrid_ss': ss_result.get('hybrid_ss', 0)
+            })
         
-        return result
+        # 3. Sonuçları kaydet
+        if results:
+            from app.models import UserAnalysisResult
+            
+            for result in results:
+                analysis_result = UserAnalysisResult(
+                    user_id=current_user.id,
+                    result_type='safety_stock_batch',
+                    material_code=result['material_code'],
+                    material_group=result.get('group', 'GENEL'),
+                    result_data=result,
+                    params={'service_level': service_level, 'total_materials': len(results)},
+                    expires_at=datetime.utcnow() + timedelta(days=15)
+                )
+                db.add(analysis_result)
+            db.commit()
+        
+        return {
+            'success': True,
+            'total': len(results),
+            'results': results,
+            'token_cost': 10
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/safety-stock/info")
-def get_method_info():
-    """Tüm SS metodları hakkında bilgi verir."""
-    return {
-        "methods": [
-            {"name": "classic_ss", "description": "Klasik normal dağılım formülü. Sürekli talep için idealdir.", "best_for": "CV < 0.5, zero_ratio < 0.3"},
-            {"name": "croston_ss", "description": "Croston metodu. Aralıklı/kesikli talep için geliştirilmiştir.", "best_for": "0.5 < zero_ratio < 0.875"},
-            {"name": "syntetos_boylan_ss", "description": "Syntetos-Boylan metodu. Croston'un bias sorununu düzeltir.", "best_for": "zero_ratio > 0.5, daha az bias"},
-            {"name": "bootstrapping_ss", "description": "Bootstrap simülasyonu. Dağılım varsayımı gerektirmez.", "best_for": "Her tür talep, ama hesaplama yoğun"},
-            {"name": "ml_ss", "description": "Makine öğrenmesi özellik tabanlı (CV, zero_ratio, trend).", "best_for": "Karmaşık talep desenleri"},
-            {"name": "hybrid_ss", "description": "Tüm metodların ağırlıklı ortalaması. Zero_ratio'ya göre ağırlıklar değişir.", "best_for": "Genel amaçlı, risk dağıtımı"}
-        ],
-        "default_params": {
-            "lead_time_days": 14,
-            "service_level": 0.95,
-            "n_bootstrap_iterations": 2000
-        }
-    }

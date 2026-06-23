@@ -1,268 +1,545 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  TextField,
   Button,
   Card,
   CardContent,
   Grid,
   Paper,
+  Chip,
   CircularProgress,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
+  Alert,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Stack,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Divider,
+  TablePagination,
+  Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Stack,
 } from '@mui/material';
 import {
   ShowChart,
   Send,
+  Download,
+  History,
+  Close,
+  Visibility,
+  Info,
+  TrendingUp,
+  TrendingDown,
 } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import api from '../services/api';
+import { useAuth } from '../hooks/useAuth';
 
 interface ForecastResult {
-  mean: number[];
+  material_code: string;
+  group: string;
+  horizon: number;
+  selected_model: string;
+  best_model_label: string;
+  model_description: string;
+  selection_reason: string;
+  forecast: number[];
   lower_80: number[];
   upper_80: number[];
   lower_95: number[];
   upper_95: number[];
+  trend_direction: string;
+  trend_percent: number;
+  model_rmse: number | null;
+  all_models: Record<string, any>;
+}
+
+interface HistoryItem {
+  id: number;
+  created_at: string;
+  data: any;
 }
 
 export default function ForecastPage() {
-  const [historicalData, setHistoricalData] = useState<string>(
-    '100,110,105,120,115,130,125,140,135,150,145,160,155,170,165,180'
-  );
-  const [horizon, setHorizon] = useState<number>(8);
-  const [modelType, setModelType] = useState<string>('auto');
-  const [result, setResult] = useState<ForecastResult | null>(null);
+  const { user } = useAuth();
+  const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [results, setResults] = useState<ForecastResult[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [selectedModel, setSelectedModel] = useState('auto');
 
-  const mutation = useMutation({
-    mutationFn: async (data: { historical_data: number[]; horizon: number; model_type: string }) => {
-      const res = await api.post('/api/forecast', data);
+  useEffect(() => {
+    checkUploadedData();
+  }, []);
+
+  const checkUploadedData = async () => {
+    try {
+      const res = await api.get('/api/upload/status');
+      setHasUploadedData(res.data.has_data);
+    } catch {
+      setHasUploadedData(false);
+    }
+  };
+
+  const forecastMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/forecast/batch', {
+        horizon: 4,
+        model_type: selectedModel
+      });
       return res.data;
     },
     onSuccess: (data) => {
-      setResult(data);
+      if (data.success) {
+        setResults(data.results || []);
+        setPage(0);
+        setError(null);
+        setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla analiz edildi.`);
+        setTimeout(() => setSuccess(null), 5000);
+      } else {
+        setError(data.error || 'Analiz başarısız');
+      }
+    },
+    onError: (err: any) => {
+      console.error('❌ Forecast hatası:', err);
+      setError(err.response?.data?.detail || 'Analiz sırasında hata oluştu');
     },
   });
 
-  const handleSubmit = () => {
-    const data = historicalData.split(',').map((v) => parseFloat(v.trim()));
-    if (data.some(isNaN)) {
-      alert('Lütfen geçerli sayılar girin!');
-      return;
+  const fetchHistory = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { result_type: 'forecast_batch' }
+      });
+      
+      if (res.data.success) {
+        const rawResults = res.data.results || [];
+        const groupedMap = new Map();
+        
+        rawResults.forEach((item: any) => {
+          const date = item.created_at ? new Date(item.created_at) : new Date();
+          const key = date.toISOString().slice(0, 16);
+          
+          if (!groupedMap.has(key)) {
+            groupedMap.set(key, {
+              id: item.id,
+              created_at: item.created_at,
+              items: []
+            });
+          }
+          groupedMap.get(key).items.push(item);
+        });
+        
+        const groupedResults = Array.from(groupedMap.values()).map(group => {
+          const allResults = group.items
+            .map((item: any) => {
+              const resultData = item.data || item.result_data || {};
+              if (resultData.results && Array.isArray(resultData.results)) {
+                return resultData.results;
+              }
+              if (resultData.material_code) {
+                return [resultData];
+              }
+              return [];
+            })
+            .flat();
+          
+          return {
+            id: group.id,
+            created_at: group.created_at,
+            data: {
+              total: allResults.length,
+              results: allResults
+            }
+          };
+        });
+        
+        setHistoryData(groupedResults);
+        setHistoryDialogOpen(true);
+        setError(null);
+      } else {
+        setError('Geçmiş sonuçlar yüklenemedi');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+    } finally {
+      setLoading(false);
     }
-    mutation.mutate({
-      historical_data: data,
-      horizon: horizon,
-      model_type: modelType,
-    });
   };
 
-  const handleClear = () => {
-    setHistoricalData('');
-    setResult(null);
+  const handleViewHistory = (item: HistoryItem) => {
+    const historyResults = item.data?.results || [];
+    if (historyResults.length > 0) {
+      setResults(historyResults);
+      setPage(0);
+      setHistoryDialogOpen(false);
+      setSuccess(`${historyResults.length} malzeme geçmiş sonuçları yüklendi.`);
+      setTimeout(() => setSuccess(null), 3000);
+    } else {
+      setError('Bu kayıtta görüntülenecek sonuç yok');
+    }
+  };
+
+  const handleExport = async () => {
+    if (results.length === 0) {
+      setError('Aktarılacak sonuç yok!');
+      return;
+    }
+    try {
+      const response = await api.post('/api/export/forecast-results', {
+        results: results,
+      }, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `forecast_${new Date().toISOString().slice(0,10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess('Excel dosyası başarıyla indirildi.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError('Excel dosyası oluşturulamadı');
+    }
+  };
+
+  const handleChangePage = (event: unknown, newPage: number) => setPage(newPage);
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const paginatedResults = results.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+  const modelColors: Record<string, string> = {
+    holt_winters: '#9c27b0',
+    arima: '#1976d2',
+    simple: '#2e7d32',
+    auto: '#ed6c02'
   };
 
   const modelLabels: Record<string, string> = {
-    auto: 'Otomatik Seçim (Önerilen)',
-    holt_winters: 'Holt-Winters (Mevsimsel)',
+    holt_winters: 'Holt-Winters',
     arima: 'ARIMA',
-    simple: 'Basit (Hareketli Ortalama)',
+    simple: 'Basit MA',
+    auto: 'Otomatik'
   };
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 'bold' }} gutterBottom>
-        📈 Talep Tahmini (Forecast)
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        Geçmiş verilerinize göre gelecek dönem talep tahmini yapın.
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+            📈 Talep Tahmini (Forecast)
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            4 farklı model ile talep tahmini yapar.
+            <Chip label="8 Token" size="small" color="warning" sx={{ ml: 1 }} />
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" startIcon={<History />} onClick={fetchHistory} disabled={loading}>
+            {loading ? 'Yükleniyor...' : 'Geçmiş'}
+          </Button>
+          {results.length > 0 && (
+            <Button variant="outlined" startIcon={<Download />} onClick={handleExport}>
+              Excel'e Aktar
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={forecastMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => forecastMutation.mutate()}
+            disabled={forecastMutation.isPending || !hasUploadedData}
+          >
+            {forecastMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
+        </Box>
+      </Box>
 
-      <Grid container spacing={3}>
-        {/* Giriş Alanı */}
-        <Grid size={{ xs: 12, lg: 5 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
-                Parametreler
-              </Typography>
+      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+      {!hasUploadedData && !results.length && (
+        <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
+      )}
 
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                variant="outlined"
-                label="Geçmiş Veriler"
-                placeholder="100,110,105,120,115,130,125,140,135,150,145,160"
-                value={historicalData}
-                onChange={(e) => setHistoricalData(e.target.value)}
-                sx={{ mb: 2 }}
-              />
-
-              <FormControl fullWidth sx={{ mb: 2 }}>
-                <InputLabel>Model Tipi</InputLabel>
+      {/* 📌 Model Seçimi Kartı */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+            <Box sx={{ minWidth: 200 }}>
+              <FormControl fullWidth>
+                <InputLabel>Model Seçimi</InputLabel>
                 <Select
-                  value={modelType}
-                  label="Model Tipi"
-                  onChange={(e) => setModelType(e.target.value)}
+                  value={selectedModel}
+                  label="Model Seçimi"
+                  onChange={(e) => setSelectedModel(e.target.value)}
                 >
-                  <MenuItem value="auto">Otomatik Seçim (Önerilen)</MenuItem>
-                  <MenuItem value="holt_winters">Holt-Winters (Mevsimsel)</MenuItem>
-                  <MenuItem value="arima">ARIMA</MenuItem>
-                  <MenuItem value="simple">Basit (Hareketli Ortalama)</MenuItem>
+                  <MenuItem value="auto">🔄 Otomatik Seçim (Önerilen)</MenuItem>
+                  <MenuItem value="holt_winters">📊 Holt-Winters (Mevsimsel)</MenuItem>
+                  <MenuItem value="arima">📈 ARIMA (Otoregresif)</MenuItem>
+                  <MenuItem value="simple">📉 Basit (MA+Trend)</MenuItem>
                 </Select>
               </FormControl>
+            </Box>
+            <Typography variant="caption" color="text.secondary">
+              {selectedModel === 'auto' && 'Veriye göre en uygun modeli otomatik seçer.'}
+              {selectedModel === 'holt_winters' && 'Mevsimsel desenler için, 52+ hafta veri önerilir.'}
+              {selectedModel === 'arima' && 'Trend ve otokorelasyon için, 26+ hafta veri önerilir.'}
+              {selectedModel === 'simple' && 'Hızlı ve basit, az veri için idealdir.'}
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
 
-              <TextField
-                fullWidth
-                type="number"
-                variant="outlined"
-                label="Tahmin Ufku (Hafta)"
-                value={horizon}
-                onChange={(e) => setHorizon(Number(e.target.value))}
-                slotProps={{
-                  htmlInput: { min: 1, max: 52 }
-                }}
-                sx={{ mb: 2 }}
+      {/* Model Bilgilendirme Kartı */}
+      <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Info color="info" />
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              📊 Tahmin Modelleri
+            </Typography>
+          </Box>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Holt-Winters" size="small" sx={{ bgcolor: '#9c27b0', color: 'white' }} />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>Mevsimsel talep için</Typography>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="ARIMA" size="small" sx={{ bgcolor: '#1976d2', color: 'white' }} />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>Otoregresif, 26+ hafta</Typography>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Basit MA" size="small" sx={{ bgcolor: '#2e7d32', color: 'white' }} />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>Hızlı, son 4 hafta</Typography>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Otomatik" size="small" sx={{ bgcolor: '#ed6c02', color: 'white' }} />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>En uygun modeli seçer</Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına 8 token harcanır</Typography>
+          </Box>
+        </CardContent>
+      </Card>
+
+      {forecastMutation.isPending && (
+        <Box sx={{ textAlign: 'center', py: 4 }}>
+          <CircularProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Model çalıştırılıyor...</Typography>
+        </Box>
+      )}
+
+      {results.length > 0 && (
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Sonuçlar ({results.length} malzeme)
+              </Typography>
+            </Box>
+
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'primary.main' }}>
+                    <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Grup</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Seçilen Model</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Trend</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">H1</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">H2</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">H3</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">H4</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Model Açıklaması</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {paginatedResults.map((result, idx) => (
+                    <TableRow key={idx} hover>
+                      <TableCell>{result.material_code}</TableCell>
+                      <TableCell>{result.group}</TableCell>
+                      <TableCell>
+                        <Tooltip title={`RMSE: ${result.model_rmse?.toFixed(2) || '-'}`} arrow>
+                          <Chip 
+                            label={result.best_model_label}
+                            size="small"
+                            sx={{ 
+                              bgcolor: modelColors[result.selected_model] || '#1976d2',
+                              color: 'white',
+                              fontWeight: 'bold'
+                            }}
+                          />
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          icon={result.trend_direction === 'Artış' ? <TrendingUp /> : <TrendingDown />}
+                          label={`${result.trend_percent > 0 ? '+' : ''}${result.trend_percent}%`}
+                          size="small"
+                          color={result.trend_direction === 'Artış' ? 'error' : 'success'}
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      {result.forecast.map((val, i) => (
+                        <TableCell key={i} align="center" sx={{ fontWeight: 'bold' }}>
+                          {val?.toFixed(0) || '-'}
+                        </TableCell>
+                      ))}
+                      <TableCell>
+                        <Tooltip title={result.model_description} arrow>
+                          <Typography variant="caption" sx={{ cursor: 'pointer' }}>
+                            {result.model_description.substring(0, 30)}...
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <TablePagination
+                rowsPerPageOptions={[25, 50, 100, 200]}
+                component="div"
+                count={results.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                labelRowsPerPage="Sayfa başına satır:"
+                labelDisplayedRows={({ from, to, count }) => `${from}-${to} / ${count}`}
               />
+            </TableContainer>
 
-              <Stack direction="row" spacing={2}>
-                <Button
-                  variant="contained"
-                  startIcon={<Send />}
-                  onClick={handleSubmit}
-                  disabled={mutation.isPending}
-                  fullWidth
-                >
-                  {mutation.isPending ? 'Tahmin Ediliyor...' : 'Tahmin Et'}
-                </Button>
-                <Button variant="outlined" onClick={handleClear}>
-                  Temizle
-                </Button>
-              </Stack>
+            {/* Özet */}
+            <Box sx={{ mt: 3 }}>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.light' }}>
+                    <Typography variant="caption" color="text.secondary">En Çok Seçilen</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                      {(() => {
+                        const counts: Record<string, number> = {};
+                        results.forEach(r => {
+                          counts[r.selected_model] = (counts[r.selected_model] || 0) + 1;
+                        });
+                        const entries = Object.entries(counts);
+                        if (entries.length === 0) return '-';
+                        return modelLabels[entries.sort((a, b) => b[1] - a[1])[0][0]] || '-';
+                      })()}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'info.light' }}>
+                    <Typography variant="caption" color="text.secondary">Ortalama RMSE</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                      {(results.reduce((acc, r) => acc + (r.model_rmse || 0), 0) / results.length).toFixed(2)}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.light' }}>
+                    <Typography variant="caption" color="text.secondary">Artış Trendi</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                      {results.filter(r => r.trend_direction === 'Artış').length}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.light' }}>
+                    <Typography variant="caption" color="text.secondary">Azalış Trendi</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                      {results.filter(r => r.trend_direction === 'Azalış').length}
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
 
-              {mutation.isPending && (
-                <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                  <CircularProgress size={24} sx={{ mr: 2 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    Model çalıştırılıyor...
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
+      {!forecastMutation.isPending && results.length === 0 && !error && hasUploadedData && (
+        <Card>
+          <CardContent sx={{ textAlign: 'center', py: 6 }}>
+            <ShowChart sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary">Henüz analiz yapılmadı</Typography>
+            <Typography variant="body2" color="text.secondary">"Analiz Et" butonuna tıklayarak tahmin analizini başlatın.</Typography>
+          </CardContent>
+        </Card>
+      )}
 
-        {/* Sonuç Alanı */}
-        <Grid size={{ xs: 12, lg: 7 }}>
-          {result ? (
-            <Card>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
-                  Tahmin Sonuçları
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                  Model: {modelLabels[modelType] || modelType}
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-
-                <TableContainer component={Paper} variant="outlined">
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: 'primary.main' }}>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Hafta</TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                          Tahmin (Ortalama)
-                        </TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                          %80 Alt
-                        </TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                          %80 Üst
-                        </TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                          %95 Alt
-                        </TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                          %95 Üst
+      {/* Geçmiş Dialog */}
+      <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">📋 Geçmiş Analiz Sonuçları</Typography>
+            <IconButton onClick={() => setHistoryDialogOpen(false)}><Close /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {historyData.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+              Henüz geçmiş analiz kaydı yok.
+            </Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'primary.main' }}>
+                    <TableCell sx={{ color: 'white' }}>Tarih</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Malzeme Sayısı</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Durum</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">İşlem</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {historyData.map((item) => {
+                    const total = item.data?.total || 0;
+                    const date = item.created_at ? new Date(item.created_at) : new Date();
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>{date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}</TableCell>
+                        <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
+                        <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
+                        <TableCell align="center">
+                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>Görüntüle</Button>
                         </TableCell>
                       </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {result.mean.map((value, index) => (
-                        <TableRow key={index}>
-                          <TableCell>{index + 1}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                            {value.toFixed(2)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ color: 'info.main' }}>
-                            {result.lower_80[index].toFixed(2)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ color: 'info.main' }}>
-                            {result.upper_80[index].toFixed(2)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ color: 'warning.main' }}>
-                            {result.lower_95[index].toFixed(2)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ color: 'warning.main' }}>
-                            {result.upper_95[index].toFixed(2)}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-
-                {/* Özet Bilgi */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-                  <Typography variant="body2" color="info.dark">
-                    <strong>📌 Yorum:</strong>{' '}
-                    {result.mean[result.mean.length - 1] > result.mean[0]
-                      ? 'Talep trendi artış yönünde. Stok seviyeleri artırılmalı.'
-                      : result.mean[result.mean.length - 1] < result.mean[0]
-                      ? 'Talep trendi azalış yönünde. Stok seviyeleri gözden geçirilmeli.'
-                      : 'Talep trendi stabil. Mevcut politika devam edebilir.'}
-                  </Typography>
-                </Box>
-
-                {/* Güven Aralığı Açıklaması */}
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" color="text.secondary" component="div">
-                    📊 <strong>%80 Güven Aralığı:</strong> Tahminlerin %80'i bu aralıkta olacaktır.
-                    <br />
-                    📊 <strong>%95 Güven Aralığı:</strong> Tahminlerin %95'i bu aralıkta olacaktır.
-                    <br />
-                    💡 Daha geniş aralık = daha yüksek belirsizlik.
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent sx={{ textAlign: 'center', py: 8 }}>
-                <ShowChart sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary">
-                  Henüz tahmin yapılmadı
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Sol taraftaki alana verilerinizi girin ve "Tahmin Et" butonuna tıklayın.
-                </Typography>
-              </CardContent>
-            </Card>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
-        </Grid>
-      </Grid>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setHistoryDialogOpen(false)}>Kapat</Button></DialogActions>
+      </Dialog>
     </Box>
   );
 }

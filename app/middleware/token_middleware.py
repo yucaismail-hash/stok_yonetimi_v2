@@ -10,7 +10,11 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
 @app.middleware("http")
 async def token_middleware(request: Request, call_next):
     # Admin, auth, docs endpoint'lerini muaf tut
-    if request.url.path.startswith("/admin") or request.url.path.startswith("/auth") or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi.json"):
+    if (request.url.path.startswith("/admin") or 
+        request.url.path.startswith("/auth") or 
+        request.url.path.startswith("/docs") or 
+        request.url.path.startswith("/openapi.json") or 
+        request.url.path.startswith("/api/upload/results")):
         return await call_next(request)
     
     auth_header = request.headers.get("Authorization")

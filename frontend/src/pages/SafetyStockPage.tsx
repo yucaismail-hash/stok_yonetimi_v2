@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  TextField,
   Button,
   Card,
   CardContent,
@@ -10,24 +9,37 @@ import {
   Paper,
   Chip,
   CircularProgress,
-  Slider,
+  Alert,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Stack,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Divider,
+  TablePagination,
 } from '@mui/material';
 import {
   Security,
   Send,
+  Download,
+  History,
+  Close,
+  Visibility,
 } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import api from '../services/api';
+import { useAuth } from '../hooks/useAuth';
 
 interface SafetyStockResult {
+  material_code: string;
+  group: string;
+  lead_time_days: number;
   classic_ss: number;
   croston_ss: number;
   syntetos_boylan_ss: number;
@@ -36,38 +48,188 @@ interface SafetyStockResult {
   hybrid_ss: number;
 }
 
-export default function SafetyStockPage() {
-  const [weeklyData, setWeeklyData] = useState<string>('100,120,90,110,130,80,95,105');
-  const [leadTime, setLeadTime] = useState<number>(14);
-  const [serviceLevel, setServiceLevel] = useState<number>(0.95);
-  const [result, setResult] = useState<SafetyStockResult | null>(null);
+interface HistoryItem {
+  id: number;
+  created_at: string;
+  data: any;
+}
 
-  const mutation = useMutation({
-    mutationFn: async (data: { weekly_data: number[]; lead_time_days: number; service_level: number }) => {
-      const res = await api.post('/api/safety-stock', data);
+export default function SafetyStockPage() {
+  const { user } = useAuth();
+  const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [results, setResults] = useState<SafetyStockResult[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
+
+  useEffect(() => {
+    checkUploadedData();
+  }, []);
+
+  const checkUploadedData = async () => {
+    try {
+      const res = await api.get('/api/upload/status');
+      setHasUploadedData(res.data.has_data);
+    } catch {
+      setHasUploadedData(false);
+    }
+  };
+
+  const ssMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/safety-stock/batch', {
+        materials: [],
+        service_level: 0.95,
+        save_results: true
+      });
       return res.data;
     },
     onSuccess: (data) => {
-      setResult(data);
+      if (data.success) {
+        setResults(data.results || []);
+        setPage(0);
+        setError(null);
+        setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla analiz edildi.`);
+        setTimeout(() => setSuccess(null), 5000);
+      } else {
+        setError(data.error || 'Analiz başarısız');
+      }
+    },
+    onError: (err: any) => {
+      console.error('❌ Safety Stock hatası:', err);
+      setError(err.response?.data?.detail || 'Analiz sırasında hata oluştu');
     },
   });
 
-  const handleSubmit = () => {
-    const data = weeklyData.split(',').map((v) => parseFloat(v.trim()));
-    if (data.some(isNaN)) {
-      alert('Lütfen geçerli sayılar girin!');
-      return;
+  // ✅ Geçmiş sonuçları getir (Tarih+Saat bazında 1 satır, detaylar saklı)
+  const fetchHistory = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { result_type: 'safety_stock_batch' }
+      });
+      console.log('📋 Geçmiş cevabı:', res.data);
+      
+      if (res.data.success) {
+        const rawResults = res.data.results || [];
+        
+        const groupedMap = new Map();
+        
+        rawResults.forEach((item: any) => {
+          const date = item.created_at ? new Date(item.created_at) : new Date();
+          const key = date.toISOString().slice(0, 16);
+          
+          if (!groupedMap.has(key)) {
+            groupedMap.set(key, {
+              id: item.id,
+              created_at: item.created_at,
+              total: 0,
+              items: []
+            });
+          }
+          
+          const group = groupedMap.get(key);
+          group.total += 1;
+          group.items.push(item);
+        });
+        
+        const groupedResults = Array.from(groupedMap.values()).map(group => {
+          // Tüm item'ların verilerini birleştir
+          const allResults = group.items
+            .map((item: any) => {
+              const resultData = item.data || item.result_data || {};
+              if (resultData.results && Array.isArray(resultData.results)) {
+                return resultData.results;
+              }
+              if (resultData.material_code) {
+                return [resultData];
+              }
+              return [];
+            })
+            .flat();
+          
+          return {
+            id: group.id,
+            created_at: group.created_at,
+            data: {
+              total: allResults.length,
+              results: allResults
+            }
+          };
+        });
+        
+        setHistoryData(groupedResults);
+        setHistoryDialogOpen(true);
+        setError(null);
+      } else {
+        setError('Geçmiş sonuçlar yüklenemedi');
+      }
+    } catch (err: any) {
+      console.error('❌ Geçmiş hatası:', err);
+      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+    } finally {
+      setLoading(false);
     }
-    mutation.mutate({
-      weekly_data: data,
-      lead_time_days: leadTime,
-      service_level: serviceLevel,
-    });
   };
 
-  const handleClear = () => {
-    setWeeklyData('');
-    setResult(null);
+  // ✅ Geçmiş sonucu görüntüle (Ana tabloya aktar)
+  const handleViewHistory = (item: HistoryItem) => {
+    const historyResults = item.data?.results || [];
+    
+    if (historyResults.length > 0) {
+      setResults(historyResults);
+      setPage(0);
+      setHistoryDialogOpen(false);
+      setSuccess(`${historyResults.length} malzeme geçmiş sonuçları yüklendi.`);
+      setTimeout(() => setSuccess(null), 3000);
+    } else {
+      setError('Bu kayıtta görüntülenecek sonuç yok');
+    }
+  };
+
+  const handleExport = async () => {
+    if (results.length === 0) {
+      setError('Aktarılacak sonuç yok!');
+      return;
+    }
+    try {
+      const response = await api.post('/api/export/safety-stock-results', {
+        results: results,
+      }, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `safety_stock_${new Date().toISOString().slice(0,10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess('Excel dosyası başarıyla indirildi.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError('Excel dosyası oluşturulamadı');
+    }
+  };
+
+  const handleChangePage = (event: unknown, newPage: number) => setPage(newPage);
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const paginatedResults = results.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+
+  const getBestMethod = (result: SafetyStockResult) => {
+    const methods = ['classic_ss', 'croston_ss', 'syntetos_boylan_ss', 'bootstrapping_ss', 'ml_ss', 'hybrid_ss'];
+    const values = methods.map(m => result[m as keyof SafetyStockResult] as number);
+    const min = Math.min(...values);
+    return methods[values.indexOf(min)];
   };
 
   const methodLabels: Record<string, string> = {
@@ -79,234 +241,172 @@ export default function SafetyStockPage() {
     hybrid_ss: 'Hibrit (Önerilen)',
   };
 
-  const methodColors: Record<string, string> = {
-    classic_ss: '#1976d2',
-    croston_ss: '#2e7d32',
-    syntetos_boylan_ss: '#ed6c02',
-    bootstrapping_ss: '#9c27b0',
-    ml_ss: '#d32f2f',
-    hybrid_ss: '#1f4e79',
-  };
-
-  const getBestMethod = (result: SafetyStockResult) => {
-    const entries = Object.entries(result);
-    const min = Math.min(...entries.map(([_, v]) => v));
-    return entries.find(([_, v]) => v === min)?.[0] || 'hybrid_ss';
-  };
-
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 'bold' }} gutterBottom>
-        🛡️ Emniyet Stoku Hesaplama
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        6 farklı metod ile emniyet stoğu hesaplayın ve karşılaştırın.
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+            🛡️ Safety Stock Analizi
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            6 farklı SS metodu ile tüm malzemelerin emniyet stoklarını hesaplar.
+            <Chip label="10 Token" size="small" color="warning" sx={{ ml: 1 }} />
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button variant="outlined" startIcon={<History />} onClick={fetchHistory} disabled={loading}>
+            {loading ? 'Yükleniyor...' : 'Geçmiş'}
+          </Button>
+          {results.length > 0 && (
+            <Button variant="outlined" startIcon={<Download />} onClick={handleExport}>
+              Excel'e Aktar
+            </Button>
+          )}
+          <Button
+            variant="contained"
+            startIcon={ssMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => ssMutation.mutate()}
+            disabled={ssMutation.isPending || !hasUploadedData}
+          >
+            {ssMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
+        </Box>
+      </Box>
 
-      <Grid container spacing={3}>
-        {/* Giriş Alanı */}
-        <Grid size={{ xs: 12, lg: 5 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
-                Parametreler
-              </Typography>
+      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+      {!hasUploadedData && !results.length && (
+        <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
+      )}
 
-              <TextField
-                fullWidth
-                multiline
-                rows={3}
-                variant="outlined"
-                label="Haftalık Veriler"
-                placeholder="100,120,90,110,130,80,95,105"
-                value={weeklyData}
-                onChange={(e) => setWeeklyData(e.target.value)}
-                sx={{ mb: 2 }}
-              />
+      <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına 10 token harcanır</Typography>
+          </Box>
+        </CardContent>
+      </Card>
 
-              <Typography variant="body2" gutterBottom>
-                Lead Time (Gün): {leadTime}
-              </Typography>
-              <Slider
-                value={leadTime}
-                onChange={(_, val) => setLeadTime(val as number)}
-                min={1}
-                max={60}
-                step={1}
-                marks={[
-                  { value: 7, label: '7' },
-                  { value: 14, label: '14' },
-                  { value: 30, label: '30' },
-                  { value: 60, label: '60' },
-                ]}
-                valueLabelDisplay="auto"
-                sx={{ mb: 3 }}
-              />
+      {ssMutation.isPending && (
+        <Box sx={{ textAlign: 'center', py: 4 }}>
+          <CircularProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>6 SS metodu hesaplanıyor...</Typography>
+        </Box>
+      )}
 
-              <Typography variant="body2" gutterBottom>
-                Servis Seviyesi: {(serviceLevel * 100).toFixed(0)}%
-              </Typography>
-              <Slider
-                value={serviceLevel}
-                onChange={(_, val) => setServiceLevel(val as number)}
-                min={0.80}
-                max={0.99}
-                step={0.01}
-                marks={[
-                  { value: 0.90, label: '90%' },
-                  { value: 0.95, label: '95%' },
-                  { value: 0.99, label: '99%' },
-                ]}
-                valueLabelDisplay="auto"
-                sx={{ mb: 3 }}
-              />
-
-              <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
-                <Button
-                  variant="contained"
-                  startIcon={<Send />}
-                  onClick={handleSubmit}
-                  disabled={mutation.isPending}
-                  fullWidth
-                >
-                  {mutation.isPending ? 'Hesaplanıyor...' : 'Hesapla'}
-                </Button>
-                <Button variant="outlined" onClick={handleClear}>
-                  Temizle
-                </Button>
-              </Stack>
-
-              {mutation.isPending && (
-                <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                  <CircularProgress size={24} sx={{ mr: 2 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    6 metod hesaplanıyor...
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Sonuç Alanı */}
-        <Grid size={{ xs: 12, lg: 7 }}>
-          {result ? (
-            <Card>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
-                  Hesaplama Sonuçları
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-
-                <TableContainer component={Paper} variant="outlined">
-                  <Table>
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: 'primary.main' }}>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Metod</TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                          Emniyet Stoku
+      {results.length > 0 && (
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Sonuçlar ({results.length} malzeme)</Typography>
+            </Box>
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'primary.main' }}>
+                    <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Grup</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Klasik</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Croston</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">SB</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Bootstrap</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">ML</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Hibrit</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">En İyi</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {paginatedResults.map((result, idx) => {
+                    const best = getBestMethod(result);
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell>{result.material_code}</TableCell>
+                        <TableCell>{result.group}</TableCell>
+                        <TableCell align="right">{result.classic_ss?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="right">{result.croston_ss?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="right">{result.syntetos_boylan_ss?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="right">{result.bootstrapping_ss?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="right">{result.ml_ss?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          {result.hybrid_ss?.toFixed(0) || '-'}
                         </TableCell>
-                        <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">
-                          Durum
+                        <TableCell align="center">
+                          <Chip label={methodLabels[best] || best} size="small" color="success" />
                         </TableCell>
                       </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {Object.entries(result).map(([key, value]) => {
-                        const isBest = key === getBestMethod(result);
-                        return (
-                          <TableRow
-                            key={key}
-                            sx={{
-                              bgcolor: isBest ? 'success.light' : 'inherit',
-                              '&:hover': { bgcolor: 'action.hover' },
-                            }}
-                          >
-                            <TableCell>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                <Box
-                                  sx={{
-                                    width: 12,
-                                    height: 12,
-                                    borderRadius: '50%',
-                                    bgcolor: methodColors[key] || '#ccc',
-                                  }}
-                                />
-                                <Typography sx={{ fontWeight: isBest ? 'bold' : 'normal' }}>
-                                  {methodLabels[key] || key}
-                                </Typography>
-                                {isBest && (
-                                  <Chip
-                                    label="✅ En İyi"
-                                    size="small"
-                                    color="success"
-                                    sx={{ ml: 1 }}
-                                  />
-                                )}
-                              </Box>
-                            </TableCell>
-                            <TableCell align="right">
-                              <Typography sx={{ fontWeight: isBest ? 'bold' : 'normal' }}>
-                                {value.toFixed(2)}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="center">
-                              <Chip
-                                label={isBest ? 'Önerilen' : 'Alternatif'}
-                                size="small"
-                                color={isBest ? 'success' : 'default'}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <TablePagination
+                rowsPerPageOptions={[25, 50, 100, 200]}
+                component="div"
+                count={results.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                labelRowsPerPage="Sayfa başına satır:"
+                labelDisplayedRows={({ from, to, count }) => `${from}-${to} / ${count}`}
+              />
+            </TableContainer>
+          </CardContent>
+        </Card>
+      )}
 
-                {/* Özet Bilgi */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-                  <Typography variant="body2" color="info.dark">
-                    <strong>📌 Öneri:</strong>{' '}
-                    {getBestMethod(result) === 'hybrid_ss'
-                      ? 'Hibrit metod, tüm yöntemlerin ağırlıklı ortalamasını alır. En dengeli sonucu verir.'
-                      : `En düşük emniyet stoğu ${methodLabels[getBestMethod(result)]} metodu ile elde edilmiştir.`}
-                  </Typography>
-                </Box>
+      {!ssMutation.isPending && results.length === 0 && !error && hasUploadedData && (
+        <Card><CardContent sx={{ textAlign: 'center', py: 6 }}>
+          <Security sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+          <Typography variant="h6" color="text.secondary">Henüz analiz yapılmadı</Typography>
+          <Typography variant="body2" color="text.secondary">"Analiz Et" butonuna tıklayarak safety stock analizini başlatın.</Typography>
+        </CardContent></Card>
+      )}
 
-                {/* Metod Açıklamaları */}
-                <Box sx={{ mt: 2 }}>
-                  <Typography variant="caption" color="text.secondary" component="div">
-                    💡 <strong>Klasik SS:</strong> Normal dağılım varsayımı ile
-                    <br />
-                    💡 <strong>Croston:</strong> Aralıklı talep için geliştirilmiş
-                    <br />
-                    💡 <strong>Syntetos-Boylan:</strong> Croston'ın bias düzeltilmiş hali
-                    <br />
-                    💡 <strong>Bootstrapping:</strong> Simülasyon tabanlı
-                    <br />
-                    💡 <strong>ML Tabanlı:</strong> Özellik ağırlıklı (CV, zero_ratio, trend)
-                    <br />
-                    💡 <strong>Hibrit:</strong> Tüm metodların ağırlıklı ortalaması (önerilen)
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
+      {/* 📋 Geçmiş Dialog */}
+      <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">📋 Geçmiş Analiz Sonuçları</Typography>
+            <IconButton onClick={() => setHistoryDialogOpen(false)}><Close /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {historyData.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>Henüz geçmiş analiz kaydı yok.</Typography>
           ) : (
-            <Card>
-              <CardContent sx={{ textAlign: 'center', py: 8 }}>
-                <Security sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary">
-                  Henüz hesaplama yapılmadı
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Sol taraftaki alana verilerinizi girin ve "Hesapla" butonuna tıklayın.
-                </Typography>
-              </CardContent>
-            </Card>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'primary.main' }}>
+                    <TableCell sx={{ color: 'white' }}>Tarih</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Malzeme Sayısı</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Durum</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">İşlem</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {historyData.map((item) => {
+                    const total = item.data?.total || 0;
+                    const date = item.created_at ? new Date(item.created_at) : new Date();
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>{date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}</TableCell>
+                        <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
+                        <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
+                        <TableCell align="center">
+                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>Görüntüle</Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
-        </Grid>
-      </Grid>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setHistoryDialogOpen(false)}>Kapat</Button></DialogActions>
+      </Dialog>
     </Box>
   );
 }

@@ -1,8 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  TextField,
   Button,
   Card,
   CardContent,
@@ -10,17 +9,36 @@ import {
   Paper,
   Chip,
   CircularProgress,
-  Stack,
+  Alert,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Divider,
+  TablePagination,
 } from '@mui/material';
 import {
   Analytics,
-  Send, 
+  Send,
+  Download,
+  History,
+  Close,
+  Visibility,
 } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import api from '../services/api';
+import { useAuth } from '../hooks/useAuth';
 
 interface PatternResult {
+  material_code: string;
+  group: string;
   pattern: string;
   cv: number;
   zero_ratio: number;
@@ -30,32 +48,228 @@ interface PatternResult {
   median: number;
 }
 
-export default function PatternPage() {
-  const [weeklyData, setWeeklyData] = useState<string>('100,120,90,110,130,80,95,105');
-  const [result, setResult] = useState<PatternResult | null>(null);
+interface HistoryItem {
+  id: number;
+  created_at: string;
+  data: any;
+}
 
-  const mutation = useMutation({
-    mutationFn: async (data: number[]) => {
-      const res = await api.post('/api/pattern', { weekly_data: data });
+export default function PatternPage() {
+  const { user } = useAuth();
+  const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [results, setResults] = useState<PatternResult[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [historyData, setHistoryData] = useState<HistoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // 📌 Sayfalama state'leri
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
+
+  // ✅ Özet Dialog için state'ler
+  const [viewDialogOpen, setViewDialogOpen] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
+
+  useEffect(() => {
+    checkUploadedData();
+  }, []);
+
+  const checkUploadedData = async () => {
+    try {
+      const res = await api.get('/api/upload/status');
+      setHasUploadedData(res.data.has_data);
+    } catch {
+      setHasUploadedData(false);
+    }
+  };
+
+  const patternMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/pattern/batch');
       return res.data;
     },
     onSuccess: (data) => {
-      setResult(data);
+      if (data.success) {
+        setResults(data.results || []);
+        setPage(0); // ✅ Yeni sonuçlarda ilk sayfaya dön
+        setError(null);
+        setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla analiz edildi.`);
+        setTimeout(() => setSuccess(null), 5000);
+      } else {
+        setError(data.error || 'Analiz başarısız');
+      }
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Analiz sırasında hata oluştu');
     },
   });
 
-  const handleSubmit = () => {
-    const data = weeklyData.split(',').map((v) => parseFloat(v.trim()));
-    if (data.some(isNaN)) {
-      alert('Lütfen geçerli sayılar girin!');
-      return;
+  // ✅ Geçmiş sonuçları getir (Özetlenmiş - Tek satır)
+  // ✅ Geçmiş sonuçları getir (Tarih+Saat bazında 1 satır)
+  const fetchHistory = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { result_type: 'pattern_batch' }
+      });
+      console.log('📋 Geçmiş cevabı:', res.data);
+      
+      if (res.data.success) {
+        const rawResults = res.data.results || [];
+        
+        // 📌 Tarih+Saat bazında grupla (dakika hassasiyetinde)
+        const groupedMap = new Map();
+        
+        rawResults.forEach((item: any) => {
+          const date = item.created_at ? new Date(item.created_at) : new Date();
+          // Tarih+Saat (dakika bazında) key oluştur
+          const key = date.toISOString().slice(0, 16); // "2026-06-22T13:28"
+          
+          if (!groupedMap.has(key)) {
+            groupedMap.set(key, {
+              id: item.id,
+              created_at: item.created_at,
+              total: 0,
+              items: []
+            });
+          }
+          
+          const group = groupedMap.get(key);
+          group.total += 1;
+          group.items.push(item);
+        });
+        
+        // ✅ Group'ları diziye çevir
+        const groupedResults = Array.from(groupedMap.values()).map(group => {
+          // İlk kaydın verilerini al (tüm kayıtlar aynı veriyi içerir)
+          const firstItem = group.items[0];
+          const resultData = firstItem.data || firstItem.result_data || {};
+          let allResults = [];
+          
+          if (resultData.results && Array.isArray(resultData.results)) {
+            allResults = resultData.results;
+          } else if (resultData.material_code) {
+            allResults = [resultData];
+          }
+          
+          return {
+            id: group.id,
+            created_at: group.created_at,
+            data: {
+              total: allResults.length,
+              results: allResults
+            }
+          };
+        });
+        
+        setHistoryData(groupedResults);
+        setHistoryDialogOpen(true);
+        setError(null);
+      } else {
+        setError('Geçmiş sonuçlar yüklenemedi');
+      }
+    } catch (err: any) {
+      console.error('❌ Geçmiş hatası:', err);
+      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+    } finally {
+      setLoading(false);
     }
-    mutation.mutate(data);
   };
 
-  const handleClear = () => {
-    setWeeklyData('');
-    setResult(null);
+
+  // ✅ Geçmiş sonucu görüntüle (Ana tabloya aktar)
+  // ✅ Geçmiş sonucu görüntüle (Seçilen tarih/saatteki verileri ana tabloya aktar)
+  const handleViewHistory = (item: HistoryItem) => {
+    const historyResults = item.data?.results || [];
+    
+    if (historyResults.length > 0) {
+      setResults(historyResults);
+      setPage(0);
+      setHistoryDialogOpen(false);
+      setSuccess(`${historyResults.length} malzeme geçmiş sonuçları yüklendi.`);
+      setTimeout(() => setSuccess(null), 3000);
+    } else {
+      setError('Bu kayıtta görüntülenecek sonuç yok');
+    }
+  };
+
+  // ✅ Sayfalama işlevleri
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  // ✅ Mevcut sayfadaki veriler
+  const paginatedResults = results.slice(
+    page * rowsPerPage,
+    page * rowsPerPage + rowsPerPage
+  );
+
+  const handleExport = async () => {
+    if (results.length === 0) {
+      setError('Aktarılacak sonuç yok!');
+      return;
+    }
+
+    try {
+      const response = await api.post('/api/export/pattern-results', {
+        results: results,
+      }, {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `pattern_analiz_${new Date().toISOString().slice(0,10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess('Excel dosyası başarıyla indirildi.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError('Excel dosyası oluşturulamadı');
+    }
+  };
+
+  const handleExportHistory = async () => {
+    if (!selectedHistory) return;
+    
+    const results = selectedHistory.data?.results || [];
+    if (results.length === 0) {
+      setError('Aktarılacak sonuç yok!');
+      return;
+    }
+
+    try {
+      const response = await api.post('/api/export/pattern-results', {
+        results: results,
+      }, {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `pattern_analiz_${new Date().toISOString().slice(0,10)}.xlsx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess('Excel dosyası başarıyla indirildi.');
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError('Excel dosyası oluşturulamadı');
+    }
   };
 
   const getPatternColor = (pattern: string) => {
@@ -74,190 +288,364 @@ export default function PatternPage() {
   };
 
   const getPatternLabel = (pattern: string) => {
-    switch (pattern) {
-      case 'DUZENLI_SABIT': return 'Düzenli Sabit Talep';
-      case 'DUZENLI_ARTS': return 'Düzenli Artan Talep';
-      case 'DUZENLI_AZALIS': return 'Düzenli Azalan Talep';
-      case 'DEGISKEN': return 'Değişken Talep';
-      case 'YUKSEK_DEGISKEN': return 'Yüksek Değişken Talep';
-      case 'ASIRI_DEGISKEN': return 'Aşırı Değişken Talep';
-      case 'SIFIR_TALEP': return 'Sıfır Talep';
-      case 'ARALIKLI_DUSUK': return 'Aralıklı Düşük Talep';
-      case 'ARALIKLI_YUKSEK': return 'Aralıklı Yüksek Talep';
-      default: return pattern;
-    }
+    const labels: Record<string, string> = {
+      'DUZENLI_SABIT': 'Düzenli Sabit',
+      'DUZENLI_ARTS': 'Düzenli Artan',
+      'DUZENLI_AZALIS': 'Düzenli Azalan',
+      'DEGISKEN': 'Değişken',
+      'YUKSEK_DEGISKEN': 'Yüksek Değişken',
+      'ASIRI_DEGISKEN': 'Aşırı Değişken',
+      'SIFIR_TALEP': 'Sıfır Talep',
+      'ARALIKLI_DUSUK': 'Aralıklı Düşük',
+      'ARALIKLI_YUKSEK': 'Aralıklı Yüksek',
+    };
+    return labels[pattern] || pattern;
   };
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ fontWeight: 'bold' }} gutterBottom>
-        📊 Pattern Analizi
-      </Typography>
-      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
-        Talep paterni analizi ile verilerinizin karakteristik özelliklerini keşfedin.
-      </Typography>
-
-      <Grid container spacing={3}>
-        {/* Giriş Alanı */}
-        <Grid size={{ xs: 12, lg: 5 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
-                Veri Girişi
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Haftalık talep verilerinizi virgülle ayrılmış şekilde girin.
-              </Typography>
-              <TextField
-                fullWidth
-                multiline
-                rows={4}
-                variant="outlined"
-                label="Haftalık Veriler"
-                placeholder="100,120,90,110,130,80,95,105"
-                value={weeklyData}
-                onChange={(e) => setWeeklyData(e.target.value)}
-                sx={{ mb: 2 }}
-              />
-              <Stack direction="row" spacing={2}>
-                <Button
-                  variant="contained"
-                  startIcon={<Send />}
-                  onClick={handleSubmit}
-                  disabled={mutation.isPending}
-                >
-                  {mutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
-                </Button>
-                <Button variant="outlined" onClick={handleClear}>
-                  Temizle
-                </Button>
-              </Stack>
-              {mutation.isPending && (
-                <Box sx={{ display: 'flex', alignItems: 'center', mt: 2 }}>
-                  <CircularProgress size={24} sx={{ mr: 2 }} />
-                  <Typography variant="body2" color="text.secondary">
-                    Analiz yapılıyor...
-                  </Typography>
-                </Box>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Sonuç Alanı */}
-        <Grid size={{ xs: 12, lg: 7 }}>
-          {result ? (
-            <Card>
-              <CardContent>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }} gutterBottom>
-                  Analiz Sonucu
-                </Typography>
-                <Divider sx={{ mb: 2 }} />
-
-                {/* Pattern */}
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 'medium' }}>
-                    Pattern:
-                  </Typography>
-                  <Chip
-                    label={getPatternLabel(result.pattern)}
-                    color={getPatternColor(result.pattern)}
-                    icon={<Analytics />}
-                  />
-                </Box>
-
-                {/* İstatistik Grid'i */}
-                <Grid container spacing={2}>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.default' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        CV (Değişim Katsayısı)
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        {result.cv.toFixed(4)}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.default' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Zero Ratio
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        {result.zero_ratio.toFixed(4)}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.default' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Trend
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold', color: result.trend >= 0 ? 'success.main' : 'error.main' }}>
-                        {result.trend.toFixed(2)}%
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.default' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Ortalama
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        {result.mean.toFixed(2)}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.default' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Standart Sapma
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        {result.std.toFixed(2)}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                  <Grid size={{ xs: 6, sm: 4 }}>
-                    <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'background.default' }}>
-                      <Typography variant="caption" color="text.secondary">
-                        Medyan
-                      </Typography>
-                      <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                        {result.median.toFixed(2)}
-                      </Typography>
-                    </Paper>
-                  </Grid>
-                </Grid>
-
-                {/* Yorum */}
-                <Box sx={{ mt: 3, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-                  <Typography variant="body2" color="info.dark">
-                    <strong>📌 Yorum:</strong>{' '}
-                    {result.cv > 0.7
-                      ? 'Talep yüksek değişkenlik gösteriyor. Emniyet stoğu artırılmalı.'
-                      : result.cv > 0.4
-                      ? 'Talep orta düzeyde değişken. Düzenli takip önerilir.'
-                      : 'Talep düzenli ve öngörülebilir. Mevcut politika yeterli.'}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent sx={{ textAlign: 'center', py: 8 }}>
-                <Analytics sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" color="text.secondary">
-                  Henüz analiz yapılmadı
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Sol taraftaki alana verilerinizi girin ve "Analiz Et" butonuna tıklayın.
-                </Typography>
-              </CardContent>
-            </Card>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
+            📊 Pattern Analizi
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            Yüklenen tüm malzemelerin talep pattern'lerini analiz eder.
+            <Chip 
+              label="5 Token" 
+              size="small" 
+              color="warning" 
+              sx={{ ml: 1 }} 
+            />
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="outlined"
+            startIcon={<History />}
+            onClick={fetchHistory}
+            disabled={loading}
+          >
+            {loading ? 'Yükleniyor...' : 'Geçmiş'}
+          </Button>
+          {results.length > 0 && (
+            <Button
+              variant="outlined"
+              startIcon={<Download />}
+              onClick={handleExport}
+            >
+              Excel'e Aktar
+            </Button>
           )}
-        </Grid>
-      </Grid>
+          <Button
+            variant="contained"
+            startIcon={patternMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => patternMutation.mutate()}
+            disabled={patternMutation.isPending || !hasUploadedData}
+          >
+            {patternMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
+        </Box>
+      </Box>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+      {success && (
+        <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>
+          {success}
+        </Alert>
+      )}
+      
+      {!hasUploadedData && !results.length && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.
+        </Alert>
+      )}
+
+      <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="body2">
+              💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong>
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Analiz başına 5 token harcanır
+            </Typography>
+          </Box>
+        </CardContent>
+      </Card>
+
+      {patternMutation.isPending && (
+        <Box sx={{ textAlign: 'center', py: 4 }}>
+          <CircularProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            Malzemeler analiz ediliyor...
+          </Typography>
+        </Box>
+      )}
+
+      {results.length > 0 && (
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Sonuçlar ({results.length} malzeme)
+              </Typography>
+            </Box>
+
+            <TableContainer component={Paper} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'primary.main' }}>
+                    <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Grup</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Pattern</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">CV</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Zero Ratio</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Trend</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {paginatedResults.map((result, idx) => (
+                    <TableRow key={idx}>
+                      <TableCell>{result.material_code}</TableCell>
+                      <TableCell>{result.group}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={getPatternLabel(result.pattern)}
+                          size="small"
+                          color={getPatternColor(result.pattern)}
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="right">{result.cv.toFixed(4)}</TableCell>
+                      <TableCell align="right">{result.zero_ratio.toFixed(4)}</TableCell>
+                      <TableCell align="right" sx={{ color: result.trend >= 0 ? 'success.main' : 'error.main' }}>
+                        {result.trend.toFixed(2)}%
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <TablePagination
+                rowsPerPageOptions={[25, 50, 100, 200]}
+                component="div"
+                count={results.length}
+                rowsPerPage={rowsPerPage}
+                page={page}
+                onPageChange={handleChangePage}
+                onRowsPerPageChange={handleChangeRowsPerPage}
+                labelRowsPerPage="Sayfa başına satır:"
+                labelDisplayedRows={({ from, to, count }) => `${from}-${to} / ${count}`}
+              />
+            </TableContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {!patternMutation.isPending && results.length === 0 && !error && hasUploadedData && (
+        <Card>
+          <CardContent sx={{ textAlign: 'center', py: 6 }}>
+            <Analytics sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary">
+              Henüz analiz yapılmadı
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              "Analiz Et" butonuna tıklayarak pattern analizini başlatın.
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 📋 Geçmiş Dialog */}
+      <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">📋 Geçmiş Analiz Sonuçları</Typography>
+            <IconButton onClick={() => setHistoryDialogOpen(false)}>
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {historyData.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+              Henüz geçmiş analiz kaydı yok.
+            </Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: 'primary.main' }}>
+                    <TableCell sx={{ color: 'white' }}>Tarih</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Malzeme Sayısı</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Durum</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">İşlem</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {historyData.map((item) => {
+                    const totalMaterials = item.data?.total || 0;
+                    const createdAt = item.created_at ? new Date(item.created_at) : new Date();
+                    
+                    return (
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          {createdAt.toLocaleDateString('tr-TR')} {createdAt.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip label={`${totalMaterials}`} size="small" color="primary" />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip label="Başarılı" size="small" color="success" />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Button 
+                            size="small" 
+                            variant="outlined"
+                            startIcon={<Visibility />}
+                            onClick={() => handleViewHistory(item)}
+                          >
+                            Görüntüle
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHistoryDialogOpen(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 📊 Geçmiş Özet Dialog */}
+      <Dialog open={viewDialogOpen} onClose={() => setViewDialogOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">📊 Analiz Özeti</Typography>
+            <IconButton onClick={() => setViewDialogOpen(false)}>
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedHistory ? (
+            <Box>
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.light', color: 'white' }}>
+                    <Typography variant="caption">Toplam Malzeme</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                      {selectedHistory.data?.total || 0}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.light', color: 'white' }}>
+                    <Typography variant="caption">Başarılı</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                      {selectedHistory.data?.results?.filter((r: any) => r.pattern !== 'SIFIR_TALEP').length || 0}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.light', color: 'white' }}>
+                    <Typography variant="caption">Sıfır Talep</Typography>
+                    <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+                      {selectedHistory.data?.results?.filter((r: any) => r.pattern === 'SIFIR_TALEP').length || 0}
+                    </Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'info.light', color: 'white' }}>
+                    <Typography variant="caption">Tarih</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                      {selectedHistory.created_at ? new Date(selectedHistory.created_at).toLocaleDateString('tr-TR') : '-'}
+                    </Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+
+              <Divider sx={{ mb: 2 }} />
+
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Pattern Dağılımı
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
+                {selectedHistory.data?.results?.reduce((acc: any, r: any) => {
+                  acc[r.pattern] = (acc[r.pattern] || 0) + 1;
+                  return acc;
+                }, {}) && Object.entries(
+                  selectedHistory.data?.results?.reduce((acc: any, r: any) => {
+                    acc[r.pattern] = (acc[r.pattern] || 0) + 1;
+                    return acc;
+                  }, {}) || {}
+                ).map(([pattern, count]: [string, any]) => (
+                  <Chip
+                    key={pattern}
+                    label={`${getPatternLabel(pattern)}: ${count}`}
+                    size="small"
+                    color={getPatternColor(pattern)}
+                    variant="outlined"
+                  />
+                ))}
+              </Box>
+
+              <Divider sx={{ mb: 2 }} />
+
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                Malzeme Listesi
+              </Typography>
+              <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 300 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.100' }}>
+                      <TableCell>Malzeme Kodu</TableCell>
+                      <TableCell>Pattern</TableCell>
+                      <TableCell align="right">CV</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {(selectedHistory.data?.results || []).map((result: any, idx: number) => (
+                      <TableRow key={idx}>
+                        <TableCell>{result.material_code}</TableCell>
+                        <TableCell>
+                          <Chip
+                            label={getPatternLabel(result.pattern)}
+                            size="small"
+                            color={getPatternColor(result.pattern)}
+                            variant="outlined"
+                          />
+                        </TableCell>
+                        <TableCell align="right">{result.cv?.toFixed(4) || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          ) : (
+            <CircularProgress />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            variant="contained" 
+            startIcon={<Download />}
+            onClick={handleExportHistory}
+          >
+            Excel'e Aktar
+          </Button>
+          <Button onClick={() => setViewDialogOpen(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

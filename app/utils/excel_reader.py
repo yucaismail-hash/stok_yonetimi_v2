@@ -152,15 +152,25 @@ class ExcelReader:
         if not material_code or pd.isna(material_code):
             return None
         
-        # W verilerini al
+        # 📌 HAFTA VERİLERİNİ DOĞRUDAN OKU
         demand = []
         for week_col in week_cols:
             val = row.get(week_col)
+            # ✅ Doğrudan float değerini al
             demand.append(self._safe_float(val))
+        
+        # 📌 DEBUG: Kontrol et
+        print(f"🔍 {material_code} W verileri: {demand[:12]}")
         
         # En az 12 hafta kontrolü
         if len(demand) < self.min_weeks:
+            print(f"⚠️ {material_code}: {len(demand)} hafta veri var, en az {self.min_weeks} gerekli")
             return None
+        
+        # 📌 Sıfır kontrolü - Tüm değerler sıfırsa uyarı ver
+        if all(d == 0 for d in demand[:self.min_weeks]):
+            print(f"⚠️ {material_code}: Tüm W değerleri sıfır!")
+            # Yine de devam et, pattern SIFIR_TALEP olacak
         
         # Malzeme objesi
         material = {
@@ -173,10 +183,10 @@ class ExcelReader:
             'unit_cost': self._safe_float(row.get('Birim_Maliyet', 100)),
             'holding_rate': self._safe_float(row.get('Stok_Tutma_Oranı', 0.2)),
             'shortage_cost': self._safe_float(row.get('Stok_Tukenme_Maliyeti', 500)),
-            'historical_demand': demand[:self.max_weeks]  # ilk 156 hafta
+            'historical_demand': demand[:self.max_weeks]
         }
         return material
-    
+
     def _process_supplier_mapping(self, df: pd.DataFrame) -> Dict[str, List[Dict]]:
         """Malzeme-Tedarikçi eşleştirmeleri"""
         mapping = {}
@@ -212,17 +222,27 @@ class ExcelReader:
         return suppliers
     
     def _safe_float(self, value) -> float:
+        """Güvenli float dönüşümü - Virgüllü sayıları düzgün işle"""
         try:
             if pd.isna(value) or value is None:
                 return 0.0
             if isinstance(value, (int, float)):
-                return float(value) if not np.isinf(value) and not np.isnan(value) else 0.0
+                # NaN ve Inf kontrolü
+                if np.isnan(value) or np.isinf(value):
+                    return 0.0
+                return float(value)
             if isinstance(value, str):
                 value = str(value).strip()
+                # ✅ Virgülü noktaya çevir (Türkçe format)
+                value = value.replace(',', '.')
+                # Formül kontrolü
                 if value.startswith('='):
-                    return 0.0  # Formülleri geçici olarak 0 kabul et
-                value = value.replace(',', '.').replace(' ', '')
-                return float(value) if value else 0.0
+                    return 0.0
+                # Boş veya geçersiz
+                if not value or value == '':
+                    return 0.0
+                return float(value)
             return 0.0
-        except:
+        except Exception as e:
+            print(f"⚠️ _safe_float hatası: {value} -> {e}")
             return 0.0

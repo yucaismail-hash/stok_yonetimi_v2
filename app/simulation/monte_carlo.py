@@ -21,9 +21,10 @@ class MonteCarloInventorySimulator:
     
     # ==================== REJİM MODÜLÜ (Basit 2-rejim) ====================
     def _fit_regime_model(self, historical_demand):
-        """Basit 2-rejim: LOW/HIGH (median bazlı)"""
+        """Basit 2-rejim: LOW/HIGH (median bazlı) - 12 hafta yeterli"""
         hist = np.array(historical_demand)
         if len(hist) < 12:
+            print(f"⚠️ Rejim için yetersiz veri: {len(hist)} hafta")
             self._regime_ready = False
             return
         
@@ -42,6 +43,7 @@ class MonteCarloInventorySimulator:
         }
         self._regime_trans = np.array([[0.85, 0.15], [0.20, 0.80]])
         self._regime_ready = True
+        print(f"✅ Rejim modeli hazır: Low={low_mean:.1f}, High={high_mean:.1f}")
     
     def _sample_regime(self, prev_regime):
         if not self._regime_ready:
@@ -61,7 +63,6 @@ class MonteCarloInventorySimulator:
         normal_sample = max(-3, min(3, normal_sample))
         v_conditional = stats.norm.cdf(normal_sample)
         v_conditional = max(0.001, min(0.999, v_conditional))
-        # Log-normal lead time
         mu = np.log(lt_mean**2 / np.sqrt(lt_std**2 + lt_mean**2))
         sigma = np.sqrt(np.log(1 + (lt_std**2 / lt_mean**2)))
         leadtime = stats.lognorm.ppf(v_conditional, s=sigma, scale=np.exp(mu))
@@ -77,24 +78,19 @@ class MonteCarloInventorySimulator:
                  review_period=4, inc_rate=0.08, dec_rate=0.03):
         """
         Monte Carlo simülasyonu - Gelişmiş modüller seçimli.
-        
-        Args:
-            use_regime: Rejim değişimi kullan (historical_demand gerekli)
-            historical_demand: Rejim için geçmiş talep listesi
-            use_copula: Talep-lead time bağımlılığı (copula)
-            correlation: Copula korelasyon katsayısı
-            use_adaptive_ss: Adaptive ROP güncelleme
-            target_service: Adaptive SS hedef servis seviyesi
-            review_period: Adaptive SS güncelleme periyodu (hafta)
-            inc_rate/dec_rate: Adaptive SS artış/azalış oranları
         """
         n_sim = self.n_simulations
         
-        # Rejim modelini hazırla
+        # ✅ Rejim modelini hazırla (12 hafta yeterli)
+        regime_used = False
         if use_regime and historical_demand and len(historical_demand) >= 12:
             self._fit_regime_model(historical_demand)
-        else:
-            use_regime = False
+            regime_used = True
+            print(f"✅ Rejim modeli aktif: {len(historical_demand)} hafta veri ile")
+        elif use_regime and historical_demand:
+            self._fit_regime_model(historical_demand)
+            regime_used = True
+            print(f"⚠️ Rejim modeli aktif (az veri): {len(historical_demand)} hafta ile")
         
         # Sonuç matrisleri
         stock_paths = np.zeros((n_sim, weeks))
@@ -107,7 +103,6 @@ class MonteCarloInventorySimulator:
             regime_state = 0
             rop_current = rop
             
-            # Adaptive SS için pencere
             recent_stockout_flags = []
             recent_demand = []
             
@@ -118,7 +113,7 @@ class MonteCarloInventorySimulator:
                     del open_orders[week]
                 
                 # ---- TALEP ÜRETİMİ (Rejimli veya normal) ----
-                if use_regime and self._regime_ready:
+                if use_regime and regime_used and self._regime_ready:
                     regime_state = self._sample_regime(regime_state)
                     mean_d = self._regime_params['low' if regime_state == 0 else 'high'][0]
                     std_d = self._regime_params['low' if regime_state == 0 else 'high'][1]
@@ -169,9 +164,7 @@ class MonteCarloInventorySimulator:
                 if stock + sum(open_orders.values()) < rop_current:
                     order_qty = eoq
                     
-                    # LEAD TIME (Copula veya normal)
                     if use_copula:
-                        # Talep yüzdelik dilimini hesapla
                         if historical_demand:
                             percentile = np.sum(np.array(historical_demand) <= demand) / len(historical_demand)
                         else:
@@ -212,7 +205,7 @@ class MonteCarloInventorySimulator:
             'expected_shortage': np.mean(shortage_paths, axis=0).tolist(),
             'service_level': float(service_level),
             'cvar_95': float(cvar_95),
-            'regime_used': use_regime,
+            'regime_used': regime_used,
             'copula_used': use_copula,
             'adaptive_ss_used': use_adaptive_ss
         }
