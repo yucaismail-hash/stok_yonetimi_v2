@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from app.api.endpoints.upload import get_user_upload_data
 import numpy as np
+import itertools
 
 router = APIRouter()
 forecaster = DemandForecaster()
@@ -19,15 +20,12 @@ class ForecastRequest(BaseModel):
     model_type: Optional[str] = "auto"
 
 class BatchForecastRequest(BaseModel):
-    horizon: int = 4
+    horizon: int = 4  # ✅ Kullanıcı tarafından belirlenecek (4-52)
     model_type: str = "auto"
 
 
 @router.post("/forecast")
 def get_forecast(request: ForecastRequest):
-    """
-    Tek malzeme tahmin (mevcut)
-    """
     try:
         result = forecaster.forecast(
             request.historical_data,
@@ -46,7 +44,7 @@ def forecast_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Toplu Forecast analizi - Kullanıcı model seçebilir.
+    Toplu Forecast analizi - Kullanıcı model ve horizon seçebilir.
     Token maliyeti: 8 token
     """
     try:
@@ -60,10 +58,10 @@ def forecast_batch(
         
         print(f"✅ {len(materials)} malzeme bulundu")
         
-        horizon = request.horizon or 4
-        user_model = request.model_type or "auto"  # ✅ Kullanıcı seçimi
+        horizon = request.horizon or 4  # ✅ Kullanıcı seçimi (4-52)
+        user_model = request.model_type or "auto"
         
-        print(f"📌 Kullanıcı seçimi: {user_model}")  # ✅ DEBUG
+        print(f"📌 Kullanıcı seçimi: Model={user_model}, Horizon={horizon} hafta")
         
         # 📌 Model etiketleri
         model_labels = {
@@ -93,33 +91,26 @@ def forecast_batch(
             try:
                 # 📌 Kullanıcının seçtiği modeli kullan
                 if user_model != "auto":
-                    # 📌 Kullanıcı belirli bir model seçti - DOĞRUDAN KULLAN
                     selected_model = user_model
                     result = forecaster.forecast(weekly_data, horizon=horizon, model_type=selected_model)
                     
                     # 📌 Seçilen modelin RMSE'sini hesapla
-                    rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=4)
+                    rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=min(4, len(weekly_data)//2))
                     rmse_val = rmse.get('mape', 999) if rmse else 999
                     
                     # 📌 Diğer modelleri de hesapla (karşılaştırma için)
                     all_models = {}
-                    for model_name in ['holt_winters', 'arima', 'simple']:
+                    for model_name in ['holt_winters', 'arima', 'simple', 'auto']:
                         try:
                             model_result = forecaster.forecast(weekly_data, horizon=horizon, model_type=model_name)
-                            model_rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=4)
+                            model_rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=min(4, len(weekly_data)//2))
                             model_rmse_val = model_rmse.get('mape', 999) if model_rmse else 999
-                            all_models[model_name] = {'rmse': model_rmse_val}
+                            all_models[model_name] = {
+                                'rmse': model_rmse_val,
+                                'forecast': model_result.get('mean', [0] * horizon)[:horizon]
+                            }
                         except:
-                            all_models[model_name] = {'rmse': 999}
-                    
-                    # 📌 Auto modeli de ekle
-                    try:
-                        auto_result = forecaster.forecast(weekly_data, horizon=horizon, model_type='auto')
-                        auto_rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=4)
-                        auto_rmse_val = auto_rmse.get('mape', 999) if auto_rmse else 999
-                        all_models['auto'] = {'rmse': auto_rmse_val}
-                    except:
-                        all_models['auto'] = {'rmse': 999}
+                            all_models[model_name] = {'rmse': 999, 'forecast': [0] * horizon}
                     
                     selection_reason = f"Kullanıcı tarafından {model_labels.get(selected_model, selected_model)} seçildi."
                     
@@ -135,23 +126,20 @@ def forecast_batch(
                     for model_name in ['holt_winters', 'arima', 'simple', 'auto']:
                         try:
                             result = forecaster.forecast(weekly_data, horizon=horizon, model_type=model_name)
-                            rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=4)
+                            rmse = forecaster.get_forecast_accuracy(weekly_data, test_horizon=min(4, len(weekly_data)//2))
                             rmse_val = rmse.get('mape', 999) if rmse else 999
                             
-                            # 📌 Veri azsa ceza uygula
-                            if model_name == 'holt_winters' and len(weekly_data) < 52:
-                                rmse_val = rmse_val * 1.5
-                            elif model_name == 'arima' and len(weekly_data) < 26:
-                                rmse_val = rmse_val * 1.3
-                            
-                            all_models[model_name] = {'rmse': rmse_val}
+                            all_models[model_name] = {
+                                'rmse': rmse_val,
+                                'forecast': result.get('mean', [0] * horizon)[:horizon]
+                            }
                             
                             if rmse_val < best_score:
                                 best_score = rmse_val
                                 best_model = model_name
                                 best_result = result
                         except Exception as e:
-                            all_models[model_name] = {'rmse': 999}
+                            all_models[model_name] = {'rmse': 999, 'forecast': [0] * horizon}
                     
                     # 📌 En iyi modeli seç
                     if best_model is None:
@@ -170,11 +158,11 @@ def forecast_batch(
                     print(f"📌 Otomatik seçim: {selected_model}, RMSE: {best_score}")
                 
                 # 📌 Tahmin değerleri
-                forecast_mean = result.get('mean', [0] * horizon)
-                lower_80 = result.get('lower_80', [0] * horizon)
-                upper_80 = result.get('upper_80', [0] * horizon)
-                lower_95 = result.get('lower_95', [0] * horizon)
-                upper_95 = result.get('upper_95', [0] * horizon)
+                forecast_mean = result.get('mean', [0] * horizon)[:horizon]
+                lower_80 = result.get('lower_80', [0] * horizon)[:horizon]
+                upper_80 = result.get('upper_80', [0] * horizon)[:horizon]
+                lower_95 = result.get('lower_95', [0] * horizon)[:horizon]
+                upper_95 = result.get('upper_95', [0] * horizon)[:horizon]
                 
                 # 📌 Trend
                 if len(forecast_mean) >= 2:
@@ -186,6 +174,14 @@ def forecast_batch(
                 
                 # 📌 RMSE değeri
                 rmse_val = all_models.get(selected_model, {}).get('rmse', 999)
+                
+                # 📌 Model karşılaştırma tablosu için
+                model_comparison = {}
+                for model_name, model_data in all_models.items():
+                    model_comparison[model_name] = {
+                        'rmse': model_data.get('rmse', 999),
+                        'forecast': model_data.get('forecast', [0] * horizon)[:horizon]
+                    }
                 
                 results.append({
                     'material_code': material.get('code', ''),
@@ -203,7 +199,7 @@ def forecast_batch(
                     'trend_direction': trend_direction,
                     'trend_percent': round(trend_percent, 1),
                     'model_rmse': rmse_val if rmse_val < 999 else None,
-                    'all_models': all_models
+                    'model_comparison': model_comparison
                 })
                 
                 print(f"✅ {material.get('code')}: Seçilen = {selected_model}, RMSE = {rmse_val}")
@@ -240,17 +236,3 @@ def forecast_batch(
     except Exception as e:
         print(f"❌ Forecast batch hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
-
-@router.get("/forecast/info")
-def get_forecast_info():
-    """Forecast modülü hakkında bilgi verir."""
-    return {
-        "available_models": ["auto", "holt_winters", "arima", "simple"],
-        "requirements": {
-            "holt_winters": "En az 104 hafta (2 yıl) veri önerilir",
-            "arima": "En az 26 hafta veri önerilir",
-            "simple": "En az 8 hafta veri gerekir"
-        },
-        "auto_selection": "Veri uzunluğuna göre en uygun model otomatik seçilir",
-        "output": "Tahmin ortalaması + %80 ve %95 güven aralıkları"
-    }

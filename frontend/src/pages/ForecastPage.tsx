@@ -29,6 +29,8 @@ import {
   Select,
   MenuItem,
   Stack,
+  Slider,
+  TextField,
 } from '@mui/material';
 import {
   ShowChart,
@@ -61,7 +63,7 @@ interface ForecastResult {
   trend_direction: string;
   trend_percent: number;
   model_rmse: number | null;
-  all_models: Record<string, any>;
+  model_comparison: Record<string, any>;
 }
 
 interface HistoryItem {
@@ -82,6 +84,9 @@ export default function ForecastPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [selectedModel, setSelectedModel] = useState('auto');
+  const [horizon, setHorizon] = useState(4);
+  const [showComparison, setShowComparison] = useState(false);
+  const [selectedMaterial, setSelectedMaterial] = useState<ForecastResult | null>(null);
 
   useEffect(() => {
     checkUploadedData();
@@ -99,7 +104,7 @@ export default function ForecastPage() {
   const forecastMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post('/api/forecast/batch', {
-        horizon: 4,
+        horizon: horizon,
         model_type: selectedModel
       });
       return res.data;
@@ -242,6 +247,11 @@ export default function ForecastPage() {
     auto: 'Otomatik'
   };
 
+  const handleCompare = (result: ForecastResult) => {
+    setSelectedMaterial(result);
+    setShowComparison(true);
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
@@ -280,11 +290,11 @@ export default function ForecastPage() {
         <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
       )}
 
-      {/* 📌 Model Seçimi Kartı */}
+      {/* 📌 Parametre Kartı */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <Box sx={{ minWidth: 200 }}>
+          <Grid container spacing={3} sx={{ alignItems: 'center' }}>
+            <Grid size={{ xs: 12, md: 4 }}>
               <FormControl fullWidth>
                 <InputLabel>Model Seçimi</InputLabel>
                 <Select
@@ -298,14 +308,35 @@ export default function ForecastPage() {
                   <MenuItem value="simple">📉 Basit (MA+Trend)</MenuItem>
                 </Select>
               </FormControl>
-            </Box>
-            <Typography variant="caption" color="text.secondary">
-              {selectedModel === 'auto' && 'Veriye göre en uygun modeli otomatik seçer.'}
-              {selectedModel === 'holt_winters' && 'Mevsimsel desenler için, 52+ hafta veri önerilir.'}
-              {selectedModel === 'arima' && 'Trend ve otokorelasyon için, 26+ hafta veri önerilir.'}
-              {selectedModel === 'simple' && 'Hızlı ve basit, az veri için idealdir.'}
-            </Typography>
-          </Box>
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Typography variant="body2" gutterBottom>
+                Tahmin Ufku: {horizon} Hafta
+              </Typography>
+              <Slider
+                value={horizon}
+                onChange={(_, val) => setHorizon(val as number)}
+                min={4}
+                max={52}
+                step={1}
+                marks={[
+                  { value: 4, label: '4' },
+                  { value: 12, label: '12' },
+                  { value: 26, label: '26' },
+                  { value: 52, label: '52' },
+                ]}
+                valueLabelDisplay="auto"
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <Typography variant="caption" color="text.secondary">
+                {selectedModel === 'auto' && 'Veriye göre en uygun modeli otomatik seçer.'}
+                {selectedModel === 'holt_winters' && 'Mevsimsel desenler için, 52+ hafta veri önerilir.'}
+                {selectedModel === 'arima' && 'Trend ve otokorelasyon için, 26+ hafta veri önerilir.'}
+                {selectedModel === 'simple' && 'Hızlı ve basit, az veri için idealdir.'}
+              </Typography>
+            </Grid>
+          </Grid>
         </CardContent>
       </Card>
 
@@ -351,7 +382,9 @@ export default function ForecastPage() {
       {forecastMutation.isPending && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <CircularProgress />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Model çalıştırılıyor...</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            {horizon} haftalık tahmin yapılıyor...
+          </Typography>
         </Box>
       )}
 
@@ -373,10 +406,8 @@ export default function ForecastPage() {
                     <TableCell sx={{ color: 'white' }}>Seçilen Model</TableCell>
                     <TableCell sx={{ color: 'white' }} align="center">Trend</TableCell>
                     <TableCell sx={{ color: 'white' }} align="center">H1</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">H2</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">H3</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">H4</TableCell>
-                    <TableCell sx={{ color: 'white' }}>Model Açıklaması</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">H{Math.min(horizon, 4)}</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Karşılaştır</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -406,17 +437,20 @@ export default function ForecastPage() {
                           variant="outlined"
                         />
                       </TableCell>
-                      {result.forecast.map((val, i) => (
-                        <TableCell key={i} align="center" sx={{ fontWeight: 'bold' }}>
-                          {val?.toFixed(0) || '-'}
-                        </TableCell>
-                      ))}
-                      <TableCell>
-                        <Tooltip title={result.model_description} arrow>
-                          <Typography variant="caption" sx={{ cursor: 'pointer' }}>
-                            {result.model_description.substring(0, 30)}...
-                          </Typography>
-                        </Tooltip>
+                      <TableCell align="center" sx={{ fontWeight: 'bold' }}>
+                        {result.forecast[0]?.toFixed(0) || '-'}
+                      </TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 'bold' }}>
+                        {result.forecast[Math.min(horizon, 4) - 1]?.toFixed(0) || '-'}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => handleCompare(result)}
+                        >
+                          Karşılaştır
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -483,6 +517,60 @@ export default function ForecastPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* 📊 Model Karşılaştırma Dialog */}
+      <Dialog open={showComparison} onClose={() => setShowComparison(false)} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">📊 Model Karşılaştırması</Typography>
+            <IconButton onClick={() => setShowComparison(false)}><Close /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedMaterial && (
+            <Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>
+                Malzeme: {selectedMaterial.material_code} - {selectedMaterial.group}
+              </Typography>
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'primary.main' }}>
+                      <TableCell sx={{ color: 'white' }}>Model</TableCell>
+                      <TableCell sx={{ color: 'white' }} align="right">RMSE (MAPE)</TableCell>
+                      <TableCell sx={{ color: 'white' }} align="center">1.Hafta</TableCell>
+                      <TableCell sx={{ color: 'white' }} align="center">Son Hafta</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {Object.entries(selectedMaterial.model_comparison || {}).map(([modelName, data]: [string, any]) => (
+                      <TableRow key={modelName} sx={{ bgcolor: modelName === selectedMaterial.selected_model ? 'success.light' : 'inherit' }}>
+                        <TableCell>
+                          {modelLabels[modelName] || modelName}
+                          {modelName === selectedMaterial.selected_model && (
+                            <Chip label="Seçili" size="small" color="success" sx={{ ml: 1 }} />
+                          )}
+                        </TableCell>
+                        <TableCell align="right">{data.rmse?.toFixed(2) || '-'}</TableCell>
+                        <TableCell align="center">{data.forecast?.[0]?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="center">{data.forecast?.[data.forecast.length - 1]?.toFixed(0) || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Box sx={{ mt: 2, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                <Typography variant="body2" color="info.dark">
+                  <strong>📌 Seçim Nedeni:</strong> {selectedMaterial.selection_reason}
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowComparison(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
 
       {!forecastMutation.isPending && results.length === 0 && !error && hasUploadedData && (
         <Card>
