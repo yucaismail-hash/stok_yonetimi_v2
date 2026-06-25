@@ -90,7 +90,8 @@ class DemandForecaster:
             'lower_80': lower_80.tolist(),
             'upper_80': upper_80.tolist(),
             'lower_95': lower_95.tolist(),
-            'upper_95': upper_95.tolist()
+            'upper_95': upper_95.tolist(),
+            'model_used': 'holt_winters'
         }
     
     def arima_forecast(self, data, horizon=13, order=(1,1,1)):
@@ -112,7 +113,8 @@ class DemandForecaster:
             'lower_80': lower_80.tolist(),
             'upper_80': upper_80.tolist(),
             'lower_95': lower_95.tolist(),
-            'upper_95': upper_95.tolist()
+            'upper_95': upper_95.tolist(),
+            'model_used': 'arima'
         }
     
     def simple_forecast(self, data, horizon=13):
@@ -147,21 +149,12 @@ class DemandForecaster:
             'lower_80': np.maximum(lower_80, 0).tolist(),
             'upper_80': upper_80.tolist(),
             'lower_95': np.maximum(lower_95, 0).tolist(),
-            'upper_95': upper_95.tolist()
+            'upper_95': upper_95.tolist(),
+            'model_used': 'simple'
         }
     
     def forecast(self, historical_data, horizon=13, model_type="auto"):
-        """
-        Ana forecast fonksiyonu
-        
-        Args:
-            historical_data: List[float] - Haftalık talep verisi
-            horizon: int - Tahmin edilecek hafta sayısı
-            model_type: str - "auto", "holt_winters", "arima", "simple"
-        
-        Returns:
-            dict: mean, lower_80, upper_80, lower_95, upper_95
-        """
+        """Ana forecast fonksiyonu"""
         if not historical_data or len(historical_data) < 4:
             raise ValueError("Yetersiz veri: En az 4 haftalık veri gerekli")
         
@@ -172,10 +165,8 @@ class DemandForecaster:
         
         if model_type == "holt_winters" and STATSMODELS_AVAILABLE:
             result = self.holt_winters_forecast(data, horizon)
-            result['model_used'] = 'holt_winters'
         elif model_type == "arima" and STATSMODELS_AVAILABLE:
             result = self.arima_forecast(data, horizon)
-            result['model_used'] = 'arima'
         else:
             result = self.simple_forecast(historical_data, horizon)
             result['model_used'] = 'simple'
@@ -183,9 +174,7 @@ class DemandForecaster:
         return result
     
     def get_forecast_accuracy(self, historical_data, test_horizon=4):
-        """
-        Forecast doğruluğunu test et (MAPE hesapla)
-        """
+        """Forecast doğruluğunu test et (MAPE hesapla)"""
         if len(historical_data) < test_horizon + 4:
             return {'mape': 999, 'accuracy_level': 'YETERSİZ_VERİ'}
         
@@ -216,61 +205,47 @@ class DemandForecaster:
             }
         return {'mape': 999, 'accuracy_level': 'HESAPLANAMADI'}
     
-    def compare_models(self, historical_data: List[float], horizon: int = 4) -> Dict[str, Any]:
+    def calculate_model_rmse(self, historical_data: List[float], forecast: List[float], test_horizon: int = 4) -> float:
+        """Belirli bir modelin RMSE'sini hesapla (MAPE olarak)"""
+        if len(historical_data) < test_horizon + 4:
+            return 999
+        
+        test = historical_data[-test_horizon:]
+        
+        if len(forecast) < test_horizon:
+            pred = forecast + [forecast[-1]] * (test_horizon - len(forecast)) if forecast else [0] * test_horizon
+        else:
+            pred = forecast[:test_horizon]
+        
+        mape_values = []
+        for actual, pred_val in zip(test, pred):
+            if actual > 0:
+                mape_values.append(abs((actual - pred_val) / actual) * 100)
+            else:
+                mape_values.append(100)
+        
+        if mape_values:
+            return round(np.mean(mape_values), 2)
+        return 999
+
+    def detect_outliers(self, data: List[float], threshold: float = 2.5) -> Dict[str, Any]:
         """
-        Tüm modelleri karşılaştır ve en iyisini seç
+        Verideki aykırı değerleri tespit et
         """
-        results = {}
-        best_model = None
-        best_rmse = float('inf')
+        if not data:
+            return {'has_outliers': False, 'outliers': [], 'total': 0, 'outlier_count': 0}
         
-        models_to_test = ['holt_winters', 'arima', 'simple']
+        mean_val = np.mean(data)
+        std_val = np.std(data)
         
-        for model_name in models_to_test:
-            try:
-                result = self.forecast(historical_data, horizon=horizon, model_type=model_name)
-                metrics = self._calculate_metrics(historical_data, result['mean'][:len(historical_data)])
-                result['metrics'] = metrics
-                results[model_name] = result
-                
-                if metrics['rmse'] < best_rmse:
-                    best_rmse = metrics['rmse']
-                    best_model = model_name
-            except Exception as e:
-                results[model_name] = {'error': str(e)}
-        
-        # Auto model
-        try:
-            auto_result = self.forecast(historical_data, horizon=horizon, model_type="auto")
-            metrics = self._calculate_metrics(historical_data, auto_result['mean'][:len(historical_data)])
-            auto_result['metrics'] = metrics
-            results['auto'] = auto_result
-            
-            if metrics['rmse'] < best_rmse:
-                best_rmse = metrics['rmse']
-                best_model = 'auto'
-        except Exception as e:
-            results['auto'] = {'error': str(e)}
-        
-        if best_model is None:
-            best_model = 'simple'
-            best_rmse = results.get('simple', {}).get('metrics', {}).get('rmse', 0)
+        outliers = []
+        for i, val in enumerate(data):
+            if std_val > 0 and abs(val - mean_val) / std_val > threshold:
+                outliers.append({'index': i + 1, 'value': val, 'week': i + 1})
         
         return {
-            'results': results,
-            'best_model': best_model,
-            'best_rmse': best_rmse if best_rmse != float('inf') else None
+            'has_outliers': len(outliers) > 0,
+            'outliers': outliers,
+            'total': len(data),
+            'outlier_count': len(outliers)
         }
-    
-    def _calculate_metrics(self, actual: List[float], predicted: List[float]) -> Dict[str, float]:
-        """Hata metriklerini hesapla"""
-        actual = actual[:len(predicted)]
-        n = len(actual)
-        if n == 0:
-            return {'mae': 0, 'mse': 0, 'rmse': 0}
-        
-        mae = np.mean(np.abs(np.array(actual) - np.array(predicted)))
-        mse = np.mean((np.array(actual) - np.array(predicted)) ** 2)
-        rmse = np.sqrt(mse)
-        
-        return {'mae': float(mae), 'mse': float(mse), 'rmse': float(rmse)}

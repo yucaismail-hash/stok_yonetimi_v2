@@ -221,28 +221,24 @@ class ExcelReader:
             }
         return suppliers
     
+    # app/utils/excel_reader.py - _safe_float fonksiyonunu optimize et
+
     def _safe_float(self, value) -> float:
-        """Güvenli float dönüşümü - Virgüllü sayıları düzgün işle"""
+        """Güvenli float dönüşümü - OPTİMİZE EDİLDİ"""
         try:
             if pd.isna(value) or value is None:
                 return 0.0
             if isinstance(value, (int, float)):
-                # NaN ve Inf kontrolü
                 if np.isnan(value) or np.isinf(value):
                     return 0.0
                 return float(value)
             if isinstance(value, str):
                 value = str(value).strip()
-                # ✅ Virgülü noktaya çevir (Türkçe format)
-                value = value.replace(',', '.')
-                # Formül kontrolü
+                # ✅ Formülleri hızlıca geç (değerlendirme yapma)
                 if value.startswith('='):
                     return 0.0
-                # Boş veya geçersiz
-                if not value or value == '':
-                    return 0.0
-                return float(value)
+                value = value.replace(',', '.').replace(' ', '')
+                return float(value) if value else 0.0
             return 0.0
-        except Exception as e:
-            print(f"⚠️ _safe_float hatası: {value} -> {e}")
+        except:
             return 0.0

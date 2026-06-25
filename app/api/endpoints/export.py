@@ -175,19 +175,35 @@ def export_forecast_results(
     Forecast sonuçlarını zengin Excel olarak dışa aktar
     """
     try:
-        # 📌 Veriyi doğru şekilde al
         results = data.get('results', [])
-        
-        # 📌 Eğer results boşsa, data içinde farklı bir anahtarda olabilir
-        if not results and 'data' in data:
-            results = data.get('data', {}).get('results', [])
-        
         if not results:
             raise HTTPException(status_code=400, detail="Aktarılacak sonuç yok")
         
         print(f"✅ {len(results)} forecast sonucu aktarılıyor...")
         
-        # Ana DataFrame
+        model_labels = {
+            'holt_winters': 'Holt-Winters (Mevsimsel)',
+            'arima': 'ARIMA (Otoregresif)',
+            'simple': 'Basit (MA+Trend)',
+            'auto': 'Otomatik Seçim'
+        }
+        
+        def get_mape_status(mape):
+            if mape is None or mape >= 999: return "Hesaplanamadı"
+            if mape < 20: return "Mükemmel"
+            elif mape < 30: return "İyi"
+            elif mape < 50: return "Orta"
+            elif mape < 100: return "Zayıf"
+            else: return "Çok Zayıf"
+
+        def get_mape_advice(mape):
+            if mape is None or mape >= 999: return "Veri yetersiz, daha fazla veri ekleyin."
+            if mape < 20: return "Stok yönetimi için ideal, mevcut model başarılı."
+            elif mape < 30: return "Kabul edilebilir, periyodik kontrol önerilir."
+            elif mape < 50: return "Model iyileştirilebilir, daha fazla veri ekleyin."
+            elif mape < 100: return "Tahmin modeli gözden geçirilmeli, alternatif modeller denenmeli."
+            else: return "Veri kalitesi veya model seçimi hatalı. Uzman desteği alın."
+
         rows = []
         for r in results:
             forecast_vals = r.get('forecast', [])
@@ -195,25 +211,38 @@ def export_forecast_results(
             upper_80 = r.get('upper_80', [])
             lower_95 = r.get('lower_95', [])
             upper_95 = r.get('upper_95', [])
+            mape = r.get('model_rmse')
+            selected_model = r.get('selected_model', 'unknown')
             
             row = {
                 'Malzeme Kodu': r.get('material_code', ''),
                 'Malzeme Grubu': r.get('group', ''),
-                'Seçilen Model': r.get('best_model_label', ''),
+                'Seçilen Model': model_labels.get(selected_model, selected_model),
                 'Seçim Nedeni': r.get('selection_reason', ''),
                 'Model Açıklaması': r.get('model_description', ''),
                 'Trend Yönü': r.get('trend_direction', ''),
                 'Trend Yüzdesi': f"{r.get('trend_percent', 0):.1f}%",
-                'Model Başarısı (MAPE)': f"{r.get('model_rmse', 0):.1f}%" if r.get('model_rmse') and r.get('model_rmse') < 999 else 'Hesaplanamadı'
+                'MAPE (%)': f"{mape:.1f}" if mape and mape < 999 else 'Hesaplanamadı',
+                'MAPE Seviyesi': get_mape_status(mape),
+                'Tavsiye': get_mape_advice(mape)
             }
             
-            # Tahmin değerleri
             for i, val in enumerate(forecast_vals):
                 row[f'{i+1}. Hafta Tahmin'] = round(val, 1) if val else None
                 row[f'%80 Alt'] = round(lower_80[i], 1) if i < len(lower_80) else None
                 row[f'%80 Üst'] = round(upper_80[i], 1) if i < len(upper_80) else None
                 row[f'%95 Alt'] = round(lower_95[i], 1) if i < len(lower_95) else None
                 row[f'%95 Üst'] = round(upper_95[i], 1) if i < len(upper_95) else None
+            
+            comparison = r.get('model_comparison', {})
+            for model_name, model_data in comparison.items():
+                model_label = {
+                    'holt_winters': 'Holt-Winters RMSE',
+                    'arima': 'ARIMA RMSE',
+                    'simple': 'Basit MA RMSE',
+                    'auto': 'Otomatik RMSE'
+                }.get(model_name, f'{model_name} RMSE')
+                row[model_label] = model_data.get('rmse', '-')
             
             rows.append(row)
         
@@ -223,14 +252,16 @@ def export_forecast_results(
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Forecast Analizi', index=False)
             
-            # Özet
             if results:
                 model_counts = {}
+                rmse_values = []
                 for r in results:
-                    model = r.get('best_model', 'unknown')
-                    model_counts[model] = model_counts.get(model, 0) + 1
-                
-                rmse_values = [r.get('model_rmse', 0) for r in results if r.get('model_rmse') and r.get('model_rmse') < 999]
+                    model = r.get('selected_model', 'unknown')
+                    model_label = model_labels.get(model, model)
+                    model_counts[model_label] = model_counts.get(model_label, 0) + 1
+                    rmse = r.get('model_rmse')
+                    if rmse and rmse < 999:
+                        rmse_values.append(rmse)
                 
                 summary = {
                     'Toplam Malzeme': len(results),
@@ -243,12 +274,11 @@ def export_forecast_results(
                 summary_df = pd.DataFrame([summary])
                 summary_df.to_excel(writer, sheet_name='Özet', index=False)
                 
-                # Model Dağılımı
-                model_df = pd.DataFrame([
-                    {'Model': k, 'Malzeme Sayısı': v, 'Yüzde': f"{v/len(results)*100:.1f}%"} 
-                    for k, v in model_counts.items()
-                ])
-                if not model_df.empty:
+                if model_counts:
+                    model_df = pd.DataFrame([
+                        {'Model': k, 'Malzeme Sayısı': v, 'Yüzde': f"{v/len(results)*100:.1f}%"} 
+                        for k, v in model_counts.items()
+                    ])
                     model_df.to_excel(writer, sheet_name='Model Dağılımı', index=False)
         
         output.seek(0)
@@ -263,8 +293,6 @@ def export_forecast_results(
         
     except Exception as e:
         print(f"❌ Forecast export hatası: {e}")
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/export/format-info")
@@ -288,40 +316,126 @@ def export_forecast_results(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Forecast analizi sonuçlarını Excel olarak dışa aktar
+    Forecast sonuçlarını zengin Excel olarak dışa aktar
     """
     try:
         results = data.get('results', [])
         if not results:
             raise HTTPException(status_code=400, detail="Aktarılacak sonuç yok")
         
-        # DataFrame oluştur
+        print(f"✅ {len(results)} forecast sonucu aktarılıyor...")
+        
+        model_labels = {
+            'holt_winters': 'Holt-Winters (Mevsimsel)',
+            'arima': 'ARIMA (Otoregresif)',
+            'simple': 'Basit (MA+Trend)',
+            'auto': 'Otomatik Seçim'
+        }
+        
+        def get_mape_status(mape):
+            if mape is None or mape >= 999: return "Hesaplanamadı"
+            if mape < 20: return "Mükemmel"
+            elif mape < 30: return "İyi"
+            elif mape < 50: return "Orta"
+            elif mape < 100: return "Zayıf"
+            else: return "Çok Zayıf"
+
+        def get_mape_advice(mape):
+            if mape is None or mape >= 999: return "Veri yetersiz, daha fazla veri ekleyin."
+            if mape < 20: return "Stok yönetimi için ideal, mevcut model başarılı."
+            elif mape < 30: return "Kabul edilebilir, periyodik kontrol önerilir."
+            elif mape < 50: return "Model iyileştirilebilir, daha fazla veri ekleyin."
+            elif mape < 100: return "Tahmin modeli gözden geçirilmeli, alternatif modeller denenmeli."
+            else: return "Veri kalitesi veya model seçimi hatalı. Uzman desteği alın."
+
         rows = []
         for r in results:
             forecast_vals = r.get('forecast', [])
+            lower_80 = r.get('lower_80', [])
+            upper_80 = r.get('upper_80', [])
+            lower_95 = r.get('lower_95', [])
+            upper_95 = r.get('upper_95', [])
+            mape = r.get('model_rmse')
+            selected_model = r.get('selected_model', 'unknown')
+            outlier_info = r.get('outlier_info', {})
+            model_params = r.get('model_params', {})
+            
             row = {
                 'Malzeme Kodu': r.get('material_code', ''),
-                'Grup': r.get('group', ''),
-                'Model': r.get('model_used', ''),
+                'Malzeme Grubu': r.get('group', ''),
+                'Seçilen Model': model_labels.get(selected_model, selected_model),
+                'Seçim Nedeni': r.get('selection_reason', ''),
+                'Model Açıklaması': r.get('model_description', ''),
+                'Trend Yönü': r.get('trend_direction', ''),
+                'Trend Yüzdesi': f"{r.get('trend_percent', 0):.1f}%",
+                'MAPE (%)': f"{mape:.1f}" if mape and mape < 999 else 'Hesaplanamadı',
+                'MAPE Seviyesi': get_mape_status(mape),
+                'Tavsiye': get_mape_advice(mape),
+                'Aykırı Değer Var mı?': 'Evet' if outlier_info.get('has_outliers') else 'Hayır',
+                'Aykırı Değer Sayısı': outlier_info.get('outlier_count', 0),
+                'Aykırı Değerler (Hafta:Değer)': ', '.join([f"{o.get('week', '?')}:{o.get('value', '?')}" for o in outlier_info.get('outliers', [])]) if outlier_info.get('outliers') else '-',
+                'Model Parametreleri': str(model_params) if model_params else '-'
             }
-            # Tahmin değerlerini sütun olarak ekle
+            
+            # Tahmin değerleri
             for i, val in enumerate(forecast_vals):
-                row[f'Tahmin H{i+1}'] = round(val, 2) if val else None
+                row[f'{i+1}. Hafta Tahmin'] = round(val, 1) if val else None
+                row[f'%80 Alt'] = round(lower_80[i], 1) if i < len(lower_80) else None
+                row[f'%80 Üst'] = round(upper_80[i], 1) if i < len(upper_80) else None
+                row[f'%95 Alt'] = round(lower_95[i], 1) if i < len(lower_95) else None
+                row[f'%95 Üst'] = round(upper_95[i], 1) if i < len(upper_95) else None
+            
+            # Model Karşılaştırma
+            comparison = r.get('model_comparison', {})
+            for model_name, model_data in comparison.items():
+                model_label = {
+                    'holt_winters': 'Holt-Winters RMSE',
+                    'arima': 'ARIMA RMSE',
+                    'simple': 'Basit MA RMSE',
+                    'auto': 'Otomatik RMSE'
+                }.get(model_name, f'{model_name} RMSE')
+                row[model_label] = model_data.get('rmse', '-')
+            
             rows.append(row)
         
         df = pd.DataFrame(rows)
         
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Forecast', index=False)
+            df.to_excel(writer, sheet_name='Forecast Analizi', index=False)
             
-            # Özet
-            summary = {
-                'Toplam Malzeme': len(results),
-                'Analiz Tarihi': datetime.now().strftime('%Y-%m-%d %H:%M')
-            }
-            summary_df = pd.DataFrame([summary])
-            summary_df.to_excel(writer, sheet_name='Özet', index=False)
+            if results:
+                model_counts = {}
+                rmse_values = []
+                outlier_count = 0
+                for r in results:
+                    model = r.get('selected_model', 'unknown')
+                    model_label = model_labels.get(model, model)
+                    model_counts[model_label] = model_counts.get(model_label, 0) + 1
+                    rmse = r.get('model_rmse')
+                    if rmse and rmse < 999:
+                        rmse_values.append(rmse)
+                    if r.get('outlier_info', {}).get('has_outliers'):
+                        outlier_count += 1
+                
+                summary = {
+                    'Toplam Malzeme': len(results),
+                    'En Çok Seçilen Model': results[0].get('best_model_label', '-') if results else '-',
+                    'Ortalama MAPE': f"{sum(rmse_values) / len(rmse_values):.1f}%" if rmse_values else 'Hesaplanamadı',
+                    'Artış Trendi Olan': len([r for r in results if r.get('trend_direction') == 'Artış']),
+                    'Azalış Trendi Olan': len([r for r in results if r.get('trend_direction') == 'Azalış']),
+                    'Aykırı Değer Olan Malzeme': outlier_count,
+                    'Analiz Tarihi': datetime.now().strftime('%Y-%m-%d %H:%M')
+                }
+                summary_df = pd.DataFrame([summary])
+                summary_df.to_excel(writer, sheet_name='Özet', index=False)
+                
+                if model_counts:
+                    model_df = pd.DataFrame([
+                        {'Model': k, 'Malzeme Sayısı': v, 'Yüzde': f"{v/len(results)*100:.1f}%"} 
+                        for k, v in model_counts.items()
+                    ])
+                    model_df.to_excel(writer, sheet_name='Model Dağılımı', index=False)
         
         output.seek(0)
         
@@ -334,6 +448,7 @@ def export_forecast_results(
         )
         
     except Exception as e:
+        print(f"❌ Forecast export hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     
 # export.py - Tam export_simulation_results ve export_backtest_results
