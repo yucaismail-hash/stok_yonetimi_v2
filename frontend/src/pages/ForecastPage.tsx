@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -31,6 +31,7 @@ import {
   Stack,
   Slider,
   LinearProgress,
+  Snackbar,
 } from '@mui/material';
 import {
   ShowChart,
@@ -43,7 +44,7 @@ import {
   TrendingUp,
   TrendingDown,
 } from '@mui/icons-material';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -106,12 +107,34 @@ export default function ForecastPage() {
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
   
-  // ✅ Token maliyetini veritabanından çek - DOĞRU URL
+  // ✅ Snackbar state
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
+  
+  // 📌 interval ID'sini saklamak için ref
+  const intervalIdRef = useRef<number | null>(null);
+  
+  const queryClient = useQueryClient();
+  
+  // ✅ Token maliyetini veritabanından çek
   const { data: costData } = useQuery({
     queryKey: ['forecast-cost'],
     queryFn: async () => {
-      const res = await api.get('/api/cost');  // ✅ Değişti
+      const res = await api.get('/api/cost', {
+        params: {
+          endpoint: '/api/forecast/batch',
+          method: 'POST'
+        }
+      });
       return res.data;
     },
     initialData: { cost: 8 }
@@ -120,6 +143,14 @@ export default function ForecastPage() {
   // ✅ Sadece bir kere kontrol et (sonsuz döngüyü önle)
   useEffect(() => {
     checkUploadedData();
+    
+    // Component unmount olduğunda interval'i temizle
+    return () => {
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
+      }
+    };
   }, []);
 
   const checkUploadedData = async () => {
@@ -133,6 +164,7 @@ export default function ForecastPage() {
     }
   };
 
+  // 📌 Normal Forecast Mutation
   const forecastMutation = useMutation({
     mutationFn: async () => {
       setProgress(0);
@@ -174,17 +206,137 @@ export default function ForecastPage() {
     },
   });
 
+  // 📌 Async İlerleme Kontrol Fonksiyonu
+  const checkAsyncProgress = async (taskId: string) => {
+    if (!taskId) return;
+    
+    try {
+      const res = await api.get(`/api/forecast/async/status/${taskId}`);
+      const status = res.data;
+      
+      console.log(`📊 Async durum: ${status.status}`);
+      
+      if (status.status === 'completed') {
+        if (intervalIdRef.current) {
+          clearInterval(intervalIdRef.current);
+          intervalIdRef.current = null;
+        }
+        
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        
+        // ✅ Sadece başarılı mesajı göster
+        setSuccess('✅ ASYNC analiz tamamlandı! Sonuçları görüntüleyebilirsiniz.');
+        setTimeout(() => setSuccess(null), 5000);
+        
+        try {
+          const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
+          if (resultsRes.data.success) {
+            setResults(resultsRes.data.results || []);
+            setPage(0);
+            await fetchUser();
+          }
+        } catch (err) {
+          console.error('❌ Sonuç getirme hatası:', err);
+        }
+        return;
+      }
+      
+      if (status.status === 'failed' || status.status === 'error') {
+        if (intervalIdRef.current) {
+          clearInterval(intervalIdRef.current);
+          intervalIdRef.current = null;
+        }
+        
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setError(status.message || 'Async analiz başarısız oldu');
+        return;
+      }
+      
+    } catch (error) {
+      console.error('Async durum kontrol hatası:', error);
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
+      }
+      setIsProcessing(false);
+      setActiveAsyncTask(null);
+    }
+  };
+
+  // 📌 Async Batch Forecast Mutation
+  const asyncForecastMutation = useMutation({
+    mutationFn: async () => {
+      setIsProcessing(true);
+
+      const res = await api.post('/api/forecast/batch/async', {
+        horizon: horizon,
+        model_type: selectedModel,
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setActiveAsyncTask(data.task_id);
+      
+      // ✅ Sadece Snackbar mesajı göster
+      setSnackbar({
+        open: true,
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
+        
+📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        severity: 'success',
+      });
+      
+      // ✅ interval'i başlat
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
+      }
+      
+      intervalIdRef.current = window.setInterval(() => {
+        checkAsyncProgress(data.task_id);
+      }, 5000);
+      
+      // 5 dakika sonra timeout
+      setTimeout(() => {
+        if (intervalIdRef.current) {
+          clearInterval(intervalIdRef.current);
+          intervalIdRef.current = null;
+          if (isProcessing) {
+            setIsProcessing(false);
+            setActiveAsyncTask(null);
+            setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
+          }
+        }
+      }, 300000);
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
+      setIsProcessing(false);
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
+      }
+    },
+  });
+
   const fetchHistory = async () => {
     setLoading(true);
     try {
       const res = await api.get('/api/upload/results', {
-        params: { result_type: 'forecast_batch' },
+        params: { 
+          result_type: 'forecast_batch',
+          limit: 100
+        },
       });
 
       if (res.data.success) {
         const rawResults = res.data.results || [];
+        console.log(`📊 ${rawResults.length} sonuç bulundu`);
+        
         const groupedMap = new Map();
-
+        
         rawResults.forEach((item: any) => {
           const date = item.created_at ? new Date(item.created_at) : new Date();
           const key = date.toISOString().slice(0, 16);
@@ -202,7 +354,7 @@ export default function ForecastPage() {
         const groupedResults = Array.from(groupedMap.values()).map((group) => {
           const allResults = group.items
             .map((item: any) => {
-              const resultData = item.data || item.result_data || {};
+              const resultData = item.data || {};
               if (resultData.results && Array.isArray(resultData.results)) {
                 return resultData.results;
               }
@@ -391,30 +543,103 @@ export default function ForecastPage() {
     );
   };
 
+  // 📌 ModelParams Bileşeni
   const ModelParams = ({ result }: { result: ForecastResult }) => {
     const params = result.model_params;
-    if (!params) return null;
-    
-    let paramText = '';
-    if (result.selected_model === 'holt_winters') {
-      paramText = `Mevsimsellik: ${params.seasonal_periods || '52'} hafta`;
-    } else if (result.selected_model === 'arima') {
-      paramText = `Order: ${params.order || '(1,1,1)'}`;
-    } else if (result.selected_model === 'simple') {
-      paramText = `Pencere: ${params.window || 4} hafta`;
-    } else if (result.selected_model === 'auto') {
-      paramText = `Seçim Yöntemi: ${params.selection_method || 'MAPE'}, Test Edilen: ${params.models_tested || 0} model`;
+    if (!params || Object.keys(params).length === 0) {
+      return (
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+          <strong>Parametreler:</strong> Detay mevcut değil.
+        </Typography>
+      );
     }
     
+    let paramText = '';
+    let paramDetails: { key: string; value: any }[] = [];
+
+    if (result.selected_model === 'holt_winters') {
+      paramText = `Mevsimsellik: ${params.seasonal_periods || '52'} hafta`;
+      paramDetails = [
+        { key: 'Mevsimsellik Periyodu', value: `${params.seasonal_periods || '52'} hafta` },
+        { key: 'Trend', value: params.trend || 'Toplanabilir (add)' },
+        { key: 'Mevsimsellik', value: params.seasonal || 'Toplanabilir (add)' },
+      ];
+      if (params.damping_trend !== undefined) {
+        paramDetails.push({ key: 'Trend Sönümleme', value: params.damping_trend ? 'Aktif' : 'Pasif' });
+      }
+    } else if (result.selected_model === 'arima') {
+      const order = params.order || '(1,1,1)';
+      paramText = `Order: ${order}`;
+      paramDetails = [
+        { key: 'ARIMA Order (p,d,q)', value: order },
+        { key: 'Mevsimsellik', value: params.seasonal_order ? `${params.seasonal_order}` : 'Yok' },
+      ];
+      if (params.trend !== undefined) {
+        paramDetails.push({ key: 'Trend', value: params.trend ? 'Evet' : 'Hayır' });
+      }
+    } else if (result.selected_model === 'simple') {
+      paramText = `Pencere: ${params.window || 4} hafta`;
+      paramDetails = [
+        { key: 'Hareketli Ortalama Penceresi', value: `${params.window || 4} hafta` },
+        { key: 'Ağırlıklandırma', value: params.weighted ? 'Evet (Ağırlıklı)' : 'Hayır (Eşit)' },
+      ];
+    } else if (result.selected_model === 'auto') {
+      paramText = `Seçim Yöntemi: ${params.selection_method || 'MAPE'}`;
+      paramDetails = [
+        { key: 'Seçim Kriteri', value: params.selection_method || 'MAPE' },
+        { key: 'Test Edilen Model Sayısı', value: params.models_tested || 0 },
+        { key: 'En İyi Model', value: params.best_model || 'Belirlenemedi' },
+      ];
+      if (params.best_mape) {
+        paramDetails.push({ key: 'En Düşük MAPE', value: `${params.best_mape}%` });
+      }
+    }
+
     return (
-      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-        <strong>Parametreler:</strong> {paramText}
-      </Typography>
+      <Box sx={{ mt: 0.5, p: 1, bgcolor: 'background.default', borderRadius: 1 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+          ⚙️ Model Parametreleri:
+        </Typography>
+        {paramDetails.length > 0 ? (
+          <Table size="small" sx={{ '& .MuiTableCell-root': { border: 'none', py: 0.5, px: 1 } }}>
+            <TableBody>
+              {paramDetails.map((detail) => (
+                <TableRow key={detail.key}>
+                  <TableCell component="th" scope="row" sx={{ fontWeight: 'bold', width: '40%' }}>
+                    {detail.key}
+                  </TableCell>
+                  <TableCell>{String(detail.value)}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <Typography variant="caption" color="text.secondary">
+            {paramText || 'Parametre bilgisi bulunamadı.'}
+          </Typography>
+        )}
+      </Box>
     );
   };
 
   return (
     <Box>
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={8000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          sx={{ whiteSpace: 'pre-line' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -441,6 +666,15 @@ export default function ForecastPage() {
             disabled={forecastMutation.isPending || !hasUploadedData}
           >
             {forecastMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={asyncForecastMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => asyncForecastMutation.mutate()}
+            disabled={asyncForecastMutation.isPending || !hasUploadedData || isProcessing}
+          >
+            {asyncForecastMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Analiz Et'}
           </Button>
         </Box>
       </Box>
@@ -554,6 +788,11 @@ export default function ForecastPage() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
             <CircularProgress variant="determinate" value={progress} size={40} />
             <Typography variant="body2" color="text.secondary">{progressLabel}</Typography>
+            {activeAsyncTask && (
+              <Typography variant="caption" color="text.secondary">
+                (ID: {activeAsyncTask.slice(0,8)})
+              </Typography>
+            )}
           </Box>
           <LinearProgress
             variant="determinate"

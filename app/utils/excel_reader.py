@@ -42,8 +42,10 @@ class ExcelReader:
                 result['errors'].append(f"❌ Eksik sütunlar: {', '.join(missing_cols)}")
                 return result
             
-            # 3. W sütunlarını tespit et
+            # 3. W sütunlarını tespit et (W1, W2, ... W15, W16, W17)
             week_cols = self._find_week_columns(df_main.columns)
+            print(f"📊 Bulunan hafta sütunları: {week_cols}")
+            
             if len(week_cols) < self.min_weeks:
                 result['errors'].append(
                     f"❌ Yetersiz W sütunu: {len(week_cols)} hafta (en az {self.min_weeks} gerekli)"
@@ -65,8 +67,12 @@ class ExcelReader:
                     material = self._process_material_row(row, idx, week_cols)
                     if material:
                         materials.append(material)
+                        # 📌 DEBUG: İlk malzemenin verisini kontrol et
+                        if len(materials) == 1:
+                            print(f"📊 İlk malzeme: {material['code']} - {len(material['historical_demand'])} hafta")
+                            print(f"📊 İlk 5 değer: {material['historical_demand'][:5]}")
                     else:
-                        error_rows.append(idx+2)  # Excel satır numarası
+                        error_rows.append(idx+2)
                 except Exception as e:
                     error_rows.append(idx+2)
                     result['errors'].append(f"Satır {idx+2}: {str(e)}")
@@ -90,7 +96,6 @@ class ExcelReader:
             if 'Malzeme_Tedarikciler' in sheets:
                 supplier_mapping = self._process_supplier_mapping(sheets['Malzeme_Tedarikciler'])
                 result['data']['supplier_mapping'] = supplier_mapping
-                # Kontrol: mapping'de olmayan malzemeler var mı?
                 mapped_codes = set(supplier_mapping.keys())
                 material_codes = set(m['code'] for m in materials)
                 unmapped = material_codes - mapped_codes
@@ -135,42 +140,56 @@ class ExcelReader:
             }
     
     def _find_week_columns(self, columns: List[str]) -> List[str]:
-        """W sütunlarını bul ve sırala"""
+        """W sütunlarını bul ve sırala (W1, W2, ... W15, W16, W17)"""
         week_cols = []
         for col in columns:
             col_str = str(col).strip().upper()
+            # ✅ W ile başlayan ve devamında sayı olan sütunlar
             if col_str.startswith('W') and len(col_str) > 1:
                 num_part = col_str[1:]
+                # ✅ Sadece sayısal olanları al
                 if num_part.isdigit():
                     week_cols.append(col)
+        # ✅ Sayısal değere göre sırala (W1, W2, ... W10, W11, W12)
         week_cols.sort(key=lambda x: int(str(x).upper()[1:]))
         return week_cols
     
     def _process_material_row(self, row: pd.Series, idx: int, week_cols: List[str]) -> Dict:
-        """Tek bir malzeme satırını işle"""
+        """Tek bir malzeme satırını işle - DETAYLI DEBUG"""
         material_code = str(row.get('Malzeme_Kodu', '')).strip()
         if not material_code or pd.isna(material_code):
             return None
         
-        # 📌 HAFTA VERİLERİNİ DOĞRUDAN OKU
+        # 📌 DEBUG: Tüm sütunları göster
+        print(f"\n{'='*60}")
+        print(f"🔍 İŞLENİYOR: {material_code}")
+        print(f"📊 Toplam W sütunu: {len(week_cols)}")
+        print(f"📊 W sütunları: {week_cols[:5]}...")
+        
+        # 📌 HAFTA VERİLERİNİ Oku
         demand = []
         for week_col in week_cols:
             val = row.get(week_col)
-            # ✅ Doğrudan float değerini al
-            demand.append(self._safe_float(val))
+            float_val = self._safe_float(val)
+            demand.append(float_val)
         
-        # 📌 DEBUG: Kontrol et
-        print(f"🔍 {material_code} W verileri: {demand[:12]}")
+        # 📌 DEBUG: İlk 12 haftayı göster
+        print(f"📊 {material_code} - Okunan veri (ilk 12): {demand[:12]}")
+        print(f"📊 {material_code} - Veri uzunluğu: {len(demand)}")
         
-        # En az 12 hafta kontrolü
+        # 📌 Sıfır kontrolü
+        non_zero = [d for d in demand if d != 0]
+        print(f"📊 {material_code} - Sıfır olmayan değer sayısı: {len(non_zero)}/{len(demand)}")
+        
         if len(demand) < self.min_weeks:
             print(f"⚠️ {material_code}: {len(demand)} hafta veri var, en az {self.min_weeks} gerekli")
-            return None
+            while len(demand) < self.min_weeks:
+                demand.append(0)
+            print(f"✅ {material_code}: {len(demand)} haftaya tamamlandı")
         
-        # 📌 Sıfır kontrolü - Tüm değerler sıfırsa uyarı ver
-        if all(d == 0 for d in demand[:self.min_weeks]):
-            print(f"⚠️ {material_code}: Tüm W değerleri sıfır!")
-            # Yine de devam et, pattern SIFIR_TALEP olacak
+        # 📌 Veri tipi kontrolü
+        print(f"📊 {material_code} - İlk değer tipi: {type(demand[0]) if demand else 'None'}")
+        print(f"📊 {material_code} - Tüm değerler float mı? {all(isinstance(d, float) for d in demand)}")
         
         # Malzeme objesi
         material = {
@@ -185,6 +204,10 @@ class ExcelReader:
             'shortage_cost': self._safe_float(row.get('Stok_Tukenme_Maliyeti', 500)),
             'historical_demand': demand[:self.max_weeks]
         }
+        
+        print(f"✅ {material_code} işlendi - {len(material['historical_demand'])} hafta")
+        print(f"{'='*60}\n")
+        
         return material
 
     def _process_supplier_mapping(self, df: pd.DataFrame) -> Dict[str, List[Dict]]:
@@ -221,8 +244,6 @@ class ExcelReader:
             }
         return suppliers
     
-    # app/utils/excel_reader.py - _safe_float fonksiyonunu optimize et
-
     def _safe_float(self, value) -> float:
         """Güvenli float dönüşümü - OPTİMİZE EDİLDİ"""
         try:

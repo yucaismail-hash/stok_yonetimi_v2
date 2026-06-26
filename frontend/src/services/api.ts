@@ -27,25 +27,45 @@ api.interceptors.response.use(
   }
 );
 
-// 📌 Auth hariç tüm isteklere token ekle
+// 📌 Tüm isteklere token ekle (login/register hariç)
 api.interceptors.request.use((config) => {
   // Login ve register isteklerinde token ekleme
   if (config.url?.includes('/auth/login') || config.url?.includes('/auth/register')) {
     return config;
   }
   
-  const token = localStorage.getItem('auth-storage');
-  if (token) {
-    try {
-      const parsed = JSON.parse(token);
-      if (parsed.state?.token) {
-        config.headers.Authorization = `Bearer ${parsed.state.token}`;
-        console.log('✅ Token eklendi');
+  // ✅ Token'ı doğru yerden al
+  let token = null;
+  
+  // 1. Önce direkt localStorage'dan dene
+  token = localStorage.getItem('access_token');
+  
+  // 2. Yoksa auth-storage'dan dene
+  if (!token) {
+    const authStorage = localStorage.getItem('auth-storage');
+    if (authStorage) {
+      try {
+        const parsed = JSON.parse(authStorage);
+        // Zustand veya benzeri bir state yönetimi kullanılıyorsa
+        token = parsed.state?.token || parsed.token || parsed.access_token;
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
   }
+  
+  // 3. Yoksa sessionStorage'dan dene
+  if (!token) {
+    token = sessionStorage.getItem('access_token');
+  }
+  
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+    console.log('✅ Token eklendi:', token.substring(0, 20) + '...');
+  } else {
+    console.log('⚠️ Token bulunamadı!');
+  }
+  
   return config;
 });
 

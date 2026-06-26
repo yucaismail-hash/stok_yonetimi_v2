@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import engine, Base
-from app.api.endpoints import upload, forecast, simulate, report, pattern, safety_stock, backtest, supplier, learning, export, payment, profile, sectors
+from app.api.endpoints import tasks, upload, forecast, simulate, report, pattern, safety_stock, backtest, supplier, learning, export, payment, profile, sectors, cost
 from app.auth import auth_router
 from app.admin import router as admin_router
 from app.models import User, TokenCost, TokenHistory
@@ -10,6 +10,8 @@ from app.database import SessionLocal
 from jose import jwt
 import os
 import logging
+import re
+import uvicorn
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,13 +21,36 @@ app = FastAPI(title="Stok Yönetim Sistemi v2", version="0.1.0")
 
 @app.middleware("http")
 async def token_middleware(request: Request, call_next):
-    # Admin, auth, docs, sectors endpoint'lerini muaf tut
-    if request.url.path.startswith("/admin") or request.url.path.startswith("/auth") or request.url.path.startswith("/docs") or request.url.path.startswith("/openapi.json") or request.url.path.startswith("/api/sectors"):
-        return await call_next(request)
+    # ✅ Muaf tutulacak endpoint'ler
+    exempt_patterns = [
+        r"^/admin",
+        r"^/auth", 
+        r"^/docs",
+        r"^/openapi.json",
+        r"^/api/sectors",
+        r"^/api/cost",
+        r"^/api/upload",
+        r"^/api/upload/status",
+        r"^/api/upload/upload",
+        r"^/api/upload/clear",
+        r"^/api/upload/results",
+    ]
+    
+    path = request.url.path
+    
+    # Endpoint muaf mı kontrol et
+    for pattern in exempt_patterns:
+        if re.match(pattern, path):
+            print(f"⏩ Muaf endpoint: {path}")
+            return await call_next(request)
     
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        return await call_next(request)
+        print(f"❌ Token yok: {path}")
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Authorization header required"}
+        )
     
     token = auth_header.replace("Bearer ", "")
     SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key")
@@ -33,30 +58,64 @@ async def token_middleware(request: Request, call_next):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         user_id = payload.get("user_id")
-    except:
-        return await call_next(request)
-    
-    if not user_id:
-        return await call_next(request)
+        if not user_id:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid token payload"}
+            )
+    except Exception as e:
+        print(f"❌ Token geçersiz: {e}")
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid token"}
+        )
     
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
-            return await call_next(request)
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "User not found"}
+            )
         
         endpoint_path = request.url.path
         method = request.method
         
         print(f"🔍 Endpoint: {endpoint_path}, Method: {method}")
         
-        # Sadece /api/ ile başlayan endpoint'ler için token kontrolü yap
+        # ✅ Token cost kontrolü - Dinamik path eşleştirme
         if endpoint_path.startswith("/api/"):
+            token_cost = None
+            
+            # 1. Önce tam eşleşme kontrol et
             token_cost = db.query(TokenCost).filter(
                 TokenCost.endpoint == endpoint_path,
                 TokenCost.method == method,
                 TokenCost.is_active == True
             ).first()
+            
+            # 2. Tam eşleşme yoksa dinamik pattern kontrolü
+            if not token_cost:
+                # ✅ Async status için pattern
+                if "/async/status/" in endpoint_path:
+                    token_cost = db.query(TokenCost).filter(
+                        TokenCost.endpoint == "/api/forecast/async/status/{task_id}",
+                        TokenCost.method == method,
+                        TokenCost.is_active == True
+                    ).first()
+                    if token_cost:
+                        print(f"✅ Pattern eşleşti: /api/forecast/async/status/{{task_id}}")
+                
+                # ✅ Async result için pattern
+                elif "/async/result/" in endpoint_path:
+                    token_cost = db.query(TokenCost).filter(
+                        TokenCost.endpoint == "/api/forecast/async/result/{task_id}",
+                        TokenCost.method == method,
+                        TokenCost.is_active == True
+                    ).first()
+                    if token_cost:
+                        print(f"✅ Pattern eşleşti: /api/forecast/async/result/{{task_id}}")
             
             if token_cost:
                 if user.token_balance < token_cost.cost:
@@ -106,6 +165,7 @@ app.add_middleware(
 Base.metadata.create_all(bind=engine)
 
 
+# Router'ları ekle
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(sectors.router, prefix="/api", tags=["sectors"])
@@ -121,8 +181,23 @@ app.include_router(learning.router, prefix="/api", tags=["learning"])
 app.include_router(export.router, prefix="/api", tags=["export"])
 app.include_router(payment.router, prefix="/api", tags=["payment"])
 app.include_router(profile.router, prefix="/api", tags=["profile"])
+app.include_router(cost.router, prefix="/api", tags=["cost"])
+app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 
 
 @app.get("/")
 def root():
     return {"message": "Stok Yönetim Sistemi v2 API"}
+
+# app/main.py - En altına ekleyin
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        timeout_keep_alive=120,  # ✅ 120 saniye (varsayılan 5 saniye)
+        timeout_graceful_shutdown=30
+    )

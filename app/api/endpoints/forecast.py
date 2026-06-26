@@ -1,72 +1,37 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any, Optional
+import uuid
+from app.database import get_db
+from app.models import User, UploadedData, AnalysisResult
 from app.analysis.forecast import DemandForecaster
 from app.auth import get_current_user
-from app.models import User, TokenCost
-from app.database import get_db
-from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
 from app.api.endpoints.upload import get_user_upload_data
+from datetime import datetime, timedelta
 import numpy as np
 
 router = APIRouter()
-forecaster = DemandForecaster()
+forecaster = DemandForecaster(seasonal_periods=52)
+
 
 class ForecastRequest(BaseModel):
-    historical_data: List[float]
-    horizon: int = 4
-    model_type: Optional[str] = "auto"
-
-class BatchForecastRequest(BaseModel):
-    horizon: int = 4
+    horizon: int = 13
     model_type: str = "auto"
 
 
-@router.get("/cost")
-def get_forecast_cost(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Forecast analizi token maliyetini getir
-    """
-    token_cost = db.query(TokenCost).filter(
-        TokenCost.endpoint == "/api/forecast/batch",
-        TokenCost.method == "POST",
-        TokenCost.is_active == True
-    ).first()
-    
-    cost = token_cost.cost if token_cost else 8
-    
-    return {
-        'cost': cost,
-        'endpoint': '/api/forecast/batch',
-        'method': 'POST'
-    }
-
-
-@router.post("/forecast")
-def get_forecast(request: ForecastRequest):
-    try:
-        result = forecaster.forecast(
-            request.historical_data,
-            horizon=request.horizon,
-            model_type=request.model_type
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
 @router.post("/forecast/batch")
-def forecast_batch(
-    request: BatchForecastRequest,
+def batch_forecast(
+    request: ForecastRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Toplu Forecast analizi - Kullanıcı model ve horizon seçebilir. Token: 8"""
+    """
+    Toplu forecast analizi - Yüklenen tüm malzemeler için talep tahmini yapar.
+    Token maliyeti: 8 token (middleware tarafından otomatik düşülür)
+    """
     try:
+        # 1. Cache'ten verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
@@ -75,179 +40,179 @@ def forecast_batch(
         if not materials:
             raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
         
-        print(f"✅ {len(materials)} malzeme bulundu")
-        
-        horizon = request.horizon or 4
-        user_model = request.model_type or "auto"
-        
-        print(f"📌 Kullanıcı seçimi: Model={user_model}, Horizon={horizon} hafta")
-        
-        model_labels = {
-            'holt_winters': 'Holt-Winters (Mevsimsel)',
-            'arima': 'ARIMA (Otoregresif)',
-            'simple': 'Basit (MA+Trend)',
-            'auto': 'Otomatik Seçim'
-        }
-        
-        model_descriptions = {
-            'holt_winters': 'Mevsimsel talep desenleri için uygundur. 52+ hafta veri önerilir.',
-            'arima': 'Doğrusal trend ve otokorelasyon için uygundur. 26+ hafta veri önerilir.',
-            'simple': 'Basit ve hızlı, son 4 haftanın ağırlıklı ortalamasını alır.',
-            'auto': 'Veri uzunluğuna göre en uygun modeli otomatik seçer.'
-        }
-        
+        # 2. Forecast analizi
         results = []
-        
         for material in materials:
-            weekly_data = material.get('historical_demand', [])
-            if len(weekly_data) < 4:
-                print(f"⚠️ {material.get('code', 'Bilinmeyen')}: {len(weekly_data)} hafta veri (4+ gerekli)")
-                continue
-            
-            print(f"✅ {material.get('code', 'Bilinmeyen')}: {len(weekly_data)} hafta veri ile forecast başlıyor...")
-            
             try:
-                outlier_result = forecaster.detect_outliers(weekly_data)
+                historical = material.get('historical_demand', [])
+                if len(historical) < 4:
+                    continue
                 
-                all_models = {}
-                best_model = None
-                best_score = float('inf')
-                best_result = None
+                # Ana tahmin
+                forecast_result = forecaster.forecast(
+                    historical_data=historical,
+                    horizon=request.horizon,
+                    model_type=request.model_type
+                )
                 
-                for model_name in ['holt_winters', 'arima', 'simple', 'auto']:
-                    try:
-                        result = forecaster.forecast(weekly_data, horizon=horizon, model_type=model_name)
-                        forecast_mean = result.get('mean', [0] * horizon)
-                        model_rmse = forecaster.calculate_model_rmse(weekly_data, forecast_mean, test_horizon=min(4, len(weekly_data)//2))
-                        
-                        all_models[model_name] = {
-                            'rmse': model_rmse,
-                            'forecast': forecast_mean[:horizon]
-                        }
-                        
-                        if user_model != "auto":
-                            if model_name == user_model:
-                                best_model = model_name
-                                best_result = result
-                                best_score = model_rmse
+                # ✅ MODEL KARŞILAŞTIRMASI - HER MODEL KENDİ TAHMİNİNİ YAPAR
+                # 📌 MODEL KARŞILAŞTIRMASI - TÜM MODELLERİ DENE VE LOGLA
+                model_comparison = {}
+
+                print(f"📊 Malzeme: {material.get('code', '')} - Veri uzunluğu: {len(historical)} hafta")
+
+                # 1. Holt-Winters
+                try:
+                    # ✅ Veri en az 8 hafta ise dene
+                    if len(historical) >= 8:
+                        print(f"🔄 HW deneniyor...")
+                        hw_result = forecaster.holt_winters_forecast(historical, request.horizon)
+                        hw_forecast = hw_result.get('mean', [])
+                        if hw_forecast and len(hw_forecast) > 0:
+                            hw_rmse = forecaster.calculate_model_rmse(historical, hw_forecast)
+                            model_comparison['holt_winters'] = {
+                                'rmse': hw_rmse,
+                                'forecast': hw_forecast
+                            }
+                            print(f"✅ HW RMSE: {hw_rmse}")
                         else:
-                            if model_rmse < best_score:
-                                best_score = model_rmse
-                                best_model = model_name
-                                best_result = result
-                                
-                    except Exception as e:
-                        all_models[model_name] = {'rmse': 999, 'forecast': [0] * horizon}
-                        print(f"⚠️ {model_name} hatası: {e}")
-                
-                if user_model != "auto" and best_model is None:
-                    best_score = 999
-                    for model_name in ['holt_winters', 'arima', 'simple', 'auto']:
-                        if all_models[model_name]['rmse'] < best_score:
-                            best_score = all_models[model_name]['rmse']
-                            best_model = model_name
-                            try:
-                                best_result = forecaster.forecast(weekly_data, horizon=horizon, model_type=best_model)
-                            except:
-                                best_result = {'mean': all_models[best_model]['forecast']}
-                
-                if best_model is None:
-                    best_model = 'simple'
-                    try:
-                        best_result = forecaster.forecast(weekly_data, horizon=horizon, model_type='simple')
-                    except:
-                        best_result = {'mean': [0] * horizon, 'lower_80': [0] * horizon, 'upper_80': [0] * horizon, 'lower_95': [0] * horizon, 'upper_95': [0] * horizon}
-                    best_score = all_models.get('simple', {}).get('rmse', 999)
-                
-                forecast_mean = best_result.get('mean', [0] * horizon)[:horizon]
-                lower_80 = best_result.get('lower_80', [0] * horizon)[:horizon]
-                upper_80 = best_result.get('upper_80', [0] * horizon)[:horizon]
-                lower_95 = best_result.get('lower_95', [0] * horizon)[:horizon]
-                upper_95 = best_result.get('upper_95', [0] * horizon)[:horizon]
-                
-                if len(forecast_mean) >= 2:
-                    trend_direction = "Artış" if forecast_mean[-1] > forecast_mean[0] else "Azalış" if forecast_mean[-1] < forecast_mean[0] else "Stabil"
-                    trend_percent = ((forecast_mean[-1] - forecast_mean[0]) / forecast_mean[0] * 100) if forecast_mean[0] > 0 else 0
-                else:
-                    trend_direction = "Bilinmiyor"
-                    trend_percent = 0
-                
-                if user_model != "auto":
-                    selection_reason = f"Kullanıcı tarafından {model_labels.get(best_model, best_model)} seçildi."
-                else:
-                    if best_score < 999:
-                        selection_reason = f"En düşük MAPE ({best_score:.1f}%) ile {model_labels.get(best_model, best_model)} seçildi."
+                            print(f"⚠️ HW forecast boş")
                     else:
-                        selection_reason = "Veri yetersiz olduğu için basit model seçildi."
+                        print(f"⚠️ HW için veri yetersiz ({len(historical)} hafta)")
+                except Exception as e:
+                    print(f"⚠️ HW hatası: {e}")
+
+                # 2. ARIMA
+                try:
+                    if len(historical) >= 8:
+                        print(f"🔄 ARIMA deneniyor...")
+                        arima_result = forecaster.arima_forecast(historical, request.horizon)
+                        arima_forecast = arima_result.get('mean', [])
+                        if arima_forecast and len(arima_forecast) > 0:
+                            arima_rmse = forecaster.calculate_model_rmse(historical, arima_forecast)
+                            model_comparison['arima'] = {
+                                'rmse': arima_rmse,
+                                'forecast': arima_forecast
+                            }
+                            print(f"✅ ARIMA RMSE: {arima_rmse}")
+                        else:
+                            print(f"⚠️ ARIMA forecast boş")
+                    else:
+                        print(f"⚠️ ARIMA için veri yetersiz ({len(historical)} hafta)")
+                except Exception as e:
+                    print(f"⚠️ ARIMA hatası: {e}")
+
+                # 3. Basit Model (her zaman çalışır)
+                try:
+                    print(f"🔄 Basit MA deneniyor...")
+                    simple_result = forecaster.simple_forecast(historical, request.horizon)
+                    simple_forecast = simple_result.get('mean', [])
+                    if simple_forecast and len(simple_forecast) > 0:
+                        simple_rmse = forecaster.calculate_model_rmse(historical, simple_forecast)
+                        model_comparison['simple'] = {
+                            'rmse': simple_rmse,
+                            'forecast': simple_forecast
+                        }
+                        print(f"✅ Basit RMSE: {simple_rmse}")
+                except Exception as e:
+                    print(f"⚠️ Basit hatası: {e}")
+
+                print(f"📊 Toplam model: {len(model_comparison)} - {list(model_comparison.keys())}")                
+
+                # Outlier tespiti
+                outlier_info = forecaster.detect_outliers(historical)
                 
+                # Trend analizi
+                if len(historical) > 1:
+                    trend_percent = ((historical[-1] - historical[0]) / historical[0] * 100) if historical[0] > 0 else 0
+                    trend_direction = 'Artış' if trend_percent > 0 else 'Azalış'
+                else:
+                    trend_percent = 0
+                    trend_direction = 'Sabit'
+                
+                # Model parametreleri
                 model_params = {}
-                if best_model == 'holt_winters':
+                if forecast_result.get('model_used') == 'holt_winters':
                     model_params = {
-                        'seasonal_periods': min(52, len(weekly_data) // 2),
+                        'seasonal_periods': 52,
                         'trend': 'add',
                         'seasonal': 'add'
                     }
-                elif best_model == 'arima':
+                elif forecast_result.get('model_used') == 'arima':
                     model_params = {
-                        'p': 1,
-                        'd': 1,
-                        'q': 1,
-                        'order': '(1,1,1)'
+                        'order': '(1,1,1)',
+                        'seasonal_order': None
                     }
-                elif best_model == 'simple':
+                elif forecast_result.get('model_used') == 'simple':
                     model_params = {
                         'window': 4,
-                        'weights': '[0.4, 0.3, 0.2, 0.1]'
-                    }
-                else:  # auto
-                    model_params = {
-                        'selection_method': 'MAPE based',
-                        'models_tested': len(all_models)
+                        'weighted': True
                     }
                 
-                results.append({
+                # Cross-Validation bilgilerini ekle
+                if 'selection_info' in forecast_result:
+                    model_params.update(forecast_result['selection_info'])
+                
+                # Seçim nedeni
+                selection_reason = forecast_result.get('selection_info', {}).get('selection_reason', 'Otomatik seçim')
+                
+                # Sonuçları topla
+                result_item = {
                     'material_code': material.get('code', ''),
                     'group': material.get('group', 'GENEL'),
-                    'horizon': horizon,
-                    'selected_model': best_model,
-                    'best_model_label': model_labels.get(best_model, best_model),
-                    'model_description': model_descriptions.get(best_model, ''),
+                    'horizon': request.horizon,
+                    'selected_model': forecast_result.get('model_used', 'simple'),
+                    'best_model_label': forecast_result.get('model_used', 'simple').replace('_', ' ').title(),
+                    'model_description': f"{forecast_result.get('model_used', 'simple')} modeli kullanıldı",
                     'selection_reason': selection_reason,
-                    'forecast': [round(f, 1) for f in forecast_mean],
-                    'lower_80': [round(f, 1) for f in lower_80],
-                    'upper_80': [round(f, 1) for f in upper_80],
-                    'lower_95': [round(f, 1) for f in lower_95],
-                    'upper_95': [round(f, 1) for f in upper_95],
+                    'forecast': forecast_result.get('mean', []),
+                    'lower_80': forecast_result.get('lower_80', []),
+                    'upper_80': forecast_result.get('upper_80', []),
+                    'lower_95': forecast_result.get('lower_95', []),
+                    'upper_95': forecast_result.get('upper_95', []),
                     'trend_direction': trend_direction,
                     'trend_percent': round(trend_percent, 1),
-                    'model_rmse': best_score if best_score < 999 else None,
-                    'model_comparison': all_models,
+                    'model_rmse': forecaster.calculate_model_rmse(historical, forecast_result.get('mean', [])),
+                    'model_comparison': model_comparison,
                     'model_params': model_params,
-                    'outlier_info': outlier_result,
-                    'historical_data': weekly_data
-                })
-                
-                print(f"✅ {material.get('code')}: Seçilen = {best_model}, RMSE = {best_score}")
+                    'outlier_info': outlier_info,
+                    'historical_data': historical
+                }
+                results.append(result_item)
                 
             except Exception as e:
-                print(f"❌ Forecast hatası ({material.get('code', 'Bilinmeyen')}): {e}")
+                print(f"❌ Malzeme {material.get('code', '')} tahmin hatası: {e}")
                 continue
         
-        if results:
-            from app.models import UserAnalysisResult
-            
-            for result in results:
-                analysis_result = UserAnalysisResult(
-                    user_id=current_user.id,
-                    result_type='forecast_batch',
-                    material_code=result['material_code'],
-                    material_group=result.get('group', 'GENEL'),
-                    result_data=result,
-                    params={'horizon': horizon, 'model_type': user_model, 'total_materials': len(results)},
-                    expires_at=datetime.utcnow() + timedelta(days=15)
-                )
-                db.add(analysis_result)
-            db.commit()
+        if not results:
+            raise HTTPException(status_code=400, detail="Hiçbir malzeme için tahmin yapılamadı!")
+        
+        # 3. Sonuçları kaydet (15 gün)
+        # batch_forecast içinde
+        from app.models import UserAnalysisResult
+
+        # ✅ Her malzeme için ayrı kayıt oluştur
+        for result in results:
+            analysis_result = UserAnalysisResult(
+                user_id=current_user.id,
+                result_type='forecast_batch',  # ✅ result_type doğru
+                material_code=result['material_code'],
+                material_group=result.get('group', 'GENEL'),
+                result_data={
+                    'total': len(results),
+                    'results': results,  # Tüm sonuçları içerir
+                    'horizon': request.horizon,
+                    'model_type': request.model_type
+                },
+                params={
+                    'horizon': request.horizon,
+                    'model_type': request.model_type,
+                    'total_materials': len(results)
+                },
+                expires_at=datetime.utcnow() + timedelta(days=15)
+            )
+            db.add(analysis_result)
+        db.commit()
         
         return {
             'success': True,
@@ -259,17 +224,335 @@ def forecast_batch(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Forecast batch hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/info")
-def get_forecast_info():
-    return {
-        "available_models": [
-            {"key": "auto", "label": "Otomatik Seçim", "description": "Veriye göre en iyi modeli seçer"},
-            {"key": "holt_winters", "label": "Holt-Winters (Mevsimsel)", "description": "52+ hafta veri önerilir"},
-            {"key": "arima", "label": "ARIMA (Otoregresif)", "description": "26+ hafta veri önerilir"},
-            {"key": "simple", "label": "Basit (MA+Trend)", "description": "Hızlı, az veri için ideal"}
-        ]
+@router.post("/forecast/batch/async")
+def start_async_forecast(
+    request: ForecastRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Async olarak batch forecast başlatır. Hemen bir task_id döner.
+    Token maliyeti: 8 token (middleware tarafından otomatik düşülür)
+    """
+    # 1. Cache'ten verileri al
+    cached_data = get_user_upload_data(current_user.id)
+    if not cached_data:
+        raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+    
+    materials = cached_data.get('materials', [])
+    if not materials:
+        raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
+    
+    # 2. Benzersiz bir task ID oluştur
+    task_id = str(uuid.uuid4())
+    
+    # ✅ 3. İşlem başladığında AnalysisResult'a kayıt ekle
+    from app.models import AnalysisResult
+    
+    initial_data = {
+        'status': 'processing',
+        'message': 'Analiz başlatıldı, işleniyor...',
+        'total': len(materials),
+        'results': [],
+        'horizon': request.horizon,
+        'model_type': request.model_type,
+        'task_id': task_id,
+        'started_at': datetime.utcnow().isoformat()
     }
+    
+    initial_record = AnalysisResult(
+        user_id=current_user.id,
+        result_type='forecast_batch_async',
+        data=initial_data,
+        task_id=task_id
+    )
+    db.add(initial_record)
+    db.commit()
+    
+    # 4. Arka plan görevini başlat
+    background_tasks.add_task(
+        run_async_forecast_job,
+        task_id=task_id,
+        user_id=current_user.id,
+        request=request,
+        db=db  # ✅ Session geç
+    )
+    
+    return {
+        "task_id": task_id, 
+        "status": "started", 
+        "message": "Analiz arka planda başlatıldı.",
+        "token_cost": 8
+    }
+
+def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest, db: Session):
+    """Async batch forecast işini gerçekleştirir."""
+    try:
+        print(f"🔄 Async job başladı: Task ID {task_id}, Kullanıcı {user_id}")
+        
+        # Cache'ten verileri al
+        cached_data = get_user_upload_data(user_id)
+        if not cached_data:
+            print(f"❌ Async job hatası: Veri bulunamadı (Task {task_id})")
+            # ✅ Hata durumunda güncelle
+            update_async_task_status(db, task_id, 'failed', 'Veri bulunamadı')
+            return
+        
+        materials = cached_data.get('materials', [])
+        if not materials:
+            print(f"❌ Async job hatası: Malzeme bulunamadı (Task {task_id})")
+            update_async_task_status(db, task_id, 'failed', 'Malzeme bulunamadı')
+            return
+        
+        forecaster = DemandForecaster(seasonal_periods=52)
+        results = []
+        
+        for idx, material in enumerate(materials):
+            try:
+                historical = material.get('historical_demand', [])
+                if len(historical) < 4:
+                    continue
+                
+                # Ana tahmin
+                forecast_result = forecaster.forecast(
+                    historical_data=historical,
+                    horizon=request.horizon,
+                    model_type=request.model_type
+                )
+                
+                # Model karşılaştırması
+                model_comparison = {}
+                
+                # 1. Holt-Winters
+                try:
+                    if len(historical) >= 6:
+                        hw_result = forecaster.holt_winters_forecast(historical, request.horizon)
+                        hw_forecast = hw_result.get('mean', [])
+                        if hw_forecast:
+                            hw_rmse = forecaster.calculate_model_rmse(historical, hw_forecast)
+                            model_comparison['holt_winters'] = {
+                                'rmse': hw_rmse,
+                                'forecast': hw_forecast
+                            }
+                except Exception as e:
+                    print(f"⚠️ HW hatası: {e}")
+                
+                # 2. ARIMA
+                try:
+                    if len(historical) >= 6:
+                        arima_result = forecaster.arima_forecast(historical, request.horizon)
+                        arima_forecast = arima_result.get('mean', [])
+                        if arima_forecast:
+                            arima_rmse = forecaster.calculate_model_rmse(historical, arima_forecast)
+                            model_comparison['arima'] = {
+                                'rmse': arima_rmse,
+                                'forecast': arima_forecast
+                            }
+                except Exception as e:
+                    print(f"⚠️ ARIMA hatası: {e}")
+                
+                # 3. Basit Model
+                simple_result = forecaster.simple_forecast(historical, request.horizon)
+                simple_forecast = simple_result.get('mean', [])
+                if simple_forecast:
+                    simple_rmse = forecaster.calculate_model_rmse(historical, simple_forecast)
+                    model_comparison['simple'] = {
+                        'rmse': simple_rmse,
+                        'forecast': simple_forecast
+                    }
+                
+                # Outlier tespiti
+                outlier_info = forecaster.detect_outliers(historical)
+                
+                # Trend analizi
+                if len(historical) > 1:
+                    trend_percent = ((historical[-1] - historical[0]) / historical[0] * 100) if historical[0] > 0 else 0
+                    trend_direction = 'Artış' if trend_percent > 0 else 'Azalış'
+                else:
+                    trend_percent = 0
+                    trend_direction = 'Sabit'
+                
+                # Model parametreleri
+                model_params = {}
+                if forecast_result.get('model_used') == 'holt_winters':
+                    model_params = {
+                        'seasonal_periods': 52,
+                        'trend': 'add',
+                        'seasonal': 'add'
+                    }
+                elif forecast_result.get('model_used') == 'arima':
+                    model_params = {
+                        'order': '(1,1,1)',
+                        'seasonal_order': None
+                    }
+                elif forecast_result.get('model_used') == 'simple':
+                    model_params = {
+                        'window': 4,
+                        'weighted': True
+                    }
+                
+                if 'selection_info' in forecast_result:
+                    model_params.update(forecast_result['selection_info'])
+                
+                selection_reason = forecast_result.get('selection_info', {}).get('selection_reason', 'Otomatik seçim')
+                
+                results.append({
+                    'material_code': material.get('code', ''),
+                    'group': material.get('group', 'GENEL'),
+                    'horizon': request.horizon,
+                    'selected_model': forecast_result.get('model_used', 'simple'),
+                    'best_model_label': forecast_result.get('model_used', 'simple').replace('_', ' ').title(),
+                    'model_description': f"{forecast_result.get('model_used', 'simple')} modeli kullanıldı",
+                    'selection_reason': selection_reason,
+                    'forecast': forecast_result.get('mean', []),
+                    'lower_80': forecast_result.get('lower_80', []),
+                    'upper_80': forecast_result.get('upper_80', []),
+                    'lower_95': forecast_result.get('lower_95', []),
+                    'upper_95': forecast_result.get('upper_95', []),
+                    'trend_direction': trend_direction,
+                    'trend_percent': round(trend_percent, 1),
+                    'model_rmse': forecaster.calculate_model_rmse(historical, forecast_result.get('mean', [])),
+                    'model_comparison': model_comparison,
+                    'model_params': model_params,
+                    'outlier_info': outlier_info,
+                    'historical_data': historical
+                })
+                
+                # ✅ İlerleme güncelle
+                progress = int((idx + 1) / len(materials) * 100)
+                update_async_progress(db, task_id, progress, f'{progress}% tamamlandı', len(results))
+                
+            except Exception as e:
+                print(f"❌ Malzeme {material.get('code', '')} tahmin hatası (Task {task_id}): {e}")
+                continue
+        
+        if not results:
+            print(f"❌ Async job hatası: Hiçbir sonuç yok (Task {task_id})")
+            update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
+            return
+        
+        # ✅ Sonuçları kaydet - Güncelle
+        result_data = {
+            'success': True,
+            'total': len(results),
+            'results': results,
+            'horizon': request.horizon,
+            'model_type': request.model_type,
+            'task_id': task_id,
+            'status': 'completed',
+            'message': 'Analiz tamamlandı!',
+            'completed_at': datetime.utcnow().isoformat()
+        }
+        
+        # ✅ Varolan kaydı güncelle
+        db.query(AnalysisResult).filter(
+            AnalysisResult.task_id == task_id
+        ).update({
+            'data': result_data
+        })
+        db.commit()
+        
+        print(f"✅ Async job tamamlandı: Task ID {task_id}, {len(results)} malzeme analiz edildi")
+        
+    except Exception as e:
+        print(f"❌ Async job hatası (Task {task_id}): {e}")
+        update_async_task_status(db, task_id, 'failed', str(e))
+
+
+# ✅ Yardımcı fonksiyonlar
+def update_async_progress(db: Session, task_id: str, progress: int, message: str, completed: int):
+    """Async işlem ilerlemesini güncelle"""
+    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
+    if result:
+        data = result.data if isinstance(result.data, dict) else {}
+        data['progress'] = progress
+        data['message'] = message
+        data['completed_materials'] = completed
+        result.data = data
+        db.commit()
+
+
+def update_async_task_status(db: Session, task_id: str, status: str, message: str):
+    """Async işlem durumunu güncelle"""
+    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
+    if result:
+        data = result.data if isinstance(result.data, dict) else {}
+        data['status'] = status
+        data['message'] = message
+        result.data = data
+        db.commit()
+ 
+@router.get("/forecast/async/status/{task_id}")
+def get_async_task_status(
+    task_id: str,
+    db: Session = Depends(get_db)
+):
+    """Async işlemin durumunu kontrol eder."""
+    from app.models import AnalysisResult
+    
+    try:
+        # ✅ Sorguyu optimize et
+        result = db.query(AnalysisResult).filter(
+            AnalysisResult.task_id == task_id
+        ).first()
+        
+        if result:
+            return {
+                "task_id": task_id,
+                "status": "completed",
+                "progress": 100,
+                "message": "Analiz tamamlandı!"
+            }
+        
+        # ✅ İşlem devam ediyor - progress'i tahmini göster
+        # Gerçek ilerleme için cache veya Redis kullanılabilir
+        return {
+            "task_id": task_id,
+            "status": "processing",
+            "progress": 50,
+            "message": "Analiz devam ediyor..."
+        }
+    except Exception as e:
+        print(f"❌ Status kontrol hatası: {e}")
+        # ✅ Hata durumunda da düzgün yanıt dön
+        return {
+            "task_id": task_id,
+            "status": "error",
+            "progress": 0,
+            "message": f"Hata: {str(e)}"
+        }
+
+
+@router.get("/forecast/async/result/{task_id}")
+def get_async_task_result(
+    task_id: str,
+    db: Session = Depends(get_db)
+):
+    """Async işlemin sonuçlarını getirir."""
+    from app.models import AnalysisResult
+    
+    try:
+        result = db.query(AnalysisResult).filter(
+            AnalysisResult.task_id == task_id
+        ).first()
+        
+        if not result:
+            # ✅ 404 yerine 202 (Accepted) dönebilir
+            raise HTTPException(status_code=404, detail="Task bulunamadı veya henüz tamamlanmadı")
+        
+        data = result.data
+        return {
+            'success': True,
+            'total': data.get('total', 0),
+            'results': data.get('results', [])
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Result getirme hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    

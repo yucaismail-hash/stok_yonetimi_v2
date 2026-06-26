@@ -414,3 +414,72 @@ class ExcelProcessor:
             ]
         finally:
             db.close()
+
+
+# ============================================
+# ✅ process_excel FONKSİYONU (upload.py için)
+# ============================================
+
+def process_excel(file_content: bytes) -> Dict[str, Any]:
+    """
+    Excel dosyasını işle ve malzeme verilerini döndür (Basit versiyon)
+    
+    Args:
+        file_content: Excel dosyasının bytes içeriği
+    
+    Returns:
+        {
+            'materials': List[Dict],
+            'supplier_mapping': Dict,
+            'suppliers': Dict,
+            'week_columns': List[str]
+        }
+    """
+    import tempfile
+    import os
+    
+    reader = ExcelReader()
+    
+    # Bytes'i geçici dosyaya yaz
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+        tmp.write(file_content)
+        temp_path = tmp.name
+    
+    try:
+        # Excel'i oku
+        read_result = reader.read_file(temp_path)
+        
+        if not read_result['success']:
+            raise ValueError(read_result.get('errors', ['Dosya okunamadı'])[0])
+        
+        data = read_result['data']
+        
+        return {
+            'materials': data.get('materials', []),
+            'supplier_mapping': data.get('supplier_mapping', {}),
+            'suppliers': data.get('suppliers', {}),
+            'week_columns': data.get('week_columns', [])
+        }
+    finally:
+        # Geçici dosyayı temizle
+        if os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+
+
+def process_excel_detailed(file_path: str, user_id: int, mode: str = 'detailed') -> Dict[str, Any]:
+    """
+    Excel dosyasını detaylı işle (ExcelProcessor sınıfını kullanarak)
+    
+    Args:
+        file_path: Excel dosya yolu
+        user_id: Kullanıcı ID
+        mode: 'quick' veya 'detailed'
+    
+    Returns:
+        Dict: İşlem sonuçları
+    """
+    processor = ExcelProcessor()
+    return processor.process_excel(file_path, user_id, mode)

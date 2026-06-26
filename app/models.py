@@ -177,3 +177,33 @@ class TokenCost(Base):
     cost = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ============================================
+# 🆕 YENİ EKLENEN SINIFLAR (Mevcut yapıya dokunulmaz)
+# ============================================
+
+class UploadedData(Base):
+    """Kullanıcı tarafından yüklenen Excel verileri"""
+    __tablename__ = "uploaded_data"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    filename = Column(String, nullable=False)
+    file_size = Column(Integer, default=0)
+    file_type = Column(String, default="excel")
+    processed_data = Column(JSON, default={})
+    raw_data = Column(JSON, default={})
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    processed_at = Column(DateTime, nullable=True)
+    status = Column(String, default="pending")  # pending, processing, completed, failed
+
+
+class AnalysisResult(Base):
+    """Forecast ve diğer analiz sonuçları"""
+    __tablename__ = "analysis_results"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    result_type = Column(String, nullable=False, index=True)
+    data = Column(JSON, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    task_id = Column(String, nullable=True, index=True)  # Async işlemler için

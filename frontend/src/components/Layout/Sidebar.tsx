@@ -9,6 +9,7 @@ import BackpackIcon from '@mui/icons-material/Backpack';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import WarningIcon from '@mui/icons-material/Warning';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import HistoryIcon from '@mui/icons-material/History';
 import { useAuth } from '../../hooks/useAuth';
 
 interface SidebarProps {
@@ -23,6 +24,7 @@ const menuItems = [
   { path: '/simulation', label: 'Simülasyon', icon: <TuneIcon /> },
   { path: '/backtest', label: 'Backtest', icon: <BackpackIcon /> },
   { path: '/supplier', label: 'Tedarikçi', icon: <LocalShippingIcon /> },
+  { path: '/tasks', label: 'ASYNC Görevler', icon: <HistoryIcon /> },
 ];
 
 const adminItem = { path: '/admin', label: 'Admin Panel', icon: <AdminPanelSettingsIcon /> };

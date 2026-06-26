@@ -136,5 +136,39 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="Kullanıcı bulunamadı")
     
-    # ✅ User NESNESİ döndür!
+    return user
+
+
+# ✅ get_current_user_optional - DÜZELTİLMİŞ
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Token varsa kullanıcıyı döndür, yoksa None döndür.
+    Upload gibi opsiyonel token gerektiren endpoint'ler için.
+    """
+    if not credentials:
+        print("⚠️ Token yok, anonim kullanıcı olarak devam")
+        return None
+    
+    token = credentials.credentials
+    print(f"🔍 Token kontrolü: {token[:20]}...")
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if user_id is None:
+            print("❌ Token'da user_id yok")
+            return None
+    except JWTError as e:
+        print(f"❌ Token decode hatası: {e}")
+        return None
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        print(f"✅ Kullanıcı bulundu: {user.email} (ID: {user.id})")
+    else:
+        print(f"❌ Kullanıcı bulunamadı: ID {user_id}")
+    
     return user

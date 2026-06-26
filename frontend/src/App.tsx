@@ -10,6 +10,7 @@ import ForecastPage from './pages/ForecastPage';
 import SimulationPage from './pages/SimulationPage';
 import BacktestPage from './pages/BacktestPage';
 import SupplierPage from './pages/SupplierPage';
+import TaskListPage from './pages/TaskListPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 import LoginPage from './pages/LoginPage';
@@ -47,6 +48,7 @@ function App() {
               <Route path="/simulation" element={<SimulationPage />} />
               <Route path="/backtest" element={<BacktestPage />} />
               <Route path="/supplier" element={<SupplierPage />} />
+              <Route path="/tasks" element={<TaskListPage />} /> {/* ✅ Yeni route */}
               <Route path="/admin" element={<AdminPage />} />
               <Route path="/profile" element={<ProfilePage />} />
             </Route>
