@@ -29,6 +29,7 @@ import {
   Stack,
   Tooltip,
   LinearProgress,
+  Snackbar,
 } from '@mui/material';
 import {
   Timeline,
@@ -86,6 +87,18 @@ export default function SimulationPage() {
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isSimulating, setIsSimulating] = useState(false);
+  const [asyncLoading, setAsyncLoading] = useState(false);
+
+  // ✅ Snackbar state
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
 
   const [config, setConfig] = useState({
     n_simulations: 500,
@@ -108,16 +121,19 @@ export default function SimulationPage() {
     }
   };
 
+  // 📌 SENKRON Simülasyon
   const simulationMutation = useMutation({
     mutationFn: async () => {
       setProgress(10);
       setProgressLabel('Simülasyon başlatılıyor...');
+      setIsSimulating(true);
       const res = await api.post('/api/simulate/batch', config);
       setProgress(100);
       setProgressLabel('Tamamlandı!');
       return res.data;
     },
     onSuccess: (data) => {
+      setIsSimulating(false);
       if (data.success) {
         setResults(data.results || []);
         setPage(0);
@@ -133,10 +149,34 @@ export default function SimulationPage() {
       }, 2000);
     },
     onError: (err: any) => {
+      setIsSimulating(false);
       console.error('❌ Simülasyon hatası:', err);
       setError(err.response?.data?.detail || 'Simülasyon sırasında hata oluştu');
       setProgress(0);
       setProgressLabel('Hata!');
+    },
+  });
+
+  // 📌 ASYNC Simülasyon
+  const asyncSimulationMutation = useMutation({
+    mutationFn: async () => {
+      setAsyncLoading(true);
+      const res = await api.post('/api/simulate/batch/async', config);
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setAsyncLoading(false);
+      setSnackbar({
+        open: true,
+        message: `✅ Simülasyon talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
+        
+📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        severity: 'success',
+      });
+    },
+    onError: (err: any) => {
+      setAsyncLoading(false);
+      setError(err.response?.data?.detail || 'Async simülasyon başlatılamadı');
     },
   });
 
@@ -280,6 +320,22 @@ export default function SimulationPage() {
 
   return (
     <Box>
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={8000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          sx={{ whiteSpace: 'pre-line' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -301,6 +357,15 @@ export default function SimulationPage() {
             disabled={simulationMutation.isPending || !hasUploadedData}
           >
             {simulationMutation.isPending ? 'Simüle Ediliyor...' : 'Simülasyonu Başlat'}
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={asyncSimulationMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => asyncSimulationMutation.mutate()}
+            disabled={asyncSimulationMutation.isPending || !hasUploadedData || asyncLoading}
+          >
+            {asyncSimulationMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Simülasyon'}
           </Button>
         </Box>
       </Box>
@@ -434,7 +499,7 @@ export default function SimulationPage() {
         </CardContent>
       </Card>
 
-      {/* İlerleme Durumu */}
+      {/* İlerleme Durumu - Sadece SENKRON için */}
       {simulationMutation.isPending && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <Box sx={{ position: 'relative', display: 'inline-flex' }}>

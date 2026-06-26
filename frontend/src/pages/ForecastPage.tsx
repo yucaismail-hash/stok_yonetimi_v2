@@ -109,12 +109,8 @@ export default function ForecastPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
   
-  // ✅ Snackbar state
-  const [snackbar, setSnackbar] = useState<{ 
-    open: boolean; 
-    message: string; 
-    severity: 'success' | 'error' | 'info' 
-  }>({
+  // Snackbar için
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
     open: false,
     message: '',
     severity: 'info',
@@ -214,7 +210,10 @@ export default function ForecastPage() {
       const res = await api.get(`/api/forecast/async/status/${taskId}`);
       const status = res.data;
       
-      console.log(`📊 Async durum: ${status.status}`);
+      console.log(`📊 Async durum: ${status.status}, İlerleme: ${status.progress}%`);
+      
+      setProgress(status.progress || 50);
+      setProgressLabel(status.message || 'İşleniyor...');
       
       if (status.status === 'completed') {
         if (intervalIdRef.current) {
@@ -224,20 +223,22 @@ export default function ForecastPage() {
         
         setIsProcessing(false);
         setActiveAsyncTask(null);
-        
-        // ✅ Sadece başarılı mesajı göster
-        setSuccess('✅ ASYNC analiz tamamlandı! Sonuçları görüntüleyebilirsiniz.');
-        setTimeout(() => setSuccess(null), 5000);
+        setProgress(100);
+        setProgressLabel('Tamamlandı!');
         
         try {
           const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
           if (resultsRes.data.success) {
             setResults(resultsRes.data.results || []);
             setPage(0);
+            const count = resultsRes.data.total || resultsRes.data.results?.length || 0;
+            setSuccess(`${count} malzeme başarıyla analiz edildi.`);
+            setTimeout(() => setSuccess(null), 5000);
             await fetchUser();
           }
         } catch (err) {
           console.error('❌ Sonuç getirme hatası:', err);
+          setError('Sonuçlar alınamadı');
         }
         return;
       }
@@ -250,6 +251,8 @@ export default function ForecastPage() {
         
         setIsProcessing(false);
         setActiveAsyncTask(null);
+        setProgress(0);
+        setProgressLabel('Hata!');
         setError(status.message || 'Async analiz başarısız oldu');
         return;
       }
@@ -262,12 +265,15 @@ export default function ForecastPage() {
       }
       setIsProcessing(false);
       setActiveAsyncTask(null);
+      setError('Async durum kontrolü başarısız');
     }
   };
 
   // 📌 Async Batch Forecast Mutation
   const asyncForecastMutation = useMutation({
     mutationFn: async () => {
+      setProgress(5);
+      setProgressLabel('Async analiz başlatılıyor...');
       setIsProcessing(true);
 
       const res = await api.post('/api/forecast/batch/async', {
@@ -279,26 +285,26 @@ export default function ForecastPage() {
     onSuccess: (data) => {
       setActiveAsyncTask(data.task_id);
       
-      // ✅ Sadece Snackbar mesajı göster
+      // ✅ Snackbar mesajı göster
       setSnackbar({
         open: true,
         message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-        
 📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
         severity: 'success',
       });
       
-      // ✅ interval'i başlat
+      setProgress(10);
+      setProgressLabel('İşlem kuyruğa alındı.');
+      
       if (intervalIdRef.current) {
         clearInterval(intervalIdRef.current);
         intervalIdRef.current = null;
       }
       
-      intervalIdRef.current = window.setInterval(() => {
+      intervalIdRef.current = setInterval(() => {
         checkAsyncProgress(data.task_id);
-      }, 5000);
+      }, 3000);
       
-      // 5 dakika sonra timeout
       setTimeout(() => {
         if (intervalIdRef.current) {
           clearInterval(intervalIdRef.current);
@@ -314,6 +320,8 @@ export default function ForecastPage() {
     onError: (err: any) => {
       setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
       setIsProcessing(false);
+      setProgress(0);
+      setProgressLabel('Hata!');
       if (intervalIdRef.current) {
         clearInterval(intervalIdRef.current);
         intervalIdRef.current = null;
@@ -447,6 +455,18 @@ export default function ForecastPage() {
     auto: 'Otomatik',
   };
 
+  const getPatternColor = (color: string) => {
+    switch(color) {
+      case 'success': return 'success';
+      case 'info': return 'info';
+      case 'warning': return 'warning';
+      case 'error': return 'error';
+      case 'primary': return 'primary';
+      case 'secondary': return 'secondary';
+      default: return 'default';
+    }
+  };
+
   const getMapeStatus = (mape: number) => {
     if (mape < 20) return { color: 'success', label: '✅ Mükemmel', description: 'Stok yönetimi için ideal' };
     if (mape < 30) return { color: 'info', label: '📈 İyi', description: 'Kabul edilebilir' };
@@ -543,7 +563,7 @@ export default function ForecastPage() {
     );
   };
 
-  // 📌 ModelParams Bileşeni
+  // 📌 ModelParams Bileşeni - Pattern Bilgileriyle Zenginleştirilmiş
   const ModelParams = ({ result }: { result: ForecastResult }) => {
     const params = result.model_params;
     if (!params || Object.keys(params).length === 0) {
@@ -557,42 +577,70 @@ export default function ForecastPage() {
     let paramText = '';
     let paramDetails: { key: string; value: any }[] = [];
 
+    // ✅ Pattern bilgilerini ekle
+    if (params.pattern) {
+      paramDetails.push({
+        key: '📊 Talep Patterni',
+        value: (
+          <Chip
+            label={params.pattern_label || params.pattern}
+            size="small"
+            color={getPatternColor(params.pattern_color)}
+            variant="outlined"
+          />
+        )
+      });
+      
+      if (params.cv !== undefined) {
+        paramDetails.push({ key: 'Değişkenlik (CV)', value: params.cv });
+      }
+      if (params.zero_ratio !== undefined) {
+        paramDetails.push({ key: 'Sıfır Talep Oranı', value: params.zero_ratio });
+      }
+    }
+
+    // Model bazında parametreler
     if (result.selected_model === 'holt_winters') {
       paramText = `Mevsimsellik: ${params.seasonal_periods || '52'} hafta`;
-      paramDetails = [
+      paramDetails.push(
         { key: 'Mevsimsellik Periyodu', value: `${params.seasonal_periods || '52'} hafta` },
         { key: 'Trend', value: params.trend || 'Toplanabilir (add)' },
-        { key: 'Mevsimsellik', value: params.seasonal || 'Toplanabilir (add)' },
-      ];
+        { key: 'Mevsimsellik', value: params.seasonal || 'Toplanabilir (add)' }
+      );
       if (params.damping_trend !== undefined) {
         paramDetails.push({ key: 'Trend Sönümleme', value: params.damping_trend ? 'Aktif' : 'Pasif' });
       }
     } else if (result.selected_model === 'arima') {
       const order = params.order || '(1,1,1)';
       paramText = `Order: ${order}`;
-      paramDetails = [
+      paramDetails.push(
         { key: 'ARIMA Order (p,d,q)', value: order },
-        { key: 'Mevsimsellik', value: params.seasonal_order ? `${params.seasonal_order}` : 'Yok' },
-      ];
+        { key: 'Mevsimsellik', value: params.seasonal_order ? `${params.seasonal_order}` : 'Yok' }
+      );
       if (params.trend !== undefined) {
         paramDetails.push({ key: 'Trend', value: params.trend ? 'Evet' : 'Hayır' });
       }
     } else if (result.selected_model === 'simple') {
       paramText = `Pencere: ${params.window || 4} hafta`;
-      paramDetails = [
+      paramDetails.push(
         { key: 'Hareketli Ortalama Penceresi', value: `${params.window || 4} hafta` },
-        { key: 'Ağırlıklandırma', value: params.weighted ? 'Evet (Ağırlıklı)' : 'Hayır (Eşit)' },
-      ];
+        { key: 'Ağırlıklandırma', value: params.weighted ? 'Evet (Ağırlıklı)' : 'Hayır (Eşit)' }
+      );
     } else if (result.selected_model === 'auto') {
       paramText = `Seçim Yöntemi: ${params.selection_method || 'MAPE'}`;
-      paramDetails = [
+      paramDetails.push(
         { key: 'Seçim Kriteri', value: params.selection_method || 'MAPE' },
         { key: 'Test Edilen Model Sayısı', value: params.models_tested || 0 },
-        { key: 'En İyi Model', value: params.best_model || 'Belirlenemedi' },
-      ];
+        { key: 'En İyi Model', value: params.best_model || 'Belirlenemedi' }
+      );
       if (params.best_mape) {
         paramDetails.push({ key: 'En Düşük MAPE', value: `${params.best_mape}%` });
       }
+    }
+
+    // Seçim bilgisi
+    if (params.selection_reason) {
+      paramDetails.push({ key: 'Seçim Nedeni', value: params.selection_reason });
     }
 
     return (
@@ -646,7 +694,7 @@ export default function ForecastPage() {
             📈 Talep Tahmini (Forecast)
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            4 farklı model ile talep tahmini yapar.
+            4 farklı model ile talep tahmini yapar. Pattern analizi ile zenginleştirilmiştir.
             <Chip 
               label={`${costData?.cost || 8} Token`} 
               size="small" 

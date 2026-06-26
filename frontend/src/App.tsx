@@ -4,7 +4,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Layout from './components/Layout/Layout';
 import DashboardPage from './pages/DashboardPage';
-import PatternPage from './pages/PatternPage';
+import PatternPage from './pages/PatternPage_silindi';
 import SafetyStockPage from './pages/SafetyStockPage';
 import ForecastPage from './pages/ForecastPage';
 import SimulationPage from './pages/SimulationPage';
@@ -42,7 +42,6 @@ function App() {
             {/* Ana uygulama - Layout ile */}
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/pattern" element={<PatternPage />} />
               <Route path="/safety-stock" element={<SafetyStockPage />} />
               <Route path="/forecast" element={<ForecastPage />} />
               <Route path="/simulation" element={<SimulationPage />} />

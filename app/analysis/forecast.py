@@ -1,6 +1,7 @@
 """
-Talep Tahmini (Forecast) Modülü
+Talep Tahmini (Forecast) Modülü - Pattern Entegre
 Desteklenen modeller: Holt-Winters, ARIMA, Basit Hareketli Ortalama
+Pattern analizi ile model seçimi iyileştirilmiştir.
 """
 
 import numpy as np
@@ -19,32 +20,70 @@ except ImportError:
     print("Uyarı: statsmodels kurulu değil. Sadece basit modeller kullanılabilir.")
 
 class DemandForecaster:
-    """Talep Tahmin Sınıfı - Holt-Winters, ARIMA, Basit"""
+    """Talep Tahmin Sınıfı - Pattern ile zenginleştirilmiş"""
     
     def __init__(self, seasonal_periods=52):
         self.seasonal_periods = seasonal_periods
         self.model = None
         self.model_type = None
         self.fitted = False
+        self._pattern_analyzer = None
+    
+    def set_pattern_analyzer(self, pattern_analyzer):
+        """Pattern analizcisini ata"""
+        self._pattern_analyzer = pattern_analyzer
+    
+    def get_pattern(self, historical_data: List[float]) -> Tuple[str, Dict]:
+        """Verinin pattern'ini analiz et"""
+        if self._pattern_analyzer:
+            return self._pattern_analyzer.analyze_demand_pattern(historical_data)
+        return "DEGISKEN", {'cv': 0.5, 'zero_ratio': 0, 'trend': 0, 'mean': 0, 'std': 0, 'median': 0}
     
     def auto_select_model(self, historical_data) -> Tuple[str, Dict]:
-        """Otomatik model seçimi - basit ve güvenilir"""
+        """
+        Otomatik model seçimi - Pattern bilgisi ile zenginleştirilmiş
+        """
         n = len(historical_data)
+        
+        # ✅ Pattern analizi yap
+        pattern, pattern_stats = self.get_pattern(historical_data)
+        cv = pattern_stats.get('cv', 0)
+        zero_ratio = pattern_stats.get('zero_ratio', 0)
+        trend = pattern_stats.get('trend', 0)
         
         # Veri yetersizse basit dön
         if n < 8:
-            return "simple", {"selection_reason": "Yetersiz veri, basit model kullanıldı"}
+            return "simple", {
+                "selection_reason": "Yetersiz veri, basit model kullanıldı",
+                "pattern": pattern,
+                "pattern_label": get_pattern_label(pattern)
+            }
         
-        # Mevsimsellik kontrolü
-        seasonal_periods = min(52, max(4, n // 4))
+        # ✅ Pattern'e göre model önceliklendirme
+        model_priority = []
         
-        # Modelleri test et
-        models = []
-        if STATSMODELS_AVAILABLE and n >= seasonal_periods * 2:
-            models.append('holt_winters')
-        if STATSMODELS_AVAILABLE and n >= 12:
-            models.append('arima')
-        models.append('simple')
+        if pattern == 'SIFIR_TALEP':
+            model_priority = ['simple']
+        elif pattern in ['DUZENLI_SABIT', 'DUZENLI_ARTS', 'DUZENLI_AZALIS']:
+            if STATSMODELS_AVAILABLE and n >= 12:
+                model_priority = ['holt_winters', 'arima', 'simple']
+            else:
+                model_priority = ['arima', 'simple']
+        elif pattern in ['ARALIKLI_DUSUK', 'ARALIKLI_YUKSEK']:
+            # Aralıklı talep için basit model daha iyi
+            model_priority = ['simple', 'arima']
+        elif pattern in ['DEGISKEN', 'YUKSEK_DEGISKEN']:
+            if STATSMODELS_AVAILABLE and n >= 13:
+                model_priority = ['arima', 'holt_winters', 'simple']
+            else:
+                model_priority = ['arima', 'simple']
+        elif pattern == 'ASIRI_DEGISKEN':
+            model_priority = ['simple', 'arima']
+        else:
+            model_priority = ['simple', 'arima', 'holt_winters']
+        
+        # ✅ Mevsimsellik kontrolü
+        seasonal_periods = self.detect_seasonality(historical_data)
         
         # Walk-Forward Validation
         test_size = min(4, n // 4)
@@ -55,7 +94,7 @@ class DemandForecaster:
         best_model = 'simple'
         scores = {}
         
-        for model_name in models:
+        for model_name in model_priority:
             mape_list = []
             
             for i in range(test_size, n - test_size + 1):
@@ -63,9 +102,8 @@ class DemandForecaster:
                 test = historical_data[i:i+test_size]
                 
                 try:
-                    # Model tahmini
                     if model_name == 'holt_winters':
-                        result = self.holt_winters_forecast(train, horizon=test_size)
+                        result = self.holt_winters_forecast(train, horizon=test_size, seasonal_periods=seasonal_periods)
                     elif model_name == 'arima':
                         result = self.arima_forecast(train, horizon=test_size)
                     else:
@@ -75,7 +113,6 @@ class DemandForecaster:
                     if not pred:
                         continue
                     
-                    # MAPE hesapla
                     for actual, pred_val in zip(test, pred):
                         if actual > 0:
                             mape_list.append(abs((actual - pred_val) / actual) * 100)
@@ -94,33 +131,60 @@ class DemandForecaster:
         
         # Sonuçları döndür
         selection_info = {
-            "selection_method": "Walk-Forward CV",
+            "selection_method": "Pattern + Walk-Forward CV",
             "models_tested": len(scores),
             "best_model": best_model,
             "best_mape": round(best_mape, 2) if best_mape != float('inf') else 999,
             "model_scores": {k: round(v, 2) for k, v in scores.items()},
-            "selection_reason": f"En düşük MAPE ile '{best_model}' seçildi"
+            "selection_reason": f"Pattern: {get_pattern_label(pattern)}, En düşük MAPE ile '{best_model}' seçildi",
+            "pattern": pattern,
+            "pattern_label": get_pattern_label(pattern),
+            "cv": round(cv, 4),
+            "zero_ratio": round(zero_ratio, 4),
+            "trend": round(trend, 2)
         }
         
         return best_model, selection_info
+
+    def detect_seasonality(self, data: List[float]) -> int:
+        """Verideki mevsimselliği otomatik tespit et"""
+        n = len(data)
+        if n < 12:
+            return min(4, n // 2)
+        
+        try:
+            # FFT ile frekans analizi
+            fft = np.fft.fft(data)
+            freqs = np.fft.fftfreq(len(data))
+            power = np.abs(fft) ** 2
+            power[0] = 0
+            
+            if len(power) > 1:
+                max_freq_idx = np.argmax(power[1:]) + 1
+                if max_freq_idx < len(freqs):
+                    period = int(1 / abs(freqs[max_freq_idx]))
+                    if 4 <= period <= 52:
+                        return period
+        except:
+            pass
+        
+        return min(52, max(4, n // 4))
 
     def holt_winters_forecast(self, data, horizon=13, seasonal_periods=None):
         """Holt-Winters Mevsimsel Model ile Tahmin"""
         n = len(data)
         
-        # ✅ Mevsimsellik periyodunu veriye göre ayarla
         if seasonal_periods is None:
             seasonal_periods = min(self.seasonal_periods, max(4, n // 4))
         
-        # ✅ Veri en az 8 hafta ve seasonal_periods * 2 olmalı
+        seasonal_periods = max(2, min(seasonal_periods, n // 2))
+        
         if n < 8 or n < seasonal_periods * 2:
-            print(f"⚠️ HW için veri yetersiz ({n} hafta, {seasonal_periods} periyot) - Basit modele dönülüyor")
             return self.simple_forecast(data, horizon)
         
         try:
             from statsmodels.tsa.holtwinters import ExponentialSmoothing
             
-            # ✅ Trend kontrolü
             has_trend = n > 12 and abs(np.polyfit(range(n), data, 1)[0]) > 0.01
             
             if has_trend and n >= seasonal_periods * 2:
@@ -161,28 +225,24 @@ class DemandForecaster:
                 'upper_80': upper_80.tolist(),
                 'lower_95': lower_95.tolist(),
                 'upper_95': upper_95.tolist(),
-                'model_used': 'holt_winters'
+                'model_used': 'holt_winters',
+                'seasonal_periods': seasonal_periods
             }
         except Exception as e:
             print(f"⚠️ Holt-Winters hatası: {e}")
             return self.simple_forecast(data, horizon)
 
-
     def arima_forecast(self, data, horizon=13, order=(1,1,1)):
         """ARIMA Modeli ile Tahmin"""
         n = len(data)
         
-        # ✅ ARIMA için en az 8 hafta gerekli
         if n < 8:
-            print(f"⚠️ ARIMA için veri yetersiz ({n} hafta) - Basit modele dönülüyor")
             return self.simple_forecast(data, horizon)
         
         try:
-            # ✅ Otomatik order seçimi
             best_aic = float('inf')
             best_order = order
             
-            # Grid search (sadece veri yeterliyse)
             if n >= 12:
                 for p in range(0, min(3, n//4)):
                     for d in range(0, 2):
@@ -197,7 +257,6 @@ class DemandForecaster:
                                     best_order = (p, d, q)
                             except:
                                 continue
-                print(f"📊 ARIMA en iyi order: {best_order}, AIC: {best_aic:.2f}")
             
             model = ARIMA(data, order=best_order)
             fitted = model.fit()
@@ -221,7 +280,8 @@ class DemandForecaster:
                 'upper_80': upper_80.tolist(),
                 'lower_95': lower_95.tolist(),
                 'upper_95': upper_95.tolist(),
-                'model_used': 'arima'
+                'model_used': 'arima',
+                'order': best_order
             }
         except Exception as e:
             print(f"⚠️ ARIMA hatası: {e}")
@@ -271,7 +331,7 @@ class DemandForecaster:
         }
     
     def forecast(self, historical_data, horizon=13, model_type="auto"):
-        """Ana forecast fonksiyonu"""
+        """Ana forecast fonksiyonu - Pattern ile zenginleştirilmiş"""
         if not historical_data or len(historical_data) < 4:
             raise ValueError("Yetersiz veri: En az 4 haftalık veri gerekli")
         
@@ -280,7 +340,6 @@ class DemandForecaster:
         if model_type == "auto":
             model_type, selection_info = self.auto_select_model(historical_data)
         
-        # Seçilen model ile tahmin yap
         if model_type == "holt_winters" and STATSMODELS_AVAILABLE:
             result = self.holt_winters_forecast(historical_data, horizon)
         elif model_type == "arima" and STATSMODELS_AVAILABLE:
@@ -343,7 +402,6 @@ class DemandForecaster:
             if actual > 0:
                 mape_values.append(abs((actual - pred_val) / actual) * 100)
             else:
-                # Gerçek değer 0 ise, tahmin de 0'a yakınsa düşük hata ver
                 if pred_val == 0:
                     mape_values.append(0)
                 else:
@@ -372,3 +430,38 @@ class DemandForecaster:
             'total': len(data),
             'outlier_count': len(outliers)
         }
+
+
+# ============================================================
+# 📌 YARDIMCI FONKSİYONLAR
+# ============================================================
+def get_pattern_label(pattern: str) -> str:
+    """Pattern label'ını döndür"""
+    labels = {
+        'DUZENLI_SABIT': 'Düzenli Sabit',
+        'DUZENLI_ARTS': 'Düzenli Artan',
+        'DUZENLI_AZALIS': 'Düzenli Azalan',
+        'DEGISKEN': 'Değişken',
+        'YUKSEK_DEGISKEN': 'Yüksek Değişken',
+        'ASIRI_DEGISKEN': 'Aşırı Değişken',
+        'SIFIR_TALEP': 'Sıfır Talep',
+        'ARALIKLI_DUSUK': 'Aralıklı Düşük',
+        'ARALIKLI_YUKSEK': 'Aralıklı Yüksek',
+    }
+    return labels.get(pattern, pattern)
+
+
+def get_pattern_color(pattern: str) -> str:
+    """Pattern renk kodu"""
+    colors = {
+        'DUZENLI_SABIT': 'success',
+        'DUZENLI_ARTS': 'info',
+        'DUZENLI_AZALIS': 'warning',
+        'DEGISKEN': 'primary',
+        'YUKSEK_DEGISKEN': 'secondary',
+        'ASIRI_DEGISKEN': 'error',
+        'SIFIR_TALEP': 'error',
+        'ARALIKLI_DUSUK': 'info',
+        'ARALIKLI_YUKSEK': 'warning',
+    }
+    return colors.get(pattern, 'default')

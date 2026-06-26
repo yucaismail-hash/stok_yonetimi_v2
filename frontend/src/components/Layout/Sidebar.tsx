@@ -18,7 +18,6 @@ interface SidebarProps {
 
 const menuItems = [
   { path: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
-  { path: '/pattern', label: 'Pattern Analizi', icon: <AnalyticsIcon /> },
   { path: '/safety-stock', label: 'Emniyet Stoku', icon: <SecurityIcon /> },
   { path: '/forecast', label: 'Talep Tahmini', icon: <ShowChartIcon /> },
   { path: '/simulation', label: 'Simülasyon', icon: <TuneIcon /> },

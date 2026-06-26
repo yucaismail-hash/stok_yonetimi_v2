@@ -23,6 +23,7 @@ import {
   DialogActions,
   TablePagination,
   Tooltip,
+  Snackbar,
   LinearProgress,
 } from '@mui/material';
 import {
@@ -32,9 +33,10 @@ import {
   History,
   Close,
   Visibility,
+  Info,
   Warning,
   CheckCircle,
-  Info,
+  Error,
 } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import api from '../services/api';
@@ -64,9 +66,8 @@ interface HistoryItem {
 
 export default function SupplierPage() {
   const { user } = useAuth();
-  const [hasUploadedData, setHasUploadedData] = useState(false);
-  const [hasSuppliers, setHasSuppliers] = useState(false);
-  const [results, setResults] = useState<SupplierResult[]>([]);
+  const [hasSupplierData, setHasSupplierData] = useState(false);
+  const [suppliers, setSuppliers] = useState<SupplierResult[]>([]);
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -75,69 +76,76 @@ export default function SupplierPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
-  const [progress, setProgress] = useState(0);
-  const [progressLabel, setProgressLabel] = useState('Hazır');
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [asyncLoading, setAsyncLoading] = useState(false);
+
+  // ✅ Snackbar state
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
 
   useEffect(() => {
-    checkUploadedData();
     checkSupplierData();
   }, []);
-
-  const checkUploadedData = async () => {
-    try {
-      const res = await api.get('/api/upload/status');
-      setHasUploadedData(res.data.has_data);
-    } catch {
-      setHasUploadedData(false);
-    }
-  };
 
   const checkSupplierData = async () => {
     try {
       const res = await api.get('/api/supplier/check');
-      setHasSuppliers(res.data.has_suppliers);
-      if (!res.data.has_suppliers && hasUploadedData) {
-        setError(res.data.message || 'Tedarikçi verisi bulunamadı.');
-      }
+      setHasSupplierData(res.data.has_suppliers);
     } catch {
-      setHasSuppliers(false);
+      setHasSupplierData(false);
     }
   };
 
+  // 📌 SENKRON Tedarikçi Analizi
   const supplierMutation = useMutation({
     mutationFn: async () => {
-      setProgress(10);
-      setProgressLabel('Tedarikçi analizi başlatılıyor...');
-      const res = await api.post('/api/supplier/batch');
-      setProgress(100);
-      setProgressLabel('Tamamlandı!');
+      const res = await api.post('/api/supplier/batch', {});
       return res.data;
     },
     onSuccess: (data) => {
       if (data.success) {
-        setResults(data.suppliers || []);
+        setSuppliers(data.suppliers || []);
         setRecommendations(data.recommendations || []);
         setPage(0);
         setError(null);
-        setSuccess(`${data.total_suppliers || data.suppliers?.length || 0} tedarikçi başarıyla analiz edildi.`);
+        setSuccess(`${data.total_suppliers || 0} tedarikçi başarıyla analiz edildi.`);
         setTimeout(() => setSuccess(null), 5000);
       } else {
         setError(data.error || 'Tedarikçi analizi başarısız');
-        if (data.has_suppliers === false) {
-          setHasSuppliers(false);
-        }
       }
-      setTimeout(() => {
-        setProgress(0);
-        setProgressLabel('Hazır');
-      }, 2000);
     },
     onError: (err: any) => {
-      console.error('❌ Tedarikçi analiz hatası:', err);
+      console.error('❌ Tedarikçi analizi hatası:', err);
       setError(err.response?.data?.detail || 'Analiz sırasında hata oluştu');
-      setProgress(0);
-      setProgressLabel('Hata!');
+    },
+  });
+
+  // 📌 ASYNC Tedarikçi Analizi
+  const asyncSupplierMutation = useMutation({
+    mutationFn: async () => {
+      setAsyncLoading(true);
+      const res = await api.post('/api/supplier/batch/async', {});
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setAsyncLoading(false);
+      setSnackbar({
+        open: true,
+        message: `✅ Tedarikçi analizi talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
+        
+📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        severity: 'success',
+      });
+    },
+    onError: (err: any) => {
+      setAsyncLoading(false);
+      setError(err.response?.data?.detail || 'Async tedarikçi analizi başlatılamadı');
     },
   });
 
@@ -167,15 +175,26 @@ export default function SupplierPage() {
         });
         
         const groupedResults = Array.from(groupedMap.values()).map(group => {
-          const firstItem = group.items[0];
+          // ✅ resultData'yı dışarıda tanımla
+          const firstItem = group.items[0] || {};
           const resultData = firstItem.data || firstItem.result_data || {};
+          
+          const allResults = group.items
+            .map((item: any) => {
+              const data = item.data || item.result_data || {};
+              if (data.suppliers && Array.isArray(data.suppliers)) {
+                return data.suppliers;
+              }
+              return [];
+            })
+            .flat();
           
           return {
             id: group.id,
             created_at: group.created_at,
             data: {
-              total: resultData.suppliers?.length || 0,
-              results: resultData.suppliers || [],
+              total: allResults.length,
+              suppliers: allResults,
               recommendations: resultData.recommendations || []
             }
           };
@@ -195,46 +214,40 @@ export default function SupplierPage() {
   };
 
   const handleViewHistory = (item: HistoryItem) => {
-    const historyResults = item.data?.results || [];
-    if (historyResults.length > 0) {
-      setResults(historyResults);
+    const historySuppliers = item.data?.suppliers || [];
+    if (historySuppliers.length > 0) {
+      setSuppliers(historySuppliers);
       setRecommendations(item.data?.recommendations || []);
       setPage(0);
       setHistoryDialogOpen(false);
-      setSuccess(`${historyResults.length} tedarikçi geçmiş sonuçları yüklendi.`);
+      setSuccess(`${historySuppliers.length} tedarikçi geçmiş sonuçları yüklendi.`);
       setTimeout(() => setSuccess(null), 3000);
     } else {
       setError('Bu kayıtta görüntülenecek sonuç yok');
     }
   };
 
-  // ✅ Export işlemi - Doğru format
   const handleExport = async () => {
-    if (results.length === 0) {
+    if (suppliers.length === 0) {
       setError('Aktarılacak sonuç yok!');
       return;
     }
     try {
       const response = await api.post('/api/export/supplier-results', {
-        suppliers: results,        // ✅ Doğru: suppliers
-        recommendations: recommendations  // ✅ Doğru: recommendations
-      }, { 
-        responseType: 'blob' 
-      });
-      
+        suppliers: suppliers,
+        recommendations: recommendations
+      }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `tedarikci_analiz_${new Date().toISOString().slice(0,10)}.xlsx`);
+      link.setAttribute('download', `tedarikci_${new Date().toISOString().slice(0,10)}.xlsx`);
       document.body.appendChild(link);
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
       setSuccess('Excel dosyası başarıyla indirildi.');
       setTimeout(() => setSuccess(null), 3000);
     } catch (err) {
-      console.error('Export hatası:', err);
       setError('Excel dosyası oluşturulamadı');
     }
   };
@@ -245,29 +258,60 @@ export default function SupplierPage() {
     setPage(0);
   };
 
-  const paginatedResults = results.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
+  const paginatedSuppliers = suppliers.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
-  const getRiskColor = (risk: number) => {
-    if (risk > 0.4) return 'error';
-    if (risk > 0.2) return 'warning';
-    return 'success';
+  const getRiskColor = (riskLevel: string) => {
+    switch(riskLevel) {
+      case 'DÜŞÜK': return 'success';
+      case 'ORTA': return 'warning';
+      case 'YÜKSEK': return 'error';
+      default: return 'default';
+    }
   };
 
-  const getPerformanceColor = (perf: number) => {
-    if (perf > 0.7) return 'success';
-    if (perf > 0.4) return 'warning';
-    return 'error';
+  const getPerformanceColor = (perfLevel: string) => {
+    switch(perfLevel) {
+      case 'İYİ': return 'success';
+      case 'ORTA': return 'warning';
+      case 'KÖTÜ': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getRiskIcon = (riskLevel: string) => {
+    switch(riskLevel) {
+      case 'DÜŞÜK': return <CheckCircle fontSize="small" />;
+      case 'ORTA': return <Warning fontSize="small" />;
+      case 'YÜKSEK': return <Error fontSize="small" />;
+      default: return <Info fontSize="small" />;
+    }
   };
 
   return (
     <Box>
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={8000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          sx={{ whiteSpace: 'pre-line' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            🚚 Tedarikçi Yönetimi
+            🏭 Tedarikçi Analizi
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Tedarikçi risk ve performans analizi, pay optimizasyonu.
+            Tedarikçi performansını ve risklerini analiz eder.
             <Chip label="5 Token" size="small" color="warning" sx={{ ml: 1 }} />
           </Typography>
         </Box>
@@ -275,18 +319,22 @@ export default function SupplierPage() {
           <Button variant="outlined" startIcon={<History />} onClick={fetchHistory} disabled={loading}>
             {loading ? 'Yükleniyor...' : 'Geçmiş'}
           </Button>
-          {results.length > 0 && (
-            <Button variant="outlined" startIcon={<Download />} onClick={handleExport}>
-              Excel'e Aktar
-            </Button>
-          )}
           <Button
             variant="contained"
             startIcon={supplierMutation.isPending ? <CircularProgress size={20} /> : <Send />}
             onClick={() => supplierMutation.mutate()}
-            disabled={supplierMutation.isPending || !hasUploadedData}
+            disabled={supplierMutation.isPending || !hasSupplierData}
           >
             {supplierMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={asyncSupplierMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => asyncSupplierMutation.mutate()}
+            disabled={asyncSupplierMutation.isPending || !hasSupplierData || asyncLoading}
+          >
+            {asyncSupplierMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Analiz'}
           </Button>
         </Box>
       </Box>
@@ -294,34 +342,56 @@ export default function SupplierPage() {
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
       
-      {!hasUploadedData && !results.length && (
-        <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
-      )}
-      
-      {hasUploadedData && !hasSuppliers && !results.length && (
-        <Alert severity="warning" sx={{ mb: 3 }}>
-          ⚠️ Tedarikçi verisi bulunamadı. Excel'de "Tedarikciler" ve "Malzeme_Tedarikciler" sheet'leri olmalıdır.
+      {!hasSupplierData && !suppliers.length && (
+        <Alert severity="info" sx={{ mb: 3 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            📋 Tedarikçi verisi bulunamadı.
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Excel dosyasına "Tedarikciler" ve "Malzeme_Tedarikciler" sheet'lerini ekleyin.
+          </Typography>
         </Alert>
       )}
 
-      {recommendations.length > 0 && (
-        <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
-          <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-              <Info color="info" />
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                📊 Tedarikçi Önerileri
+      {/* Bilgilendirme Kartı */}
+      <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Info color="info" />
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              📊 Tedarikçi Analizi Metrikleri
+            </Typography>
+          </Box>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Risk Skoru" size="small" color="error" />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                0-1 arası, 1 en riskli
               </Typography>
-            </Box>
-            {recommendations.map((rec, idx) => (
-              <Typography key={idx} variant="body2" sx={{ fontSize: '0.9rem', mb: 0.5 }}>
-                • {rec}
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Performans Skoru" size="small" color="success" />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                0-1 arası, 1 en iyi
               </Typography>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Zamanında Teslimat" size="small" color="primary" />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                Yüzde olarak teslimat başarısı
+              </Typography>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+              <Chip label="Lead Time" size="small" color="warning" />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                Ortalama teslimat süresi (gün)
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
+      {/* Token Bakiyesi */}
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -333,93 +403,111 @@ export default function SupplierPage() {
 
       {supplierMutation.isPending && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
-          <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-            <CircularProgress variant="determinate" value={progress} size={60} />
-            <Box
-              sx={{
-                top: 0,
-                left: 0,
-                bottom: 0,
-                right: 0,
-                position: 'absolute',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Typography variant="caption" component="div" color="text.secondary">
-                {progress}%
-              </Typography>
-            </Box>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            {progressLabel}
-          </Typography>
-          <LinearProgress 
-            variant="determinate" 
-            value={progress} 
-            sx={{ mt: 2, maxWidth: 400, mx: 'auto', height: 8, borderRadius: 4 }}
-          />
+          <CircularProgress />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Tedarikçiler analiz ediliyor...</Typography>
         </Box>
       )}
 
-      {results.length > 0 && (
+      {/* Tavsiyeler */}
+      {recommendations.length > 0 && (
+        <Card sx={{ mb: 3, bgcolor: 'success.light' }}>
+          <CardContent>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>
+              💡 Tavsiyeler
+            </Typography>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {recommendations.map((rec, idx) => (
+                <li key={idx}>
+                  <Typography variant="body2">{rec}</Typography>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
+      {suppliers.length > 0 && (
         <Card>
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Tedarikçiler ({results.length})</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Tedarikçiler ({suppliers.length})
+              </Typography>
+              <Button
+                variant="outlined"
+                startIcon={<Download />}
+                onClick={handleExport}
+              >
+                Excel'e Aktar
+              </Button>
             </Box>
+
             <TableContainer component={Paper} variant="outlined">
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'primary.main' }}>
-                    <TableCell sx={{ color: 'white' }}>Tedarikçi</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Risk</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Performans</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Zamanında</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">LT (Gün)</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Malzeme</TableCell>
-                    <TableCell sx={{ color: 'white' }}>Tavsiye</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Tedarikçi</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Risk</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Performans</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Zamanında %</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">LT (gün)</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Pay %</TableCell>
+                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Tavsiye</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {paginatedResults.map((result, idx) => (
-                    <TableRow key={idx}>
+                  {paginatedSuppliers.map((supplier) => (
+                    <TableRow key={supplier.supplier_id} hover>
                       <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                          {result.name}
+                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                          {supplier.name}
                         </Typography>
                         <Typography variant="caption" color="text.secondary">
-                          {result.supplier_id}
+                          {supplier.supplier_id}
                         </Typography>
                       </TableCell>
                       <TableCell align="center">
-                        <Tooltip title={`Risk Skoru: ${(result.risk_score * 100).toFixed(0)}%`} arrow>
+                        <Tooltip title={`Risk Skoru: ${supplier.risk_score}`} arrow>
                           <Chip
-                            label={result.risk_level}
+                            icon={getRiskIcon(supplier.risk_level)}
+                            label={supplier.risk_level}
                             size="small"
-                            color={getRiskColor(result.risk_score)}
+                            color={getRiskColor(supplier.risk_level)}
                           />
                         </Tooltip>
                       </TableCell>
                       <TableCell align="center">
-                        <Tooltip title={`Performans: ${(result.performance_score * 100).toFixed(0)}%`} arrow>
+                        <Tooltip title={`Performans Skoru: ${supplier.performance_score}`} arrow>
                           <Chip
-                            label={result.performance_level}
+                            label={supplier.performance_level}
                             size="small"
-                            color={getPerformanceColor(result.performance_score)}
+                            color={getPerformanceColor(supplier.performance_level)}
                           />
                         </Tooltip>
                       </TableCell>
-                      <TableCell align="center">{result.ontime_rate.toFixed(0)}%</TableCell>
                       <TableCell align="center">
-                        {result.lt_mean.toFixed(0)} ± {result.lt_std.toFixed(0)}
+                        {supplier.ontime_rate}%
                       </TableCell>
-                      <TableCell align="center">{result.material_count}</TableCell>
+                      <TableCell align="center">
+                        {supplier.lt_mean} ± {supplier.lt_std}
+                      </TableCell>
+                      <TableCell align="center">
+                        {(supplier.total_share * 100).toFixed(1)}%
+                      </TableCell>
                       <TableCell>
-                        <Tooltip title={result.recommendation} arrow>
-                          <Typography variant="caption" sx={{ cursor: 'pointer' }}>
-                            {result.recommendation.substring(0, 30)}...
+                        <Tooltip title={supplier.recommendation} arrow>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              cursor: 'pointer',
+                              display: 'block',
+                              maxWidth: 250,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap'
+                            }}
+                          >
+                            {supplier.recommendation}
                           </Typography>
                         </Tooltip>
                       </TableCell>
@@ -430,7 +518,7 @@ export default function SupplierPage() {
               <TablePagination
                 rowsPerPageOptions={[25, 50, 100, 200]}
                 component="div"
-                count={results.length}
+                count={suppliers.length}
                 rowsPerPage={rowsPerPage}
                 page={page}
                 onPageChange={handleChangePage}
@@ -443,7 +531,7 @@ export default function SupplierPage() {
         </Card>
       )}
 
-      {!supplierMutation.isPending && results.length === 0 && !error && hasUploadedData && hasSuppliers && (
+      {!supplierMutation.isPending && suppliers.length === 0 && !error && hasSupplierData && (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <LocalShipping sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
@@ -457,7 +545,7 @@ export default function SupplierPage() {
       <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">📋 Geçmiş Analiz Sonuçları</Typography>
+            <Typography variant="h6">📋 Geçmiş Tedarikçi Analiz Sonuçları</Typography>
             <IconButton onClick={() => setHistoryDialogOpen(false)}><Close /></IconButton>
           </Box>
         </DialogTitle>
@@ -483,11 +571,19 @@ export default function SupplierPage() {
                     const date = item.created_at ? new Date(item.created_at) : new Date();
                     return (
                       <TableRow key={item.id}>
-                        <TableCell>{date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}</TableCell>
-                        <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
-                        <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
+                        <TableCell>
+                          {date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
+                        </TableCell>
                         <TableCell align="center">
-                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>Görüntüle</Button>
+                          <Chip label={`${total}`} size="small" color="primary" />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip label="Başarılı" size="small" color="success" />
+                        </TableCell>
+                        <TableCell align="center">
+                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>
+                            Görüntüle
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );

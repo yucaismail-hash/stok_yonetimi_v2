@@ -99,6 +99,7 @@ export default function TaskListPage() {
       'pattern_batch_async': '/pattern',
       'safety_stock_batch_async': '/safety-stock',
       'simulation_batch_async': '/simulation',
+      'supplier_batch_async': '/supplier',
       'backtest_batch_async': '/backtest',
     };
     const path = pageMap[resultType] || '/dashboard';

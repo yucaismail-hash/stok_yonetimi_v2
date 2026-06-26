@@ -23,6 +23,7 @@ import {
   DialogActions,
   TablePagination,
   Tooltip,
+  Snackbar,
 } from '@mui/material';
 import {
   Backpack,
@@ -73,6 +74,18 @@ export default function BacktestPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
+  const [asyncLoading, setAsyncLoading] = useState(false);
+  
+  // ✅ Snackbar state
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
 
   useEffect(() => {
     checkUploadedData();
@@ -87,6 +100,7 @@ export default function BacktestPage() {
     }
   };
 
+  // 📌 SENKRON Backtest
   const backtestMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post('/api/backtest/batch', {});
@@ -106,6 +120,29 @@ export default function BacktestPage() {
     onError: (err: any) => {
       console.error('❌ Backtest hatası:', err);
       setError(err.response?.data?.detail || 'Backtest sırasında hata oluştu');
+    },
+  });
+
+  // 📌 ASYNC Backtest
+  const asyncBacktestMutation = useMutation({
+    mutationFn: async () => {
+      setAsyncLoading(true);
+      const res = await api.post('/api/backtest/batch/async', {});
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setAsyncLoading(false);
+      setSnackbar({
+        open: true,
+        message: `✅ Backtest talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
+        
+📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        severity: 'success',
+      });
+    },
+    onError: (err: any) => {
+      setAsyncLoading(false);
+      setError(err.response?.data?.detail || 'Async backtest başlatılamadı');
     },
   });
 
@@ -251,6 +288,22 @@ export default function BacktestPage() {
 
   return (
     <Box>
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={8000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          sx={{ whiteSpace: 'pre-line' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -272,6 +325,15 @@ export default function BacktestPage() {
             disabled={backtestMutation.isPending || !hasUploadedData}
           >
             {backtestMutation.isPending ? 'Test Ediliyor...' : 'Testi Başlat'}
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={asyncBacktestMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => asyncBacktestMutation.mutate()}
+            disabled={asyncBacktestMutation.isPending || !hasUploadedData || asyncLoading}
+          >
+            {asyncBacktestMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Test'}
           </Button>
         </Box>
       </Box>

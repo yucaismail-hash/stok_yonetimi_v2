@@ -125,45 +125,88 @@ def export_pattern_results(
 # ✅ YENİ: Safety Stock sonuçlarını Excel'e aktar
 @router.post("/export/safety-stock-results")
 def export_safety_stock_results(
-    data: Dict[str, Any],
+    request: Dict[str, Any],
     current_user: User = Depends(get_current_user)
 ):
     """
-    Safety Stock analizi sonuçlarını Excel olarak dışa aktar
+    Safety Stock sonuçlarını Excel'e aktar - Pattern bilgileriyle birlikte
     """
     try:
-        results = data.get('results', [])
+        results = request.get('results', [])
         if not results:
-            raise HTTPException(status_code=400, detail="Aktarılacak sonuç yok")
+            raise HTTPException(status_code=400, detail="Aktarılacak sonuç yok!")
         
+        # ✅ Excel dosyasını oluştur
+        import pandas as pd
+        from io import BytesIO
+        
+        # ✅ Pattern bilgilerini içeren DataFrame
         df = pd.DataFrame(results)
         
-        output = io.BytesIO()
+        # ✅ Sütun isimlerini düzenle
+        column_mapping = {
+            'material_code': 'Malzeme Kodu',
+            'group': 'Grup',
+            'lead_time_days': 'Termin Süresi (Gün)',
+            'pattern_label': 'Talep Patterni',
+            'cv': 'Değişkenlik Katsayısı (CV)',
+            'zero_ratio': 'Sıfır Talep Oranı',
+            'trend': 'Trend (%)',
+            'classic_ss': 'Klasik SS',
+            'croston_ss': 'Croston SS',
+            'syntetos_boylan_ss': 'Syntetos-Boylan SS',
+            'bootstrapping_ss': 'Bootstrapping SS',
+            'ml_ss': 'ML Tabanlı SS',
+            'hybrid_ss': 'Hibrit SS (Önerilen)',
+            'recommended_method_label': 'Önerilen SS Metodu'
+        }
+        
+        # ✅ Sadece mevcut sütunları yeniden adlandır
+        existing_columns = {k: v for k, v in column_mapping.items() if k in df.columns}
+        df = df.rename(columns=existing_columns)
+        
+        # ✅ Excel dosyasını oluştur
+        output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Safety Stock', index=False)
+            # Ana veri
+            df.to_excel(writer, sheet_name='Safety Stock Analizi', index=False)
             
-            # Özet
-            summary = {
-                'Toplam Malzeme': len(results),
-                'Analiz Tarihi': datetime.now().strftime('%Y-%m-%d %H:%M'),
-                'Ortalama Hybrid SS': df['hybrid_ss'].mean() if 'hybrid_ss' in df.columns else 0
+            # ✅ Özet sayfası
+            summary_data = {
+                'Metrik': [
+                    'Toplam Malzeme Sayısı',
+                    'Ortalama Hibrit SS',
+                    'Ortalama CV',
+                    'En Yaygın Pattern'
+                ],
+                'Değer': [
+                    len(results),
+                    round(df['hybrid_ss'].mean(), 2) if 'hybrid_ss' in df.columns else 0,
+                    round(df['cv'].mean(), 4) if 'cv' in df.columns else 0,
+                    df['pattern_label'].mode()[0] if 'pattern_label' in df.columns and len(df['pattern_label'].mode()) > 0 else '-'
+                ]
             }
-            summary_df = pd.DataFrame([summary])
+            summary_df = pd.DataFrame(summary_data)
             summary_df.to_excel(writer, sheet_name='Özet', index=False)
+            
+            # ✅ Pattern dağılımı
+            if 'pattern_label' in df.columns:
+                pattern_counts = df['pattern_label'].value_counts().reset_index()
+                pattern_counts.columns = ['Pattern', 'Malzeme Sayısı']
+                pattern_counts.to_excel(writer, sheet_name='Pattern Dağılımı', index=False)
         
         output.seek(0)
         
-        filename = f"safety_stock_analiz_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        
         return StreamingResponse(
             output,
-            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            headers={'Content-Disposition': f'attachment; filename={filename}'}
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename=safety_stock_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            }
         )
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
 
 # ✅ YENİ: Forecast sonuçlarını Excel'e aktar
 @router.post("/export/forecast-results")

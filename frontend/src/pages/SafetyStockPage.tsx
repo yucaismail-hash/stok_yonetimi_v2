@@ -23,6 +23,8 @@ import {
   DialogActions,
   Divider,
   TablePagination,
+  Snackbar,
+  Tooltip,
 } from '@mui/material';
 import {
   Security,
@@ -31,6 +33,7 @@ import {
   History,
   Close,
   Visibility,
+  Info,
 } from '@mui/icons-material';
 import { useMutation } from '@tanstack/react-query';
 import api from '../services/api';
@@ -40,12 +43,20 @@ interface SafetyStockResult {
   material_code: string;
   group: string;
   lead_time_days: number;
+  pattern: string;
+  pattern_label: string;
+  pattern_color: string;
+  cv: number;
+  zero_ratio: number;
+  trend: number;
   classic_ss: number;
   croston_ss: number;
   syntetos_boylan_ss: number;
   bootstrapping_ss: number;
   ml_ss: number;
   hybrid_ss: number;
+  recommended_method: string;
+  recommended_method_label: string;
 }
 
 interface HistoryItem {
@@ -67,6 +78,18 @@ export default function SafetyStockPage() {
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [viewDialogOpen, setViewDialogOpen] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
+  const [asyncLoading, setAsyncLoading] = useState(false);
+
+  // ✅ Snackbar state
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
 
   useEffect(() => {
     checkUploadedData();
@@ -81,6 +104,7 @@ export default function SafetyStockPage() {
     }
   };
 
+  // 📌 SENKRON Safety Stock
   const ssMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post('/api/safety-stock/batch', {
@@ -107,7 +131,32 @@ export default function SafetyStockPage() {
     },
   });
 
-  // ✅ Geçmiş sonuçları getir (Tarih+Saat bazında 1 satır, detaylar saklı)
+  // 📌 ASYNC Safety Stock
+  const asyncSsMutation = useMutation({
+    mutationFn: async () => {
+      setAsyncLoading(true);
+      const res = await api.post('/api/safety-stock/batch/async', {
+        service_level: 0.95
+      });
+      return res.data;
+    },
+    onSuccess: (data) => {
+      setAsyncLoading(false);
+      setSnackbar({
+        open: true,
+        message: `✅ Safety Stock analizi talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
+        
+📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        severity: 'success',
+      });
+    },
+    onError: (err: any) => {
+      setAsyncLoading(false);
+      setError(err.response?.data?.detail || 'Async safety stock analizi başlatılamadı');
+    },
+  });
+
+  // ✅ Geçmiş sonuçları getir
   const fetchHistory = async () => {
     setLoading(true);
     try {
@@ -140,7 +189,6 @@ export default function SafetyStockPage() {
         });
         
         const groupedResults = Array.from(groupedMap.values()).map(group => {
-          // Tüm item'ların verilerini birleştir
           const allResults = group.items
             .map((item: any) => {
               const resultData = item.data || item.result_data || {};
@@ -178,7 +226,7 @@ export default function SafetyStockPage() {
     }
   };
 
-  // ✅ Geçmiş sonucu görüntüle (Ana tabloya aktar)
+  // ✅ Geçmiş sonucu görüntüle
   const handleViewHistory = (item: HistoryItem) => {
     const historyResults = item.data?.results || [];
     
@@ -241,15 +289,43 @@ export default function SafetyStockPage() {
     hybrid_ss: 'Hibrit (Önerilen)',
   };
 
+  const getPatternColor = (color: string) => {
+    switch(color) {
+      case 'success': return 'success';
+      case 'info': return 'info';
+      case 'warning': return 'warning';
+      case 'error': return 'error';
+      case 'primary': return 'primary';
+      case 'secondary': return 'secondary';
+      default: return 'default';
+    }
+  };
+
   return (
     <Box>
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={8000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert
+          severity={snackbar.severity}
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          sx={{ whiteSpace: 'pre-line' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            🛡️ Safety Stock Analizi
+            🛡️ Emniyet Stoğu (Safety Stock) Analizi
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            6 farklı SS metodu ile tüm malzemelerin emniyet stoklarını hesaplar.
+            6 farklı SS metodu ve talep pattern analizi ile optimum emniyet stok seviyelerini belirler.
             <Chip label="10 Token" size="small" color="warning" sx={{ ml: 1 }} />
           </Typography>
         </Box>
@@ -257,11 +333,6 @@ export default function SafetyStockPage() {
           <Button variant="outlined" startIcon={<History />} onClick={fetchHistory} disabled={loading}>
             {loading ? 'Yükleniyor...' : 'Geçmiş'}
           </Button>
-          {results.length > 0 && (
-            <Button variant="outlined" startIcon={<Download />} onClick={handleExport}>
-              Excel'e Aktar
-            </Button>
-          )}
           <Button
             variant="contained"
             startIcon={ssMutation.isPending ? <CircularProgress size={20} /> : <Send />}
@@ -269,6 +340,15 @@ export default function SafetyStockPage() {
             disabled={ssMutation.isPending || !hasUploadedData}
           >
             {ssMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
+          <Button
+            variant="contained"
+            color="secondary"
+            startIcon={asyncSsMutation.isPending ? <CircularProgress size={20} /> : <Send />}
+            onClick={() => asyncSsMutation.mutate()}
+            disabled={asyncSsMutation.isPending || !hasUploadedData || asyncLoading}
+          >
+            {asyncSsMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Analiz'}
           </Button>
         </Box>
       </Box>
@@ -278,6 +358,68 @@ export default function SafetyStockPage() {
       {!hasUploadedData && !results.length && (
         <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
       )}
+
+      {/* ✅ Güncellenmiş bilgilendirme kartı - 6 metot + pattern eşleşmeleri */}
+      <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Info color="info" />
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              📊 6 Farklı SS Metodu ve Talep Patterni Eşleşmeleri
+            </Typography>
+          </Box>
+          <Grid container spacing={2}>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label="Klasik SS" size="small" color="success" />
+                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                  Düzenli Sabit Talep
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label="Croston" size="small" color="warning" />
+                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                  Aralıklı Düşük Talep
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label="Syntetos-Boylan" size="small" color="warning" />
+                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                  Aralıklı Yüksek Talep
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label="Bootstrapping" size="small" color="error" />
+                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                  Aşırı Değişken Talep
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label="ML Tabanlı" size="small" color="secondary" />
+                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                  Değişken / Yüksek Değişken
+                </Typography>
+              </Box>
+            </Grid>
+            <Grid size={{ xs: 12, sm: 6, md: 4 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <Chip label="Hibrit (Önerilen)" size="small" color="primary" />
+                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                  Düzenli Artan / Azalan
+                </Typography>
+              </Box>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
@@ -291,7 +433,7 @@ export default function SafetyStockPage() {
       {ssMutation.isPending && (
         <Box sx={{ textAlign: 'center', py: 4 }}>
           <CircularProgress />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>6 SS metodu hesaplanıyor...</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Pattern analizi + 6 SS metodu hesaplanıyor...</Typography>
         </Box>
       )}
 
@@ -299,21 +441,34 @@ export default function SafetyStockPage() {
         <Card>
           <CardContent>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Sonuçlar ({results.length} malzeme)</Typography>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                Sonuçlar ({results.length} malzeme)
+              </Typography>
+              <Button
+                variant="outlined"
+                startIcon={<Download />}
+                onClick={handleExport}
+                size="small"
+              >
+                Excel'e Aktar
+              </Button>
             </Box>
+
             <TableContainer component={Paper} variant="outlined">
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'primary.main' }}>
                     <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
                     <TableCell sx={{ color: 'white' }}>Grup</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Pattern</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">CV</TableCell>
                     <TableCell sx={{ color: 'white' }} align="right">Klasik</TableCell>
                     <TableCell sx={{ color: 'white' }} align="right">Croston</TableCell>
                     <TableCell sx={{ color: 'white' }} align="right">SB</TableCell>
                     <TableCell sx={{ color: 'white' }} align="right">Bootstrap</TableCell>
                     <TableCell sx={{ color: 'white' }} align="right">ML</TableCell>
                     <TableCell sx={{ color: 'white' }} align="right">Hibrit</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">En İyi</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Önerilen</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -323,6 +478,17 @@ export default function SafetyStockPage() {
                       <TableRow key={idx}>
                         <TableCell>{result.material_code}</TableCell>
                         <TableCell>{result.group}</TableCell>
+                        <TableCell>
+                          <Tooltip title={`CV: ${result.cv}, Zero Ratio: ${result.zero_ratio}`} arrow>
+                            <Chip
+                              label={result.pattern_label}
+                              size="small"
+                              color={getPatternColor(result.pattern_color)}
+                              variant="outlined"
+                            />
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="right">{result.cv.toFixed(3)}</TableCell>
                         <TableCell align="right">{result.classic_ss?.toFixed(0) || '-'}</TableCell>
                         <TableCell align="right">{result.croston_ss?.toFixed(0) || '-'}</TableCell>
                         <TableCell align="right">{result.syntetos_boylan_ss?.toFixed(0) || '-'}</TableCell>
@@ -332,7 +498,11 @@ export default function SafetyStockPage() {
                           {result.hybrid_ss?.toFixed(0) || '-'}
                         </TableCell>
                         <TableCell align="center">
-                          <Chip label={methodLabels[best] || best} size="small" color="success" />
+                          <Chip
+                            label={result.recommended_method_label || methodLabels[best] || best}
+                            size="small"
+                            color={result.recommended_method === best ? 'success' : 'default'}
+                          />
                         </TableCell>
                       </TableRow>
                     );
