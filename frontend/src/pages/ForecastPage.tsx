@@ -91,6 +91,7 @@ interface HistoryItem {
 export default function ForecastPage() {
   const { user, fetchUser } = useAuth();
   const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [isCheckingData, setIsCheckingData] = useState(true); // ✅ YENİ: Veri kontrol durumu
   const [results, setResults] = useState<ForecastResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -125,18 +126,24 @@ export default function ForecastPage() {
   const { data: costData } = useQuery({
     queryKey: ['forecast-cost'],
     queryFn: async () => {
-      const res = await api.get('/api/cost', {
-        params: {
-          endpoint: '/api/forecast/batch',
-          method: 'POST'
-        }
-      });
-      return res.data;
+      try {
+        const res = await api.get('/api/cost', {
+          params: {
+            endpoint: '/api/forecast/batch',
+            method: 'POST'
+          }
+        });
+        return res.data;
+      } catch (error) {
+        console.error('❌ Token cost hatası:', error);
+        return { cost: 5 };
+      }
     },
-    initialData: { cost: 8 }
+    initialData: { cost: 5 },
+    staleTime: 60000,
   });
 
-  // ✅ Sadece bir kere kontrol et (sonsuz döngüyü önle)
+  // ✅ Sadece bir kere kontrol et
   useEffect(() => {
     checkUploadedData();
     
@@ -146,18 +153,27 @@ export default function ForecastPage() {
         intervalIdRef.current = null;
       }
     };
-  }, []); // ✅ Boş array - sadece mount'ta çalışır
+  }, []);
 
-  // ✅ checkUploadedData - Sadece bir kere çalışır
   const checkUploadedData = async () => {
+    setIsCheckingData(true); // ✅ Kontrol başladı
     try {
       const res = await api.get('/api/upload/status');
       console.log('📦 Upload status:', res.data);
-      // ✅ has_data kontrolü
-      setHasUploadedData(res.data.has_data === true);
+      const hasData = res.data.has_data === true;
+      setHasUploadedData(hasData);
+      
+      // ✅ Veri yoksa kontrol bitti
+      if (!hasData) {
+        console.log('❌ Veri bulunamadı, kontrol tamamlandı.');
+        setError('Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard\'dan dosya yükleyin.');
+      }
     } catch (error) {
       console.error('❌ Veri kontrolü hatası:', error);
       setHasUploadedData(false);
+      setError('Veri kontrolü sırasında hata oluştu.');
+    } finally {
+      setIsCheckingData(false); // ✅ Kontrol bitti
     }
   };
 
@@ -564,7 +580,7 @@ export default function ForecastPage() {
     );
   };
 
-  // 📌 ModelParams Bileşeni - Pattern Bilgileriyle Zenginleştirilmiş
+  // 📌 ModelParams Bileşeni
   const ModelParams = ({ result }: { result: ForecastResult }) => {
     const params = result.model_params;
     if (!params || Object.keys(params).length === 0) {
@@ -697,7 +713,7 @@ export default function ForecastPage() {
           <Typography variant="body1" color="text.secondary">
             4 farklı model ile talep tahmini yapar. Pattern analizi ile zenginleştirilmiştir.
             <Chip 
-              label={`${costData?.cost || 8} Token`} 
+              label={`${costData?.cost || 5} Token`} 
               size="small" 
               color="warning" 
               sx={{ ml: 1 }} 
@@ -728,11 +744,19 @@ export default function ForecastPage() {
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {error && (
+        <Alert 
+          severity={error.includes('Excel') ? 'warning' : 'error'} 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
       
-      {/* ✅ Veri kontrolü - Sadece gerçekten veri yoksa ve yükleniyorsa göster */}
-      {!hasUploadedData && !results.length && !error && (
+      {/* ✅ Veri kontrol durumu - Sadece gerçekten kontrol ediliyorsa göster */}
+      {isCheckingData && (
         <Alert 
           severity="info" 
           sx={{ mb: 3 }}
@@ -748,7 +772,7 @@ export default function ForecastPage() {
       )}
 
       {/* ✅ Veri varsa göster */}
-      {hasUploadedData && results.length === 0 && !error && (
+      {!isCheckingData && hasUploadedData && results.length === 0 && !error && (
         <Alert severity="success" sx={{ mb: 3 }}>
           <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
             ✅ Veri tespit edildi! Analiz yapabilirsiniz.
@@ -1087,7 +1111,7 @@ export default function ForecastPage() {
         </DialogActions>
       </Dialog>
 
-      {!forecastMutation.isPending && results.length === 0 && !error && hasUploadedData && (
+      {!forecastMutation.isPending && results.length === 0 && !error && hasUploadedData && !isCheckingData && (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <ShowChart sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />

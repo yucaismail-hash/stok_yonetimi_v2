@@ -38,7 +38,7 @@ import {
   CheckCircle,
   Error,
 } from '@mui/icons-material';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
@@ -65,8 +65,9 @@ interface HistoryItem {
 }
 
 export default function SupplierPage() {
-  const { user } = useAuth();
+  const { user, fetchUser } = useAuth();
   const [hasSupplierData, setHasSupplierData] = useState(false);
+  const [isCheckingData, setIsCheckingData] = useState(true);
   const [suppliers, setSuppliers] = useState<SupplierResult[]>([]);
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +79,13 @@ export default function SupplierPage() {
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [asyncLoading, setAsyncLoading] = useState(false);
 
-  // ✅ Snackbar state
+  // ✅ State'ler
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('Hazır');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
+
+  // ✅ Snackbar
   const [snackbar, setSnackbar] = useState<{ 
     open: boolean; 
     message: string; 
@@ -89,26 +96,61 @@ export default function SupplierPage() {
     severity: 'info',
   });
 
+  // ✅ Token maliyeti
+  const { data: costData } = useQuery({
+    queryKey: ['supplier-cost'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/api/cost', {
+          params: {
+            endpoint: '/api/supplier/optimize-shares',
+            method: 'POST'
+          }
+        });
+        return res.data;
+      } catch (error) {
+        console.error('❌ Token cost hatası:', error);
+        return { cost: 8 };
+      }
+    },
+    initialData: { cost: 8 },
+    staleTime: 60000,
+  });
+
   useEffect(() => {
     checkSupplierData();
   }, []);
 
   const checkSupplierData = async () => {
+    setIsCheckingData(true);
     try {
       const res = await api.get('/api/supplier/check');
-      setHasSupplierData(res.data.has_suppliers);
-    } catch {
+      const hasData = res.data.has_suppliers === true;
+      setHasSupplierData(hasData);
+      if (!hasData) {
+        setError('Tedarikçi verisi bulunamadı. Lütfen Excel\'e "Tedarikciler" ve "Malzeme_Tedarikciler" sheet\'lerini ekleyin.');
+      }
+    } catch (error) {
+      console.error('❌ Tedarikçi veri kontrolü hatası:', error);
       setHasSupplierData(false);
+      setError('Veri kontrolü sırasında hata oluştu.');
+    } finally {
+      setIsCheckingData(false);
     }
   };
 
   // 📌 SENKRON Tedarikçi Analizi
   const supplierMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post('/api/supplier/batch', {});
+      setProgress(0);
+      setProgressLabel('Tedarikçi analizi başlatılıyor...');
+      setIsProcessing(true);
+      const res = await api.post('/api/supplier/optimize-shares', {});
+      setProgress(100);
+      setProgressLabel('Tamamlandı!');
       return res.data;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.success) {
         setSuppliers(data.suppliers || []);
         setRecommendations(data.recommendations || []);
@@ -116,44 +158,115 @@ export default function SupplierPage() {
         setError(null);
         setSuccess(`${data.total_suppliers || 0} tedarikçi başarıyla analiz edildi.`);
         setTimeout(() => setSuccess(null), 5000);
+        await fetchUser();
       } else {
         setError(data.error || 'Tedarikçi analizi başarısız');
       }
+      setTimeout(() => {
+        setProgress(0);
+        setProgressLabel('Hazır');
+        setIsProcessing(false);
+      }, 2000);
     },
     onError: (err: any) => {
       console.error('❌ Tedarikçi analizi hatası:', err);
       setError(err.response?.data?.detail || 'Analiz sırasında hata oluştu');
+      setProgress(0);
+      setProgressLabel('Hata!');
+      setIsProcessing(false);
     },
   });
 
   // 📌 ASYNC Tedarikçi Analizi
   const asyncSupplierMutation = useMutation({
     mutationFn: async () => {
-      setAsyncLoading(true);
+      setProgress(5);
+      setProgressLabel('Async analiz başlatılıyor...');
+      setIsProcessing(true);
       const res = await api.post('/api/supplier/batch/async', {});
       return res.data;
     },
     onSuccess: (data) => {
-      setAsyncLoading(false);
+      setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Tedarikçi analizi talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-        
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
 📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
         severity: 'success',
       });
+      setProgress(10);
+      setProgressLabel('İşlem kuyruğa alındı.');
+      
+      const intervalId = setInterval(() => {
+        checkAsyncProgress(data.task_id);
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (isProcessing) {
+          setIsProcessing(false);
+          setActiveAsyncTask(null);
+          setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
+        }
+      }, 300000);
     },
     onError: (err: any) => {
-      setAsyncLoading(false);
-      setError(err.response?.data?.detail || 'Async tedarikçi analizi başlatılamadı');
+      setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
+      setIsProcessing(false);
+      setProgress(0);
+      setProgressLabel('Hata!');
     },
   });
+
+  // 📌 Async İlerleme Kontrol
+  const checkAsyncProgress = async (taskId: string) => {
+    if (!taskId) return;
+    try {
+      const res = await api.get(`/api/forecast/async/status/${taskId}`);
+      const status = res.data;
+      
+      setProgress(status.progress || 50);
+      setProgressLabel(status.message || 'İşleniyor...');
+      
+      if (status.status === 'completed') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(100);
+        setProgressLabel('Tamamlandı!');
+        
+        const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
+        if (resultsRes.data.success) {
+          setSuppliers(resultsRes.data.suppliers || []);
+          setRecommendations(resultsRes.data.recommendations || []);
+          setPage(0);
+          setSuccess(`${resultsRes.data.total_suppliers || 0} tedarikçi başarıyla analiz edildi.`);
+          setTimeout(() => setSuccess(null), 5000);
+          await fetchUser();
+        }
+        return;
+      }
+      
+      if (status.status === 'failed' || status.status === 'error') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(0);
+        setProgressLabel('Hata!');
+        setError(status.message || 'Async analiz başarısız oldu');
+        return;
+      }
+    } catch (error) {
+      console.error('Async durum kontrol hatası:', error);
+      setIsProcessing(false);
+      setActiveAsyncTask(null);
+      setError('Async durum kontrolü başarısız');
+    }
+  };
 
   const fetchHistory = async () => {
     setLoading(true);
     try {
       const res = await api.get('/api/upload/results', {
-        params: { result_type: 'supplier_batch' }
+        params: { result_type: 'supplier_batch', limit: 100 }
       });
       
       if (res.data.success) {
@@ -175,7 +288,6 @@ export default function SupplierPage() {
         });
         
         const groupedResults = Array.from(groupedMap.values()).map(group => {
-          // ✅ resultData'yı dışarıda tanımla
           const firstItem = group.items[0] || {};
           const resultData = firstItem.data || firstItem.result_data || {};
           
@@ -305,6 +417,7 @@ export default function SupplierPage() {
         </Alert>
       </Snackbar>
 
+      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -312,7 +425,12 @@ export default function SupplierPage() {
           </Typography>
           <Typography variant="body1" color="text.secondary">
             Tedarikçi performansını ve risklerini analiz eder.
-            <Chip label="5 Token" size="small" color="warning" sx={{ ml: 1 }} />
+            <Chip 
+              label={`${costData?.cost || 8} Token`} 
+              size="small" 
+              color="warning" 
+              sx={{ ml: 1 }} 
+            />
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -332,23 +450,45 @@ export default function SupplierPage() {
             color="secondary"
             startIcon={asyncSupplierMutation.isPending ? <CircularProgress size={20} /> : <Send />}
             onClick={() => asyncSupplierMutation.mutate()}
-            disabled={asyncSupplierMutation.isPending || !hasSupplierData || asyncLoading}
+            disabled={asyncSupplierMutation.isPending || !hasSupplierData || isProcessing}
           >
             {asyncSupplierMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Analiz'}
           </Button>
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {/* Alert'ler */}
+      {error && (
+        <Alert 
+          severity={error.includes('Tedarikçi') ? 'warning' : 'error'} 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-      
-      {!hasSupplierData && !suppliers.length && (
-        <Alert severity="info" sx={{ mb: 3 }}>
+
+      {/* Veri kontrol durumu */}
+      {isCheckingData && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 3 }}
+          icon={<CircularProgress size={20} />}
+        >
           <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-            📋 Tedarikçi verisi bulunamadı.
+            🔍 Tedarikçi verisi kontrol ediliyor...
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            Excel dosyasına "Tedarikciler" ve "Malzeme_Tedarikciler" sheet'lerini ekleyin.
+            Lütfen birkaç saniye bekleyin. Tedarikçi verileri tespit edildiğinde analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
+      )}
+
+      {!isCheckingData && hasSupplierData && suppliers.length === 0 && !error && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            ✅ Tedarikçi verileri tespit edildi! Analiz yapabilirsiniz.
           </Typography>
         </Alert>
       )}
@@ -396,15 +536,28 @@ export default function SupplierPage() {
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına 5 token harcanır</Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 8} token harcanır</Typography>
           </Box>
         </CardContent>
       </Card>
 
-      {supplierMutation.isPending && (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <CircularProgress />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Tedarikçiler analiz ediliyor...</Typography>
+      {/* İlerleme Durumu */}
+      {isProcessing && (
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
+            <CircularProgress variant="determinate" value={progress} size={40} />
+            <Typography variant="body2" color="text.secondary">{progressLabel}</Typography>
+            {activeAsyncTask && (
+              <Typography variant="caption" color="text.secondary">
+                (ID: {activeAsyncTask.slice(0,8)})
+              </Typography>
+            )}
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={progress}
+            sx={{ mt: 1, maxWidth: 400, mx: 'auto', height: 6, borderRadius: 3 }}
+          />
         </Box>
       )}
 
@@ -426,6 +579,7 @@ export default function SupplierPage() {
         </Card>
       )}
 
+      {/* Sonuçlar */}
       {suppliers.length > 0 && (
         <Card>
           <CardContent>
@@ -433,11 +587,7 @@ export default function SupplierPage() {
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                 Tedarikçiler ({suppliers.length})
               </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<Download />}
-                onClick={handleExport}
-              >
+              <Button variant="outlined" startIcon={<Download />} onClick={handleExport} size="small">
                 Excel'e Aktar
               </Button>
             </Box>
@@ -446,13 +596,13 @@ export default function SupplierPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'primary.main' }}>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Tedarikçi</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Risk</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Performans</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Zamanında %</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">LT (gün)</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">Pay %</TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>Tavsiye</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Tedarikçi</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Risk</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Performans</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Zamanında %</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">LT (gün)</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Pay %</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Tavsiye</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -531,7 +681,8 @@ export default function SupplierPage() {
         </Card>
       )}
 
-      {!supplierMutation.isPending && suppliers.length === 0 && !error && hasSupplierData && (
+      {/* Boş Durum */}
+      {!isProcessing && suppliers.length === 0 && !error && hasSupplierData && !isCheckingData && (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <LocalShipping sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
@@ -574,16 +725,10 @@ export default function SupplierPage() {
                         <TableCell>
                           {date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
                         </TableCell>
+                        <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
+                        <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
                         <TableCell align="center">
-                          <Chip label={`${total}`} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip label="Başarılı" size="small" color="success" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>
-                            Görüntüle
-                          </Button>
+                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>Görüntüle</Button>
                         </TableCell>
                       </TableRow>
                     );

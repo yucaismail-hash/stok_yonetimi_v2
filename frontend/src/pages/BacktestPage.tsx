@@ -24,6 +24,12 @@ import {
   TablePagination,
   Tooltip,
   Snackbar,
+  LinearProgress,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
 } from '@mui/material';
 import {
   Backpack,
@@ -34,7 +40,7 @@ import {
   Visibility,
   Info,
 } from '@mui/icons-material';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
@@ -64,8 +70,9 @@ interface HistoryItem {
 }
 
 export default function BacktestPage() {
-  const { user } = useAuth();
+  const { user, fetchUser } = useAuth();
   const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [isCheckingData, setIsCheckingData] = useState(true);
   const [results, setResults] = useState<BacktestResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -75,8 +82,15 @@ export default function BacktestPage() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [asyncLoading, setAsyncLoading] = useState(false);
-  
-  // ✅ Snackbar state
+
+  // ✅ State'ler
+  const [testWindow, setTestWindow] = useState(8);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('Hazır');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
+
+  // ✅ Snackbar
   const [snackbar, setSnackbar] = useState<{ 
     open: boolean; 
     message: string; 
@@ -87,70 +101,179 @@ export default function BacktestPage() {
     severity: 'info',
   });
 
+  // ✅ Token maliyeti
+  const { data: costData } = useQuery({
+    queryKey: ['backtest-cost'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/api/cost', {
+          params: {
+            endpoint: '/api/backtest',
+            method: 'POST'
+          }
+        });
+        return res.data;
+      } catch (error) {
+        console.error('❌ Token cost hatası:', error);
+        return { cost: 15 };
+      }
+    },
+    initialData: { cost: 15 },
+    staleTime: 60000,
+  });
+
   useEffect(() => {
     checkUploadedData();
   }, []);
 
   const checkUploadedData = async () => {
+    setIsCheckingData(true);
     try {
       const res = await api.get('/api/upload/status');
-      setHasUploadedData(res.data.has_data);
-    } catch {
+      const hasData = res.data.has_data === true;
+      setHasUploadedData(hasData);
+      if (!hasData) {
+        setError('Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard\'dan dosya yükleyin.');
+      }
+    } catch (error) {
+      console.error('❌ Veri kontrolü hatası:', error);
       setHasUploadedData(false);
+      setError('Veri kontrolü sırasında hata oluştu.');
+    } finally {
+      setIsCheckingData(false);
     }
   };
 
   // 📌 SENKRON Backtest
   const backtestMutation = useMutation({
     mutationFn: async () => {
-      const res = await api.post('/api/backtest/batch', {});
+      setProgress(0);
+      setProgressLabel('Backtest başlatılıyor...');
+      setIsProcessing(true);
+      const res = await api.post('/api/backtest/batch', {
+        test_window: testWindow,
+      });
+      setProgress(100);
+      setProgressLabel('Tamamlandı!');
       return res.data;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.success) {
         setResults(data.results || []);
         setPage(0);
         setError(null);
         setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla test edildi.`);
         setTimeout(() => setSuccess(null), 5000);
+        await fetchUser();
       } else {
         setError(data.error || 'Backtest başarısız');
       }
+      setTimeout(() => {
+        setProgress(0);
+        setProgressLabel('Hazır');
+        setIsProcessing(false);
+      }, 2000);
     },
     onError: (err: any) => {
       console.error('❌ Backtest hatası:', err);
       setError(err.response?.data?.detail || 'Backtest sırasında hata oluştu');
+      setProgress(0);
+      setProgressLabel('Hata!');
+      setIsProcessing(false);
     },
   });
 
   // 📌 ASYNC Backtest
   const asyncBacktestMutation = useMutation({
     mutationFn: async () => {
-      setAsyncLoading(true);
-      const res = await api.post('/api/backtest/batch/async', {});
+      setProgress(5);
+      setProgressLabel('Async analiz başlatılıyor...');
+      setIsProcessing(true);
+      const res = await api.post('/api/backtest/batch/async', {
+        test_window: testWindow,
+      });
       return res.data;
     },
     onSuccess: (data) => {
-      setAsyncLoading(false);
+      setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Backtest talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-        
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
 📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
         severity: 'success',
       });
+      setProgress(10);
+      setProgressLabel('İşlem kuyruğa alındı.');
+      
+      const intervalId = setInterval(() => {
+        checkAsyncProgress(data.task_id);
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (isProcessing) {
+          setIsProcessing(false);
+          setActiveAsyncTask(null);
+          setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
+        }
+      }, 300000);
     },
     onError: (err: any) => {
-      setAsyncLoading(false);
-      setError(err.response?.data?.detail || 'Async backtest başlatılamadı');
+      setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
+      setIsProcessing(false);
+      setProgress(0);
+      setProgressLabel('Hata!');
     },
   });
+
+  // 📌 Async İlerleme Kontrol
+  const checkAsyncProgress = async (taskId: string) => {
+    if (!taskId) return;
+    try {
+      const res = await api.get(`/api/forecast/async/status/${taskId}`);
+      const status = res.data;
+      
+      setProgress(status.progress || 50);
+      setProgressLabel(status.message || 'İşleniyor...');
+      
+      if (status.status === 'completed') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(100);
+        setProgressLabel('Tamamlandı!');
+        
+        const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
+        if (resultsRes.data.success) {
+          setResults(resultsRes.data.results || []);
+          setPage(0);
+          setSuccess(`${resultsRes.data.total || 0} malzeme başarıyla test edildi.`);
+          setTimeout(() => setSuccess(null), 5000);
+          await fetchUser();
+        }
+        return;
+      }
+      
+      if (status.status === 'failed' || status.status === 'error') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(0);
+        setProgressLabel('Hata!');
+        setError(status.message || 'Async analiz başarısız oldu');
+        return;
+      }
+    } catch (error) {
+      console.error('Async durum kontrol hatası:', error);
+      setIsProcessing(false);
+      setActiveAsyncTask(null);
+      setError('Async durum kontrolü başarısız');
+    }
+  };
 
   const fetchHistory = async () => {
     setLoading(true);
     try {
       const res = await api.get('/api/upload/results', {
-        params: { result_type: 'backtest_batch' }
+        params: { result_type: 'backtest_batch', limit: 100 }
       });
       
       if (res.data.success) {
@@ -304,14 +427,20 @@ export default function BacktestPage() {
         </Alert>
       </Snackbar>
 
+      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            🎒 Backtest
+            🎒 Backtest Analizi
           </Typography>
           <Typography variant="body1" color="text.secondary">
             8 farklı stratejiyi geçmiş veri üzerinde test eder.
-            <Chip label="15 Token" size="small" color="warning" sx={{ ml: 1 }} />
+            <Chip 
+              label={`${costData?.cost || 15} Token`} 
+              size="small" 
+              color="warning" 
+              sx={{ ml: 1 }} 
+            />
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -331,18 +460,80 @@ export default function BacktestPage() {
             color="secondary"
             startIcon={asyncBacktestMutation.isPending ? <CircularProgress size={20} /> : <Send />}
             onClick={() => asyncBacktestMutation.mutate()}
-            disabled={asyncBacktestMutation.isPending || !hasUploadedData || asyncLoading}
+            disabled={asyncBacktestMutation.isPending || !hasUploadedData || isProcessing}
           >
             {asyncBacktestMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Test'}
           </Button>
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
-      {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-      {!hasUploadedData && !results.length && (
-        <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
+      {/* Alert'ler */}
+      {error && (
+        <Alert 
+          severity={error.includes('Excel') ? 'warning' : 'error'} 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
       )}
+      {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+      {/* Veri kontrol durumu */}
+      {isCheckingData && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 3 }}
+          icon={<CircularProgress size={20} />}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            🔍 Veri kontrolü yapılıyor...
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Lütfen birkaç saniye bekleyin. Excel dosyası tespit edildiğinde analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
+      )}
+
+      {!isCheckingData && hasUploadedData && results.length === 0 && !error && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            ✅ Veri tespit edildi! Analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
+      )}
+
+      {/* 📌 Parametre Kartı */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Grid container spacing={3} sx={{ alignItems: 'center' }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="body2" gutterBottom>
+                Test Penceresi: {testWindow} hafta
+              </Typography>
+              <Slider
+                value={testWindow}
+                onChange={(_, val) => setTestWindow(val as number)}
+                min={4}
+                max={26}
+                step={2}
+                marks={[
+                  { value: 4, label: '4' },
+                  { value: 8, label: '8' },
+                  { value: 13, label: '13' },
+                  { value: 26, label: '26' },
+                ]}
+                valueLabelDisplay="auto"
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="caption" color="text.secondary">
+                📊 Daha uzun test penceresi = daha güvenilir sonuçlar, ancak daha uzun süre
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
       {/* Strateji Bilgilendirme Kartı */}
       <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
@@ -370,22 +561,40 @@ export default function BacktestPage() {
         </CardContent>
       </Card>
 
+      {/* Token Bakiyesi */}
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına 15 token harcanır</Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 15} token harcanır</Typography>
           </Box>
         </CardContent>
       </Card>
 
-      {backtestMutation.isPending && (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <CircularProgress />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>8 strateji test ediliyor...</Typography>
+      {/* İlerleme Durumu */}
+      {isProcessing && (
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
+            <CircularProgress variant="determinate" value={progress} size={40} />
+            <Typography variant="body2" color="text.secondary">{progressLabel}</Typography>
+            {activeAsyncTask && (
+              <Typography variant="caption" color="text.secondary">
+                (ID: {activeAsyncTask.slice(0,8)})
+              </Typography>
+            )}
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={progress}
+            sx={{ mt: 1, maxWidth: 400, mx: 'auto', height: 6, borderRadius: 3 }}
+          />
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+            8 strateji test ediliyor...
+          </Typography>
         </Box>
       )}
 
+      {/* Sonuçlar */}
       {results.length > 0 && (
         <Card>
           <CardContent>
@@ -393,11 +602,7 @@ export default function BacktestPage() {
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                 Sonuçlar ({results.length} malzeme)
               </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<Download />}
-                onClick={handleExport}
-              >
+              <Button variant="outlined" startIcon={<Download />} onClick={handleExport} size="small">
                 Excel'e Aktar
               </Button>
             </Box>
@@ -406,45 +611,20 @@ export default function BacktestPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'primary.main' }}>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      Malzeme Kodu
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      Grup
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      En İyi Strateji
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      Servis %
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      Tail Risk
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      Maliyet (TL)
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      Tavsiye
-                    </TableCell>
+                    <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Grup</TableCell>
+                    <TableCell sx={{ color: 'white' }}>En İyi Strateji</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Servis %</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Tail Risk</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Maliyet (TL)</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Tavsiye</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {paginatedResults.map((result, idx) => (
                     <TableRow key={idx} hover>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                          {result.material_code}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip 
-                          label={result.group} 
-                          size="small" 
-                          variant="outlined"
-                          sx={{ fontSize: '0.7rem' }}
-                        />
-                      </TableCell>
+                      <TableCell>{result.material_code}</TableCell>
+                      <TableCell>{result.group}</TableCell>
                       <TableCell>
                         <Chip 
                           label={strategyLabels[result.best_strategy] || result.best_strategy} 
@@ -507,6 +687,7 @@ export default function BacktestPage() {
               />
             </TableContainer>
 
+            {/* Özet */}
             <Box sx={{ mt: 3 }}>
               <Grid container spacing={2}>
                 <Grid size={{ xs: 6, sm: 3 }}>
@@ -556,12 +737,13 @@ export default function BacktestPage() {
         </Card>
       )}
 
-      {!backtestMutation.isPending && results.length === 0 && !error && hasUploadedData && (
+      {/* Boş Durum */}
+      {!isProcessing && results.length === 0 && !error && hasUploadedData && !isCheckingData && (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <Backpack sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
             <Typography variant="h6" color="text.secondary">Henüz backtest yapılmadı</Typography>
-            <Typography variant="body2" color="text.secondary">"Testi Başlat" butonuna tıklayın.</Typography>
+            <Typography variant="body2" color="text.secondary">"Testi Başlat" butonuna tıklayarak backtest'i başlatın.</Typography>
           </CardContent>
         </Card>
       )}
@@ -599,16 +781,10 @@ export default function BacktestPage() {
                         <TableCell>
                           {date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
                         </TableCell>
+                        <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
+                        <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
                         <TableCell align="center">
-                          <Chip label={`${total}`} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip label="Başarılı" size="small" color="success" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>
-                            Görüntüle
-                          </Button>
+                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>Görüntüle</Button>
                         </TableCell>
                       </TableRow>
                     );

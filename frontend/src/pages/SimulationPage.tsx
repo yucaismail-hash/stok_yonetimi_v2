@@ -30,6 +30,11 @@ import {
   Tooltip,
   LinearProgress,
   Snackbar,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
 } from '@mui/material';
 import {
   Timeline,
@@ -44,7 +49,7 @@ import {
   TrendingUp,
   Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
@@ -74,8 +79,9 @@ interface HistoryItem {
 }
 
 export default function SimulationPage() {
-  const { user } = useAuth();
+  const { user, fetchUser } = useAuth();
   const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [isCheckingData, setIsCheckingData] = useState(true);
   const [results, setResults] = useState<SimulationResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -84,12 +90,24 @@ export default function SimulationPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
-  const [progress, setProgress] = useState(0);
-  const [progressLabel, setProgressLabel] = useState('Hazır');
-  const [isSimulating, setIsSimulating] = useState(false);
   const [asyncLoading, setAsyncLoading] = useState(false);
 
-  // ✅ Snackbar state
+  // ✅ State'ler
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('Hazır');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
+
+  // ✅ Config
+  const [config, setConfig] = useState({
+    n_simulations: 500,
+    weeks: 26,
+    use_regime: false,
+    use_copula: false,
+    use_adaptive_ss: false,
+  });
+
+  // ✅ Snackbar
   const [snackbar, setSnackbar] = useState<{ 
     open: boolean; 
     message: string; 
@@ -100,12 +118,25 @@ export default function SimulationPage() {
     severity: 'info',
   });
 
-  const [config, setConfig] = useState({
-    n_simulations: 500,
-    weeks: 26,
-    use_regime: false,
-    use_copula: false,
-    use_adaptive_ss: false,
+  // ✅ Token maliyeti
+  const { data: costData } = useQuery({
+    queryKey: ['simulation-cost'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/api/cost', {
+          params: {
+            endpoint: '/api/simulate',
+            method: 'POST'
+          }
+        });
+        return res.data;
+      } catch (error) {
+        console.error('❌ Token cost hatası:', error);
+        return { cost: 10 };
+      }
+    },
+    initialData: { cost: 10 },
+    staleTime: 60000,
   });
 
   useEffect(() => {
@@ -113,11 +144,20 @@ export default function SimulationPage() {
   }, []);
 
   const checkUploadedData = async () => {
+    setIsCheckingData(true);
     try {
       const res = await api.get('/api/upload/status');
-      setHasUploadedData(res.data.has_data);
-    } catch {
+      const hasData = res.data.has_data === true;
+      setHasUploadedData(hasData);
+      if (!hasData) {
+        setError('Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard\'dan dosya yükleyin.');
+      }
+    } catch (error) {
+      console.error('❌ Veri kontrolü hatası:', error);
       setHasUploadedData(false);
+      setError('Veri kontrolü sırasında hata oluştu.');
+    } finally {
+      setIsCheckingData(false);
     }
   };
 
@@ -126,65 +166,127 @@ export default function SimulationPage() {
     mutationFn: async () => {
       setProgress(10);
       setProgressLabel('Simülasyon başlatılıyor...');
-      setIsSimulating(true);
+      setIsProcessing(true);
       const res = await api.post('/api/simulate/batch', config);
       setProgress(100);
       setProgressLabel('Tamamlandı!');
       return res.data;
     },
-    onSuccess: (data) => {
-      setIsSimulating(false);
+    onSuccess: async (data) => {
       if (data.success) {
         setResults(data.results || []);
         setPage(0);
         setError(null);
         setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla simüle edildi.`);
         setTimeout(() => setSuccess(null), 5000);
+        await fetchUser();
       } else {
         setError(data.error || 'Simülasyon başarısız');
       }
       setTimeout(() => {
         setProgress(0);
         setProgressLabel('Hazır');
+        setIsProcessing(false);
       }, 2000);
     },
     onError: (err: any) => {
-      setIsSimulating(false);
       console.error('❌ Simülasyon hatası:', err);
       setError(err.response?.data?.detail || 'Simülasyon sırasında hata oluştu');
       setProgress(0);
       setProgressLabel('Hata!');
+      setIsProcessing(false);
     },
   });
 
   // 📌 ASYNC Simülasyon
   const asyncSimulationMutation = useMutation({
     mutationFn: async () => {
-      setAsyncLoading(true);
+      setProgress(5);
+      setProgressLabel('Async analiz başlatılıyor...');
+      setIsProcessing(true);
       const res = await api.post('/api/simulate/batch/async', config);
       return res.data;
     },
     onSuccess: (data) => {
-      setAsyncLoading(false);
+      setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Simülasyon talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-        
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
 📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
         severity: 'success',
       });
+      setProgress(10);
+      setProgressLabel('İşlem kuyruğa alındı.');
+      
+      const intervalId = setInterval(() => {
+        checkAsyncProgress(data.task_id);
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (isProcessing) {
+          setIsProcessing(false);
+          setActiveAsyncTask(null);
+          setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
+        }
+      }, 300000);
     },
     onError: (err: any) => {
-      setAsyncLoading(false);
-      setError(err.response?.data?.detail || 'Async simülasyon başlatılamadı');
+      setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
+      setIsProcessing(false);
+      setProgress(0);
+      setProgressLabel('Hata!');
     },
   });
+
+  // 📌 Async İlerleme Kontrol
+  const checkAsyncProgress = async (taskId: string) => {
+    if (!taskId) return;
+    try {
+      const res = await api.get(`/api/forecast/async/status/${taskId}`);
+      const status = res.data;
+      
+      setProgress(status.progress || 50);
+      setProgressLabel(status.message || 'İşleniyor...');
+      
+      if (status.status === 'completed') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(100);
+        setProgressLabel('Tamamlandı!');
+        
+        const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
+        if (resultsRes.data.success) {
+          setResults(resultsRes.data.results || []);
+          setPage(0);
+          setSuccess(`${resultsRes.data.total || 0} malzeme başarıyla simüle edildi.`);
+          setTimeout(() => setSuccess(null), 5000);
+          await fetchUser();
+        }
+        return;
+      }
+      
+      if (status.status === 'failed' || status.status === 'error') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(0);
+        setProgressLabel('Hata!');
+        setError(status.message || 'Async analiz başarısız oldu');
+        return;
+      }
+    } catch (error) {
+      console.error('Async durum kontrol hatası:', error);
+      setIsProcessing(false);
+      setActiveAsyncTask(null);
+      setError('Async durum kontrolü başarısız');
+    }
+  };
 
   const fetchHistory = async () => {
     setLoading(true);
     try {
       const res = await api.get('/api/upload/results', {
-        params: { result_type: 'simulation_batch' }
+        params: { result_type: 'simulation_batch', limit: 100 }
       });
       
       if (res.data.success) {
@@ -336,6 +438,7 @@ export default function SimulationPage() {
         </Alert>
       </Snackbar>
 
+      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -343,7 +446,12 @@ export default function SimulationPage() {
           </Typography>
           <Typography variant="body1" color="text.secondary">
             Binlerce senaryo ile stok performansınızı simüle edin.
-            <Chip label="20 Token" size="small" color="warning" sx={{ ml: 1 }} />
+            <Chip 
+              label={`${costData?.cost || 10} Token`} 
+              size="small" 
+              color="warning" 
+              sx={{ ml: 1 }} 
+            />
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -363,20 +471,50 @@ export default function SimulationPage() {
             color="secondary"
             startIcon={asyncSimulationMutation.isPending ? <CircularProgress size={20} /> : <Send />}
             onClick={() => asyncSimulationMutation.mutate()}
-            disabled={asyncSimulationMutation.isPending || !hasUploadedData || asyncLoading}
+            disabled={asyncSimulationMutation.isPending || !hasUploadedData || isProcessing}
           >
             {asyncSimulationMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Simülasyon'}
           </Button>
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {/* Alert'ler */}
+      {error && (
+        <Alert 
+          severity={error.includes('Excel') ? 'warning' : 'error'} 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-      {!hasUploadedData && !results.length && (
-        <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
+
+      {/* Veri kontrol durumu */}
+      {isCheckingData && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 3 }}
+          icon={<CircularProgress size={20} />}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            🔍 Veri kontrolü yapılıyor...
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Lütfen birkaç saniye bekleyin. Excel dosyası tespit edildiğinde analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
       )}
 
-      {/* Bilgilendirme Kartı */}
+      {!isCheckingData && hasUploadedData && results.length === 0 && !error && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            ✅ Veri tespit edildi! Analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
+      )}
+
+      {/* 📌 Bilgilendirme Kartı */}
       <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -427,7 +565,7 @@ export default function SimulationPage() {
         </CardContent>
       </Card>
 
-      {/* Parametreler Kartı */}
+      {/* 📌 Parametre Kartı */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
@@ -494,40 +632,27 @@ export default function SimulationPage() {
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına 20 token harcanır</Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 10} token harcanır</Typography>
           </Box>
         </CardContent>
       </Card>
 
-      {/* İlerleme Durumu - Sadece SENKRON için */}
-      {simulationMutation.isPending && (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <Box sx={{ position: 'relative', display: 'inline-flex' }}>
-            <CircularProgress variant="determinate" value={progress} size={60} />
-            <Box
-              sx={{
-                top: 0,
-                left: 0,
-                bottom: 0,
-                right: 0,
-                position: 'absolute',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Typography variant="caption" component="div" color="text.secondary">
-                {progress}%
+      {/* İlerleme Durumu */}
+      {isProcessing && (
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
+            <CircularProgress variant="determinate" value={progress} size={40} />
+            <Typography variant="body2" color="text.secondary">{progressLabel}</Typography>
+            {activeAsyncTask && (
+              <Typography variant="caption" color="text.secondary">
+                (ID: {activeAsyncTask.slice(0,8)})
               </Typography>
-            </Box>
+            )}
           </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            {progressLabel}
-          </Typography>
-          <LinearProgress 
-            variant="determinate" 
-            value={progress} 
-            sx={{ mt: 2, maxWidth: 400, mx: 'auto', height: 8, borderRadius: 4 }}
+          <LinearProgress
+            variant="determinate"
+            value={progress}
+            sx={{ mt: 1, maxWidth: 400, mx: 'auto', height: 6, borderRadius: 3 }}
           />
           <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
             {config.n_simulations} senaryo simüle ediliyor...
@@ -535,6 +660,7 @@ export default function SimulationPage() {
         </Box>
       )}
 
+      {/* Sonuçlar */}
       {results.length > 0 && (
         <Card>
           <CardContent>
@@ -542,11 +668,7 @@ export default function SimulationPage() {
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                 Sonuçlar ({results.length} malzeme)
               </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<Download />}
-                onClick={handleExport}
-              >
+              <Button variant="outlined" startIcon={<Download />} onClick={handleExport} size="small">
                 Excel'e Aktar
               </Button>
             </Box>
@@ -555,48 +677,21 @@ export default function SimulationPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: 'primary.main' }}>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      Malzeme Kodu
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      Grup
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      Servis %
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      CVaR95
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      Tail Risk
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="right">
-                      Stok Tük. %
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }} align="center">
-                      Modeller
-                    </TableCell>
-                    <TableCell sx={{ color: 'white', fontWeight: 'bold' }}>
-                      Tavsiye
-                    </TableCell>
+                    <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Grup</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Servis %</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">CVaR95</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Tail Risk</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="right">Stok Tük. %</TableCell>
+                    <TableCell sx={{ color: 'white' }} align="center">Modeller</TableCell>
+                    <TableCell sx={{ color: 'white' }}>Tavsiye</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {paginatedResults.map((result, idx) => (
                     <TableRow key={idx} hover>
-                      <TableCell>
-                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
-                          {result.material_code}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Chip 
-                          label={result.group} 
-                          size="small" 
-                          variant="outlined"
-                          sx={{ fontSize: '0.7rem' }}
-                        />
-                      </TableCell>
+                      <TableCell>{result.material_code}</TableCell>
+                      <TableCell>{result.group}</TableCell>
                       <TableCell 
                         align="right" 
                         sx={{ 
@@ -606,9 +701,7 @@ export default function SimulationPage() {
                       >
                         {result.service_level}%
                       </TableCell>
-                      <TableCell align="right">
-                        {result.cvar_95}
-                      </TableCell>
+                      <TableCell align="right">{result.cvar_95}</TableCell>
                       <TableCell align="right">
                         <Chip
                           label={result.tail_risk?.toFixed(2) || '-'}
@@ -688,6 +781,7 @@ export default function SimulationPage() {
               />
             </TableContainer>
 
+            {/* Özet */}
             <Box sx={{ mt: 3 }}>
               <Grid container spacing={2}>
                 <Grid size={{ xs: 6, sm: 3 }}>
@@ -740,12 +834,13 @@ export default function SimulationPage() {
         </Card>
       )}
 
-      {!simulationMutation.isPending && results.length === 0 && !error && hasUploadedData && (
+      {/* Boş Durum */}
+      {!isProcessing && results.length === 0 && !error && hasUploadedData && !isCheckingData && (
         <Card>
           <CardContent sx={{ textAlign: 'center', py: 6 }}>
             <Timeline sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
             <Typography variant="h6" color="text.secondary">Henüz simülasyon yapılmadı</Typography>
-            <Typography variant="body2" color="text.secondary">"Simülasyonu Başlat" butonuna tıklayın.</Typography>
+            <Typography variant="body2" color="text.secondary">"Simülasyonu Başlat" butonuna tıklayarak simülasyonu başlatın.</Typography>
           </CardContent>
         </Card>
       )}
@@ -783,16 +878,10 @@ export default function SimulationPage() {
                         <TableCell>
                           {date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
                         </TableCell>
+                        <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
+                        <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
                         <TableCell align="center">
-                          <Chip label={`${total}`} size="small" color="primary" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Chip label="Başarılı" size="small" color="success" />
-                        </TableCell>
-                        <TableCell align="center">
-                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>
-                            Görüntüle
-                          </Button>
+                          <Button size="small" variant="outlined" startIcon={<Visibility />} onClick={() => handleViewHistory(item)}>Görüntüle</Button>
                         </TableCell>
                       </TableRow>
                     );

@@ -25,6 +25,12 @@ import {
   TablePagination,
   Snackbar,
   Tooltip,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Slider,
+  LinearProgress,
 } from '@mui/material';
 import {
   Security,
@@ -35,7 +41,7 @@ import {
   Visibility,
   Info,
 } from '@mui/icons-material';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 
@@ -66,8 +72,9 @@ interface HistoryItem {
 }
 
 export default function SafetyStockPage() {
-  const { user } = useAuth();
+  const { user, fetchUser } = useAuth();
   const [hasUploadedData, setHasUploadedData] = useState(false);
+  const [isCheckingData, setIsCheckingData] = useState(true);
   const [results, setResults] = useState<SafetyStockResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -76,11 +83,16 @@ export default function SafetyStockPage() {
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(50);
-  const [viewDialogOpen, setViewDialogOpen] = useState(false);
-  const [selectedHistory, setSelectedHistory] = useState<HistoryItem | null>(null);
   const [asyncLoading, setAsyncLoading] = useState(false);
 
-  // ✅ Snackbar state
+  // ✅ State'ler
+  const [serviceLevel, setServiceLevel] = useState(0.95);
+  const [progress, setProgress] = useState(0);
+  const [progressLabel, setProgressLabel] = useState('Hazır');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
+
+  // ✅ Snackbar
   const [snackbar, setSnackbar] = useState<{ 
     open: boolean; 
     message: string; 
@@ -91,83 +103,184 @@ export default function SafetyStockPage() {
     severity: 'info',
   });
 
+  // ✅ Token maliyeti
+  const { data: costData } = useQuery({
+    queryKey: ['safety-stock-cost'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/api/cost', {
+          params: {
+            endpoint: '/api/safety-stock',
+            method: 'POST'
+          }
+        });
+        return res.data;
+      } catch (error) {
+        console.error('❌ Token cost hatası:', error);
+        return { cost: 3 };
+      }
+    },
+    initialData: { cost: 3 },
+    staleTime: 60000,
+  });
+
   useEffect(() => {
     checkUploadedData();
   }, []);
 
   const checkUploadedData = async () => {
+    setIsCheckingData(true);
     try {
       const res = await api.get('/api/upload/status');
-      setHasUploadedData(res.data.has_data);
-    } catch {
+      const hasData = res.data.has_data === true;
+      setHasUploadedData(hasData);
+      if (!hasData) {
+        setError('Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard\'dan dosya yükleyin.');
+      }
+    } catch (error) {
+      console.error('❌ Veri kontrolü hatası:', error);
       setHasUploadedData(false);
+      setError('Veri kontrolü sırasında hata oluştu.');
+    } finally {
+      setIsCheckingData(false);
     }
   };
 
   // 📌 SENKRON Safety Stock
   const ssMutation = useMutation({
     mutationFn: async () => {
+      setProgress(0);
+      setProgressLabel('Analiz başlatılıyor...');
+      setIsProcessing(true);
       const res = await api.post('/api/safety-stock/batch', {
-        materials: [],
-        service_level: 0.95,
-        save_results: true
+        service_level: serviceLevel,
       });
+      setProgress(100);
+      setProgressLabel('Tamamlandı!');
       return res.data;
     },
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       if (data.success) {
         setResults(data.results || []);
         setPage(0);
         setError(null);
         setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla analiz edildi.`);
         setTimeout(() => setSuccess(null), 5000);
+        await fetchUser();
       } else {
         setError(data.error || 'Analiz başarısız');
       }
+      setTimeout(() => {
+        setProgress(0);
+        setProgressLabel('Hazır');
+        setIsProcessing(false);
+      }, 2000);
     },
     onError: (err: any) => {
       console.error('❌ Safety Stock hatası:', err);
       setError(err.response?.data?.detail || 'Analiz sırasında hata oluştu');
+      setProgress(0);
+      setProgressLabel('Hata!');
+      setIsProcessing(false);
     },
   });
 
   // 📌 ASYNC Safety Stock
   const asyncSsMutation = useMutation({
     mutationFn: async () => {
-      setAsyncLoading(true);
+      setProgress(5);
+      setProgressLabel('Async analiz başlatılıyor...');
+      setIsProcessing(true);
       const res = await api.post('/api/safety-stock/batch/async', {
-        service_level: 0.95
+        service_level: serviceLevel,
       });
       return res.data;
     },
     onSuccess: (data) => {
-      setAsyncLoading(false);
+      setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Safety Stock analizi talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-        
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
 📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
         severity: 'success',
       });
+      setProgress(10);
+      setProgressLabel('İşlem kuyruğa alındı.');
+      
+      // Async kontrol için interval başlat
+      const intervalId = setInterval(() => {
+        checkAsyncProgress(data.task_id);
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (isProcessing) {
+          setIsProcessing(false);
+          setActiveAsyncTask(null);
+          setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
+        }
+      }, 300000);
     },
     onError: (err: any) => {
-      setAsyncLoading(false);
-      setError(err.response?.data?.detail || 'Async safety stock analizi başlatılamadı');
+      setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
+      setIsProcessing(false);
+      setProgress(0);
+      setProgressLabel('Hata!');
     },
   });
 
-  // ✅ Geçmiş sonuçları getir
+  // 📌 Async İlerleme Kontrol
+  const checkAsyncProgress = async (taskId: string) => {
+    if (!taskId) return;
+    try {
+      const res = await api.get(`/api/forecast/async/status/${taskId}`);
+      const status = res.data;
+      
+      setProgress(status.progress || 50);
+      setProgressLabel(status.message || 'İşleniyor...');
+      
+      if (status.status === 'completed') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(100);
+        setProgressLabel('Tamamlandı!');
+        
+        const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
+        if (resultsRes.data.success) {
+          setResults(resultsRes.data.results || []);
+          setPage(0);
+          setSuccess(`${resultsRes.data.total || 0} malzeme başarıyla analiz edildi.`);
+          setTimeout(() => setSuccess(null), 5000);
+          await fetchUser();
+        }
+        return;
+      }
+      
+      if (status.status === 'failed' || status.status === 'error') {
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(0);
+        setProgressLabel('Hata!');
+        setError(status.message || 'Async analiz başarısız oldu');
+        return;
+      }
+    } catch (error) {
+      console.error('Async durum kontrol hatası:', error);
+      setIsProcessing(false);
+      setActiveAsyncTask(null);
+      setError('Async durum kontrolü başarısız');
+    }
+  };
+
   const fetchHistory = async () => {
     setLoading(true);
     try {
       const res = await api.get('/api/upload/results', {
-        params: { result_type: 'safety_stock_batch' }
+        params: { result_type: 'safety_stock_batch', limit: 100 }
       });
-      console.log('📋 Geçmiş cevabı:', res.data);
       
       if (res.data.success) {
         const rawResults = res.data.results || [];
-        
         const groupedMap = new Map();
         
         rawResults.forEach((item: any) => {
@@ -178,14 +291,10 @@ export default function SafetyStockPage() {
             groupedMap.set(key, {
               id: item.id,
               created_at: item.created_at,
-              total: 0,
               items: []
             });
           }
-          
-          const group = groupedMap.get(key);
-          group.total += 1;
-          group.items.push(item);
+          groupedMap.get(key).items.push(item);
         });
         
         const groupedResults = Array.from(groupedMap.values()).map(group => {
@@ -219,17 +328,14 @@ export default function SafetyStockPage() {
         setError('Geçmiş sonuçlar yüklenemedi');
       }
     } catch (err: any) {
-      console.error('❌ Geçmiş hatası:', err);
       setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Geçmiş sonucu görüntüle
   const handleViewHistory = (item: HistoryItem) => {
     const historyResults = item.data?.results || [];
-    
     if (historyResults.length > 0) {
       setResults(historyResults);
       setPage(0);
@@ -319,6 +425,7 @@ export default function SafetyStockPage() {
         </Alert>
       </Snackbar>
 
+      {/* Header */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
@@ -326,7 +433,12 @@ export default function SafetyStockPage() {
           </Typography>
           <Typography variant="body1" color="text.secondary">
             6 farklı SS metodu ve talep pattern analizi ile optimum emniyet stok seviyelerini belirler.
-            <Chip label="10 Token" size="small" color="warning" sx={{ ml: 1 }} />
+            <Chip 
+              label={`${costData?.cost || 3} Token`} 
+              size="small" 
+              color="warning" 
+              sx={{ ml: 1 }} 
+            />
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -346,20 +458,82 @@ export default function SafetyStockPage() {
             color="secondary"
             startIcon={asyncSsMutation.isPending ? <CircularProgress size={20} /> : <Send />}
             onClick={() => asyncSsMutation.mutate()}
-            disabled={asyncSsMutation.isPending || !hasUploadedData || asyncLoading}
+            disabled={asyncSsMutation.isPending || !hasUploadedData || isProcessing}
           >
             {asyncSsMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Analiz'}
           </Button>
         </Box>
       </Box>
 
-      {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+      {/* Alert'ler */}
+      {error && (
+        <Alert 
+          severity={error.includes('Excel') ? 'warning' : 'error'} 
+          sx={{ mb: 3 }} 
+          onClose={() => setError(null)}
+        >
+          {error}
+        </Alert>
+      )}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-      {!hasUploadedData && !results.length && (
-        <Alert severity="info" sx={{ mb: 3 }}>Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard'dan dosya yükleyin.</Alert>
+
+      {/* Veri kontrol durumu */}
+      {isCheckingData && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 3 }}
+          icon={<CircularProgress size={20} />}
+        >
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            🔍 Veri kontrolü yapılıyor...
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            Lütfen birkaç saniye bekleyin. Excel dosyası tespit edildiğinde analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
       )}
 
-      {/* ✅ Güncellenmiş bilgilendirme kartı - 6 metot + pattern eşleşmeleri */}
+      {!isCheckingData && hasUploadedData && results.length === 0 && !error && (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+            ✅ Veri tespit edildi! Analiz yapabilirsiniz.
+          </Typography>
+        </Alert>
+      )}
+
+      {/* 📌 Parametre Kartı */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Grid container spacing={3} sx={{ alignItems: 'center' }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="body2" gutterBottom>
+                Servis Seviyesi: {(serviceLevel * 100).toFixed(0)}%
+              </Typography>
+              <Slider
+                value={serviceLevel}
+                onChange={(_, val) => setServiceLevel(val as number)}
+                min={0.80}
+                max={0.99}
+                step={0.01}
+                marks={[
+                  { value: 0.85, label: '85%' },
+                  { value: 0.90, label: '90%' },
+                  { value: 0.95, label: '95%' },
+                  { value: 0.99, label: '99%' },
+                ]}
+                valueLabelDisplay="auto"
+              />
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="caption" color="text.secondary">
+                📊 Daha yüksek servis seviyesi = daha yüksek emniyet stoğu
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {/* Bilgilendirme Kartı */}
       <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
         <CardContent>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -421,22 +595,37 @@ export default function SafetyStockPage() {
         </CardContent>
       </Card>
 
+      {/* Token Bakiyesi */}
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına 10 token harcanır</Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 3} token harcanır</Typography>
           </Box>
         </CardContent>
       </Card>
 
-      {ssMutation.isPending && (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <CircularProgress />
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>Pattern analizi + 6 SS metodu hesaplanıyor...</Typography>
+      {/* İlerleme Durumu */}
+      {isProcessing && (
+        <Box sx={{ textAlign: 'center', py: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
+            <CircularProgress variant="determinate" value={progress} size={40} />
+            <Typography variant="body2" color="text.secondary">{progressLabel}</Typography>
+            {activeAsyncTask && (
+              <Typography variant="caption" color="text.secondary">
+                (ID: {activeAsyncTask.slice(0,8)})
+              </Typography>
+            )}
+          </Box>
+          <LinearProgress
+            variant="determinate"
+            value={progress}
+            sx={{ mt: 1, maxWidth: 400, mx: 'auto', height: 6, borderRadius: 3 }}
+          />
         </Box>
       )}
 
+      {/* Sonuçlar */}
       {results.length > 0 && (
         <Card>
           <CardContent>
@@ -444,12 +633,7 @@ export default function SafetyStockPage() {
               <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
                 Sonuçlar ({results.length} malzeme)
               </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<Download />}
-                onClick={handleExport}
-                size="small"
-              >
+              <Button variant="outlined" startIcon={<Download />} onClick={handleExport} size="small">
                 Excel'e Aktar
               </Button>
             </Box>
@@ -525,15 +709,18 @@ export default function SafetyStockPage() {
         </Card>
       )}
 
-      {!ssMutation.isPending && results.length === 0 && !error && hasUploadedData && (
-        <Card><CardContent sx={{ textAlign: 'center', py: 6 }}>
-          <Security sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-          <Typography variant="h6" color="text.secondary">Henüz analiz yapılmadı</Typography>
-          <Typography variant="body2" color="text.secondary">"Analiz Et" butonuna tıklayarak safety stock analizini başlatın.</Typography>
-        </CardContent></Card>
+      {/* Boş Durum */}
+      {!isProcessing && results.length === 0 && !error && hasUploadedData && !isCheckingData && (
+        <Card>
+          <CardContent sx={{ textAlign: 'center', py: 6 }}>
+            <Security sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+            <Typography variant="h6" color="text.secondary">Henüz analiz yapılmadı</Typography>
+            <Typography variant="body2" color="text.secondary">"Analiz Et" butonuna tıklayarak emniyet stoğu analizini başlatın.</Typography>
+          </CardContent>
+        </Card>
       )}
 
-      {/* 📋 Geçmiş Dialog */}
+      {/* Geçmiş Dialog */}
       <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -543,7 +730,9 @@ export default function SafetyStockPage() {
         </DialogTitle>
         <DialogContent dividers>
           {historyData.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>Henüz geçmiş analiz kaydı yok.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+              Henüz geçmiş analiz kaydı yok.
+            </Typography>
           ) : (
             <TableContainer>
               <Table size="small">
@@ -561,7 +750,9 @@ export default function SafetyStockPage() {
                     const date = item.created_at ? new Date(item.created_at) : new Date();
                     return (
                       <TableRow key={item.id}>
-                        <TableCell>{date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}</TableCell>
+                        <TableCell>
+                          {date.toLocaleDateString('tr-TR')} {date.toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}
+                        </TableCell>
                         <TableCell align="center"><Chip label={`${total}`} size="small" color="primary" /></TableCell>
                         <TableCell align="center"><Chip label="Başarılı" size="small" color="success" /></TableCell>
                         <TableCell align="center">
