@@ -18,7 +18,6 @@ router = APIRouter()
 
 def is_admin(user: User) -> bool:
     """Kullanıcının admin olup olmadığını kontrol et"""
-    # Admin email'lerini buraya ekleyin
     admin_emails = ["admin@stok.com", "admin@admin.com"]
     return user.email in admin_emails
 
@@ -71,7 +70,6 @@ async def create_token_cost(
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
-    # Aynı endpoint ve method varsa kontrol et
     existing = db.query(TokenCost).filter(
         TokenCost.endpoint == request.endpoint,
         TokenCost.method == request.method
@@ -143,32 +141,63 @@ async def delete_token_cost(
     return {"message": "Token cost silindi"}
 
 
-@router.post("/token-costs/seed")
-async def seed_token_costs(
+@router.post("/token-costs/init-defaults")
+async def init_default_token_costs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Varsayılan token cost kayıtlarını oluştur (Admin)"""
+    """
+    Varsayılan token cost kayıtlarını oluştur/güncelle (Admin)
+    Sadece raporlama endpoint'leri için token düşer.
+    Async status/result endpoint'leri ÜCRETSİZ.
+    """
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
+    # ✅ SADECE RAPORLAMA ENDPOINT'LERİ (5 analiz sayfası)
     default_costs = [
-        {"endpoint": "/api/pattern", "method": "POST", "cost": 2},
-        {"endpoint": "/api/safety-stock", "method": "POST", "cost": 3},
-        {"endpoint": "/api/forecast", "method": "POST", "cost": 5},
-        {"endpoint": "/api/simulate", "method": "POST", "cost": 10},
-        {"endpoint": "/api/backtest", "method": "POST", "cost": 15},        
-        {"endpoint": "/api/supplier/optimize-shares", "method": "POST", "cost": 8},
-        {"endpoint": "/api/risk/tail-risk", "method": "POST", "cost": 3},
-        {"endpoint": "/api/risk/cvar95", "method": "POST", "cost": 2},
-        {"endpoint": "/api/risk/service-level-gap", "method": "POST", "cost": 1},        
-        {"endpoint": "/api/forecast/batch", "method": "POST", "cost": 8},
-        {"endpoint": "/api/forecast/batch/async", "method": "POST", "cost": 8},
-        # ✅ ÜCRETSİZ
-        {"endpoint": "/api/upload", "method": "POST", "cost": 0, "is_active": False},  # Ücretsiz
-        {"endpoint": "/api/upload/status", "method": "GET", "cost": 0, "is_active": False},  # Ücretsiz
-        {"endpoint": "/api/cost", "method": "GET", "cost": 0, "is_active": False},  # Ücretsiz
+        # 1. Talep Tahmini (Forecast)
+        {"endpoint": "/api/forecast/batch", "method": "POST", "cost": 5, "is_active": True},
+        {"endpoint": "/api/forecast/batch/async", "method": "POST", "cost": 8, "is_active": True},
+        
+        # 2. Emniyet Stoğu (Safety Stock)
+        {"endpoint": "/api/safety-stock", "method": "POST", "cost": 3, "is_active": True},
+        {"endpoint": "/api/safety-stock/batch/async", "method": "POST", "cost": 6, "is_active": True},
+        
+        # 3. Monte Carlo Simülasyonu
+        {"endpoint": "/api/simulate", "method": "POST", "cost": 10, "is_active": True},
+        {"endpoint": "/api/simulate/batch/async", "method": "POST", "cost": 15, "is_active": True},
+        
+        # 4. Backtest
+        {"endpoint": "/api/backtest", "method": "POST", "cost": 15, "is_active": True},
+        {"endpoint": "/api/backtest/batch/async", "method": "POST", "cost": 20, "is_active": True},
+        
+        # 5. Tedarikçi Analizi
+        {"endpoint": "/api/supplier/optimize-shares", "method": "POST", "cost": 8, "is_active": True},
+        {"endpoint": "/api/supplier/batch/async", "method": "POST", "cost": 12, "is_active": True},
+        
+        # 📋 Task Listesi (Ücretsiz)
+        {"endpoint": "/api/tasks/async", "method": "GET", "cost": 0, "is_active": True},
     ]
+    
+    # ❌ Silinecek eski endpoint'ler (kullanılmayanlar)
+    obsolete_endpoints = [
+        "/api/pattern",
+        "/api/forecast",
+        "/api/risk/tail-risk",
+        "/api/risk/cvar95",
+        "/api/risk/service-level-gap",
+    ]
+    
+    # Eski endpoint'leri pasif yap
+    for endpoint in obsolete_endpoints:
+        existing = db.query(TokenCost).filter(
+            TokenCost.endpoint == endpoint
+        ).all()
+        for record in existing:
+            record.is_active = False
+            record.updated_at = datetime.utcnow()
+            print(f"⏹️ Pasif yapıldı: {endpoint}")
     
     created_count = 0
     updated_count = 0
@@ -180,21 +209,54 @@ async def seed_token_costs(
         ).first()
         
         if existing:
-            # Varsa güncelle
             existing.cost = data["cost"]
-            existing.is_active = True
+            existing.is_active = data["is_active"]
             existing.updated_at = datetime.utcnow()
             updated_count += 1
+            print(f"🔄 Güncellendi: {data['endpoint']} → {data['cost']} Token")
         else:
-            # Yoksa oluştur
             token_cost = TokenCost(
                 endpoint=data["endpoint"],
                 method=data["method"],
                 cost=data["cost"],
-                is_active=True
+                is_active=data["is_active"]
             )
             db.add(token_cost)
             created_count += 1
+            print(f"✅ Eklendi: {data['endpoint']} → {data['cost']} Token")
+    
+    db.commit()
+    
+    # ✅ ÜCRETSİZ endpoint'leri güncelle
+    free_endpoints = [
+        "/api/upload",
+        "/api/upload/status",
+        "/api/cost",
+        # ✅ Async status ve result endpoint'leri ücretsiz
+        "/api/forecast/async/status/{task_id}",
+        "/api/forecast/async/result/{task_id}",
+    ]
+    
+    for endpoint in free_endpoints:
+        records = db.query(TokenCost).filter(
+            TokenCost.endpoint == endpoint
+        ).all()
+        if records:
+            for record in records:
+                record.cost = 0
+                record.is_active = False  # ✅ Pasif yap (token kontrolünden muaf)
+                record.updated_at = datetime.utcnow()
+            print(f"🆓 Ücretsiz: {endpoint}")
+        else:
+            # Yoksa oluştur
+            token_cost = TokenCost(
+                endpoint=endpoint,
+                method="GET",
+                cost=0,
+                is_active=False
+            )
+            db.add(token_cost)
+            print(f"🆓 Ücretsiz eklendi: {endpoint}")
     
     db.commit()
     
@@ -202,7 +264,19 @@ async def seed_token_costs(
         "message": "Token cost verileri güncellendi",
         "created": created_count,
         "updated": updated_count,
-        "total": len(default_costs)
+        "total": len(default_costs),
+        "obsolete_disabled": len(obsolete_endpoints),
+        "free_endpoints": free_endpoints,
+        "details": {
+            "active_analyses": [
+                "Talep Tahmini (Forecast)",
+                "Emniyet Stoğu (Safety Stock)",
+                "Monte Carlo Simülasyonu",
+                "Backtest",
+                "Tedarikçi Analizi"
+            ],
+            "free_endpoints": free_endpoints
+        }
     }
 
 
@@ -223,7 +297,6 @@ async def get_admin_stats(
     total_token_costs = db.query(TokenCost).count()
     active_token_costs = db.query(TokenCost).filter(TokenCost.is_active == True).count()
     
-    # Son 24 saatteki token harcamaları
     yesterday = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_tokens = db.query(TokenHistory).filter(
         TokenHistory.created_at >= yesterday

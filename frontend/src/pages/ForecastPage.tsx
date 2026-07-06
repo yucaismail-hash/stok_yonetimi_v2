@@ -140,19 +140,20 @@ export default function ForecastPage() {
   useEffect(() => {
     checkUploadedData();
     
-    // Component unmount olduğunda interval'i temizle
     return () => {
       if (intervalIdRef.current) {
         clearInterval(intervalIdRef.current);
         intervalIdRef.current = null;
       }
     };
-  }, []);
+  }, []); // ✅ Boş array - sadece mount'ta çalışır
 
+  // ✅ checkUploadedData - Sadece bir kere çalışır
   const checkUploadedData = async () => {
     try {
       const res = await api.get('/api/upload/status');
       console.log('📦 Upload status:', res.data);
+      // ✅ has_data kontrolü
       setHasUploadedData(res.data.has_data === true);
     } catch (error) {
       console.error('❌ Veri kontrolü hatası:', error);
@@ -730,7 +731,8 @@ export default function ForecastPage() {
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
       
-      {!hasUploadedData && !results.length && (
+      {/* ✅ Veri kontrolü - Sadece gerçekten veri yoksa ve yükleniyorsa göster */}
+      {!hasUploadedData && !results.length && !error && (
         <Alert 
           severity="info" 
           sx={{ mb: 3 }}
@@ -745,6 +747,7 @@ export default function ForecastPage() {
         </Alert>
       )}
 
+      {/* ✅ Veri varsa göster */}
       {hasUploadedData && results.length === 0 && !error && (
         <Alert severity="success" sx={{ mb: 3 }}>
           <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
