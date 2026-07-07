@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON, Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -207,3 +207,33 @@ class AnalysisResult(Base):
     data = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     task_id = Column(String, nullable=True, index=True)  # Async işlemler için
+
+# app/models.py - Yeni modeller
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null = tüm kullanıcılar
+    title = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    type = Column(String, default="info")  # info, success, warning, error
+    is_read = Column(Boolean, default=False)
+    link = Column(String, nullable=True)  # Tıklanınca gidilecek sayfa
+    created_at = Column(DateTime, default=datetime.utcnow)
+    read_at = Column(DateTime, nullable=True)
+    
+    # user = relationship("User", back_populates="notifications")  # İlişki kaldırıldı (diğerleriyle uyumlu)
+
+
+class UserTokenTransaction(Base):
+    __tablename__ = "user_token_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Integer, nullable=False)  # Pozitif = kazanç, Negatif = harcama
+    type = Column(String, nullable=False)  # 'spend', 'purchase', 'bonus', 'refund'
+    description = Column(String, nullable=False)
+    endpoint = Column(String, nullable=True)
+    balance_after = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # user = relationship("User", back_populates="transactions")  # İlişki kaldırıldı

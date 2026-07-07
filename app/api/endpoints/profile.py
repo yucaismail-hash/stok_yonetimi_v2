@@ -1,33 +1,34 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from typing import Optional
-from datetime import datetime
+from pydantic import BaseModel
+from datetime import datetime, timedelta
 from app.database import get_db
-from app.models import User, TokenHistory, TokenPurchase, Sector
+from app.models import User, TokenHistory, UserTokenTransaction, Sector
 from app.auth import get_current_user, get_password_hash, verify_password
+import re
 
-router = APIRouter()
-
-
-class ProfileUpdateRequest(BaseModel):
-    full_name: str
-    company_name: str
-    sector_id: Optional[int] = None
+router = APIRouter(prefix="/profile", tags=["profile"])
 
 
-class PasswordChangeRequest(BaseModel):
+class ProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    company_name: Optional[str] = None
+
+
+class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+    confirm_password: str
 
 
-@router.get("/profile")
-def get_profile(
+@router.get("/")
+async def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Kullanıcı profil bilgilerini getir"""
-    # ✅ Sektör adını manuel olarak çek
+    # ✅ Sektör adını al
     sector_name = None
     if current_user.sector_id:
         sector = db.query(Sector).filter(Sector.id == current_user.sector_id).first()
@@ -36,100 +37,141 @@ def get_profile(
     return {
         "id": current_user.id,
         "email": current_user.email,
-        "full_name": current_user.full_name or "",
-        "company_name": current_user.company_name or "",
+        "full_name": current_user.full_name,
+        "company_name": current_user.company_name,
         "sector_id": current_user.sector_id,
-        "sector_name": sector_name,
+        "sector_name": sector_name,  # ✅ Eklendi
         "token_balance": current_user.token_balance,
-        "created_at": current_user.created_at.isoformat()
+        "created_at": current_user.created_at
     }
 
 
-@router.put("/profile")
-def update_profile(
-    request: ProfileUpdateRequest,
+@router.put("/")
+async def update_profile(
+    profile: ProfileUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Kullanıcı profilini güncelle"""
-    current_user.full_name = request.full_name
-    current_user.company_name = request.company_name
-    current_user.sector_id = request.sector_id
+    if profile.full_name is not None:
+        current_user.full_name = profile.full_name
+    if profile.company_name is not None:
+        current_user.company_name = profile.company_name
+    
     db.commit()
     db.refresh(current_user)
     
-    # ✅ Güncellenmiş sektör adını manuel olarak çek
-    sector_name = None
-    if current_user.sector_id:
-        sector = db.query(Sector).filter(Sector.id == current_user.sector_id).first()
-        sector_name = sector.name if sector else None
-    
     return {
-        "message": "Profil başarıyla güncellendi",
-        "full_name": current_user.full_name,
-        "company_name": current_user.company_name,
-        "sector_id": current_user.sector_id,
-        "sector_name": sector_name,
-        "token_balance": current_user.token_balance
+        "success": True,
+        "message": "Profil güncellendi",
+        "user": {
+            "id": current_user.id,
+            "email": current_user.email,
+            "full_name": current_user.full_name,
+            "company_name": current_user.company_name,
+            "token_balance": current_user.token_balance
+        }
     }
 
 
-@router.put("/profile/password")
-def change_password(
-    request: PasswordChangeRequest,
+@router.post("/change-password")
+async def change_password(
+    request: PasswordChange,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Kullanıcı şifresini değiştir"""
+    # ✅ Mevcut şifre kontrolü
     if not verify_password(request.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Mevcut şifre yanlış")
     
+    # ✅ Yeni şifre kontrolü
+    if len(request.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Yeni şifre en az 6 karakter olmalı")
+    
+    if request.new_password != request.confirm_password:
+        raise HTTPException(status_code=400, detail="Şifreler eşleşmiyor")
+    
+    # ✅ Şifreyi güncelle
     current_user.hashed_password = get_password_hash(request.new_password)
     db.commit()
     
-    return {"message": "Şifre başarıyla değiştirildi"}
+    return {"success": True, "message": "Şifre başarıyla değiştirildi"}
 
 
-@router.get("/profile/token-history")
-def get_token_history(
+@router.get("/token-history")
+async def get_token_history(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    limit: int = 20,
+    offset: int = 0,
+    transaction_type: Optional[str] = None
 ):
-    """Token harcama geçmişini getir"""
-    history = db.query(TokenHistory).filter(
-        TokenHistory.user_id == current_user.id
-    ).order_by(TokenHistory.created_at.desc()).limit(50).all()
+    """Token harcama geçmişini getir - SADECE cost > 0"""
+    query = db.query(TokenHistory).filter(
+        TokenHistory.user_id == current_user.id,
+        TokenHistory.cost > 0  # ✅ 0 token'li işlemleri filtrele
+    )
     
-    return [
-        {
-            "id": h.id,
-            "date": h.created_at.strftime("%Y-%m-%d %H:%M"),
-            "endpoint": h.endpoint,
-            "cost": h.cost,
-            "balance_after": h.balance_after
-        }
-        for h in history
-    ]
+    if transaction_type == 'spend':
+        query = query.filter(TokenHistory.cost > 0)
+    
+    total = query.count()
+    history = query.order_by(TokenHistory.created_at.desc()).offset(offset).limit(limit).all()
+    
+    return {
+        "success": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "history": [
+            {
+                "id": h.id,
+                "endpoint": h.endpoint,
+                "cost": h.cost,
+                "balance_after": h.balance_after,
+                "created_at": h.created_at,
+                "type": "spend"
+            }
+            for h in history
+        ]
+    }
 
 
-@router.get("/profile/purchase-history")
-def get_purchase_history(
+@router.get("/transactions")
+async def get_transactions(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    limit: int = 20,
+    offset: int = 0,
+    transaction_type: Optional[str] = None
 ):
-    """Token satın alma geçmişini getir"""
-    purchases = db.query(TokenPurchase).filter(
-        TokenPurchase.user_id == current_user.id
-    ).order_by(TokenPurchase.created_at.desc()).limit(20).all()
+    """Token işlem geçmişini getir (satın alma + harcama)"""
+    query = db.query(UserTokenTransaction).filter(
+        UserTokenTransaction.user_id == current_user.id,
+        UserTokenTransaction.amount != 0  # ✅ Sıfır işlemleri filtrele
+    )
     
-    return [
-        {
-            "id": p.id,
-            "date": p.created_at.strftime("%Y-%m-%d %H:%M"),
-            "amount": p.amount,
-            "price": p.price,
-            "currency": p.currency,
-            "status": p.status
-        }
-        for p in purchases
-    ]
+    if transaction_type:
+        query = query.filter(UserTokenTransaction.type == transaction_type)
+    
+    total = query.count()
+    transactions = query.order_by(UserTokenTransaction.created_at.desc()).offset(offset).limit(limit).all()
+    
+    return {
+        "success": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "transactions": [
+            {
+                "id": t.id,
+                "amount": t.amount,
+                "type": t.type,
+                "description": t.description,
+                "balance_after": t.balance_after,
+                "created_at": t.created_at
+            }
+            for t in transactions
+        ]
+    }

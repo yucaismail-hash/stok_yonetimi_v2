@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import uuid
+import os  # ✅ EKLENDİ
+import requests  # ✅ EKLENDİ
 from app.database import get_db
 from app.models import User, UploadedData, AnalysisResult, UserAnalysisResult
 from app.analysis.forecast import DemandForecaster
@@ -407,6 +409,33 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
         db.commit()
         
         print(f"✅ Async forecast tamamlandı: Task ID {task_id}, {len(results)} malzeme")
+
+        # ✅ BİLDİRİM OLUŞTUR - DOĞRUDAN (API çağrısı yok)
+        try:
+            from app.models import Notification
+            
+            task_names = {
+                'forecast_batch_async': 'Talep Tahmini',
+                'backtest_batch_async': 'Backtest',
+                'simulation_batch_async': 'Monte Carlo Simülasyonu',
+                'supplier_batch_async': 'Tedarikçi Analizi',
+                'safety_stock_batch_async': 'Emniyet Stoğu',
+            }
+            task_name = task_names.get('forecast_batch_async', 'Analiz')
+            
+            notification = Notification(
+                user_id=user_id,
+                title=f"✅ {task_name} Tamamlandı!",
+                message=f"{task_name} raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
+                type="success",
+                link="/tasks"
+            )
+            db.add(notification)
+            db.commit()
+            print(f"✅ Bildirim kaydedildi: User {user_id}, Task {task_id}")
+            
+        except Exception as e:
+            print(f"⚠️ Bildirim kaydetme hatası (User {user_id}): {e}")
         
     except Exception as e:
         print(f"❌ Async forecast hatası (Task {task_id}): {e}")
