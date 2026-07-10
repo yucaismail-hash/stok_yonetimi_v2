@@ -892,7 +892,7 @@ export default function DashboardPage() {
     
     // ✅ Tüm dialog'ları kapat
     setCheckoutOpen(false);
-    setCreditDialogOpen(false);  // 🆕 CreditPurchaseDialog'u kapat
+    setCreditDialogOpen(false);
     
     // Başarılı mesajını göster
     setPaymentStatus('success');
@@ -913,7 +913,6 @@ export default function DashboardPage() {
     setPaymentStatus('canceled');
     setPaymentMessage('Ödeme işleminiz iptal edildi.');
   };
-
 
   const handlePaymentReset = () => {
     setPaymentStatus('idle');

@@ -101,7 +101,7 @@ export default function BacktestPage() {
     severity: 'info',
   });
 
-  // ✅ Token maliyeti
+  // ✅ Kredi maliyeti
   const { data: costData } = useQuery({
     queryKey: ['backtest-cost'],
     queryFn: async () => {
@@ -114,7 +114,7 @@ export default function BacktestPage() {
         });
         return res.data;
       } catch (error) {
-        console.error('❌ Token cost hatası:', error);
+        console.error('❌ Kredi cost hatası:', error);
         return { cost: 15 };
       }
     },
@@ -436,7 +436,7 @@ export default function BacktestPage() {
           <Typography variant="body1" color="text.secondary">
             8 farklı stratejiyi geçmiş veri üzerinde test eder.
             <Chip 
-              label={`${costData?.cost || 15} Token`} 
+              label={`${costData?.cost || 15} Kredi`} 
               size="small" 
               color="warning" 
               sx={{ ml: 1 }} 
@@ -561,12 +561,12 @@ export default function BacktestPage() {
         </CardContent>
       </Card>
 
-      {/* Token Bakiyesi */}
+      {/* Kredi Bakiyesi */}
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 15} token harcanır</Typography>
+            <Typography variant="body2">💰 Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 15} Kredi harcanır</Typography>
           </Box>
         </CardContent>
       </Card>

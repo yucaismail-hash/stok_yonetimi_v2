@@ -42,11 +42,13 @@ export default function PolarCheckout({
   const [checkoutInstance, setCheckoutInstance] = useState<any>(null);
   const [status, setStatus] = useState<'idle' | 'processing' | 'success' | 'error'>('idle');
   const initAttemptedRef = useRef(false);
+  const successCalledRef = useRef(false);
 
   useEffect(() => {
     if (!open || !checkoutUrl) {
       setLoading(false);
       initAttemptedRef.current = false;
+      successCalledRef.current = false;
       if (containerRef.current) {
         containerRef.current.innerHTML = '';
       }
@@ -105,9 +107,15 @@ export default function PolarCheckout({
         theme: 'light',
         onSuccess: () => {
           console.log('🔍 [DEBUG] ====== onSuccess CALLED ======');
-          setStatus('success');
-          // ✅ Parent'a bildir, kapatmayı bildirim yapacak
-          onSuccess();
+          if (!successCalledRef.current) {
+            successCalledRef.current = true;
+            setStatus('success');
+            onSuccess();
+            // ✅ 1 saniye sonra kapat
+            setTimeout(() => {
+              onClose();
+            }, 1000);
+          }
         },
         onError: (error: any) => {
           console.error('🔍 [DEBUG] ====== onError CALLED ======');
@@ -126,12 +134,8 @@ export default function PolarCheckout({
           }
         },
         onConfirmed: () => {
-            console.log("confirmed");
-
-            setStatus("success");
-
-            onSuccess();
-        }
+          console.log('🔍 [DEBUG] ====== onConfirmed CALLED ======');
+        },
       });
 
       setCheckoutInstance(checkout);
@@ -155,6 +159,7 @@ export default function PolarCheckout({
     setError(null);
     setLoading(true);
     initAttemptedRef.current = false;
+    successCalledRef.current = false;
 
     if (containerRef.current) {
       containerRef.current.innerHTML = '';

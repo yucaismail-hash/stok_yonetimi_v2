@@ -183,6 +183,64 @@ async def get_transaction(
 
 
 # ============================================
+# 🆕 SUCCESS / CANCEL ENDPOINT'LERİ
+# ============================================
+
+@router.get("/success")
+async def polar_success(
+    checkout_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Polar başarılı ödeme sonrası dönecek endpoint.
+    """
+    transaction = db.query(CreditTransaction).filter(
+        CreditTransaction.polar_order_id == checkout_id,
+        CreditTransaction.user_id == current_user.id
+    ).first()
+    
+    if transaction:
+        return {
+            "status": "success",
+            "message": f"{transaction.amount} kredi hesabınıza eklendi!",
+            "credits": transaction.amount
+        }
+    
+    purchase = db.query(TokenPurchase).filter(
+        TokenPurchase.payment_id == checkout_id,
+        TokenPurchase.user_id == current_user.id
+    ).first()
+    
+    if purchase:
+        return {
+            "status": "success",
+            "message": f"{purchase.amount} kredi hesabınıza eklendi!",
+            "credits": purchase.amount
+        }
+    
+    return {
+        "status": "success",
+        "message": "Ödeme başarıyla tamamlandı!"
+    }
+
+
+@router.get("/cancel")
+async def polar_cancel(
+    checkout_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Polar iptal ödeme sonrası dönecek endpoint.
+    """
+    return {
+        "status": "canceled",
+        "message": "Ödeme işleminiz iptal edildi."
+    }
+
+
+# ============================================
 # WEBHOOK ENDPOINT'İ
 # ============================================
 
@@ -191,15 +249,12 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
     """
     Polar webhook endpoint'i.
     """
-    # 1. Raw payload'ı oku
     payload = await request.body()
     
-    # 2. Header'ları al
     webhook_id = request.headers.get("webhook-id")
     webhook_timestamp = request.headers.get("webhook-timestamp")
     webhook_signature = request.headers.get("webhook-signature")
     
-    # Debug
     print(f"🔍 Webhook Headers:")
     print(f"  webhook-id: {webhook_id}")
     print(f"  webhook-timestamp: {webhook_timestamp}")
@@ -211,7 +266,6 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
             detail="Missing webhook headers"
         )
     
-    # 3. İmzayı doğrula
     if not polar_service.verify_webhook_signature(
         payload, webhook_id, webhook_timestamp, webhook_signature
     ):
@@ -220,7 +274,6 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
             detail="Invalid signature"
         )
     
-    # 4. Payload'ı parse et
     try:
         data = json.loads(payload)
     except json.JSONDecodeError:
@@ -234,7 +287,6 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
     
     print(f"🔍 Event type: {event_type}")
     
-    # 5. Event tipine göre işle
     if event_type in ["order.created", "order.paid"]:
         await handle_order_paid(event_data, db)
     elif event_type == "order.refunded":
@@ -271,7 +323,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         return
     
     try:
-        # 1. Paketi bul
         package = db.query(CreditPackage).filter(
             CreditPackage.polar_product_id == product_id,
             CreditPackage.is_active == True
@@ -283,7 +334,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         
         print(f"✅ Package found: {package.name} ({package.credits} credits)")
         
-        # 2. Kullanıcıyı bul
         user = db.query(User).filter(
             User.polar_customer_id == customer_id
         ).first()
@@ -306,7 +356,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         print(f"✅ User found: {user.id} ({user.email})")
         print(f"💰 Current balance: {user.token_balance}")
         
-        # 3. Aynı sipariş kontrolü
         existing_transaction = db.query(CreditTransaction).filter(
             CreditTransaction.polar_order_id == order_id
         ).first()
@@ -315,11 +364,9 @@ async def handle_order_paid(order_data: dict, db: Session):
             print(f"⚠️ Order {order_id} already processed")
             return
         
-        # 4. Kredi ekle
         user.token_balance += package.credits
         print(f"💰 New balance: {user.token_balance}")
         
-        # 5. CreditTransaction kaydı
         transaction = CreditTransaction(
             user_id=user.id,
             amount=package.credits,
@@ -331,7 +378,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(transaction)
         print(f"✅ CreditTransaction added")
         
-        # 6. TokenPurchase kaydı
         purchase = TokenPurchase(
             user_id=user.id,
             amount=package.credits,
@@ -343,7 +389,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(purchase)
         print(f"✅ TokenPurchase added")
         
-        # 7. UserTokenTransaction kaydı
         token_tx = UserTokenTransaction(
             user_id=user.id,
             amount=package.credits,
@@ -355,7 +400,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(token_tx)
         print(f"✅ UserTokenTransaction added")
         
-        # ✅ 8. Bildirim ekle
         try:
             notification = Notification(
                 user_id=user.id,
