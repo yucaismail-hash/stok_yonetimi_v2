@@ -62,10 +62,6 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       
-      {/* 🆕 Ödeme Sonuç Sayfaları - Layout'sız */}
-      <Route path="/success" element={<SuccessPage />} />
-      <Route path="/cancel" element={<CancelPage />} />
-      
       {/* 🔒 Private Routes - Layout ile (Outlet kullanıyor) */}
       <Route element={<PrivateRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />

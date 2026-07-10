@@ -32,7 +32,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // Token varsa dashboard'a yönlendir
+  // Kredi varsa dashboard'a yönlendir
   useEffect(() => {
     if (token) {
       navigate('/dashboard');

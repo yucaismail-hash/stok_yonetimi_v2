@@ -101,7 +101,7 @@ export default function ProfilePage() {
   // ✅ Tab
   const [tabValue, setTabValue] = useState(0);
   
-  // ✅ Token Geçmişi
+  // ✅ Kredi Geçmişi
   const [tokenHistory, setTokenHistory] = useState<TokenHistoryItem[]>([]);
   const [tokenTotal, setTokenTotal] = useState(0);
   const [tokenPage, setTokenPage] = useState(0);
@@ -119,7 +119,7 @@ export default function ProfilePage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
 
-  // ✅ Token geçmişini getir (sadece cost > 0)
+  // ✅ Kredi geçmişini getir (sadece cost > 0)
   const fetchTokenHistory = async (page: number = 0) => {
     setTokenLoading(true);
     try {
@@ -134,7 +134,7 @@ export default function ProfilePage() {
         setTokenTotal(res.data.total || 0);
       }
     } catch (error) {
-      console.error('❌ Token geçmişi hatası:', error);
+      console.error('❌ Kredi geçmişi hatası:', error);
     } finally {
       setTokenLoading(false);
     }
@@ -381,7 +381,7 @@ export default function ProfilePage() {
               </Typography>
               
               <Chip
-                label={`🪙 ${user?.token_balance || 0} Token`}
+                label={`🪙 ${user?.token_balance || 0} Kredi`}
                 color="warning"
                 size="small"
                 sx={{ mb: 1 }}
@@ -482,11 +482,11 @@ export default function ProfilePage() {
                 onChange={handleTabChange}
                 sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
               >
-                <Tab label={`🪙 Token Harcamaları (${tokenTotal})`} />
+                <Tab label={`🪙 Kredi Harcamaları (${tokenTotal})`} />
                 <Tab label={`💳 İşlem Geçmişi (${transactionTotal})`} />
               </Tabs>
 
-              {/* Tab 0: Token Geçmişi */}
+              {/* Tab 0: Kredi Geçmişi */}
               {tabValue === 0 && (
                 <Box>
                   {tokenLoading ? (
@@ -510,7 +510,7 @@ export default function ProfilePage() {
                             {tokenHistory.length === 0 ? (
                               <TableRow>
                                 <TableCell colSpan={5} align="center">
-                                  <Typography variant="body2" color="text.secondary">Henüz token harcaması yok</Typography>
+                                  <Typography variant="body2" color="text.secondary">Henüz kredi harcaması yok</Typography>
                                 </TableCell>
                               </TableRow>
                             ) : (
@@ -712,12 +712,12 @@ export default function ProfilePage() {
               )}
               {selectedItem.cost !== undefined && (
                 <Typography variant="body2">
-                  <strong>Maliyet:</strong> <span style={{ color: 'red', fontWeight: 'bold' }}>-{selectedItem.cost}</span> Token
+                  <strong>Maliyet:</strong> <span style={{ color: 'red', fontWeight: 'bold' }}>-{selectedItem.cost}</span> Kredi
                 </Typography>
               )}
               {selectedItem.amount !== undefined && (
                 <Typography variant="body2">
-                  <strong>Miktar:</strong> {selectedItem.amount > 0 ? '+' : ''}{selectedItem.amount} Token
+                  <strong>Miktar:</strong> {selectedItem.amount > 0 ? '+' : ''}{selectedItem.amount} Kredi
                 </Typography>
               )}
               <Typography variant="body2">

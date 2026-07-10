@@ -122,7 +122,7 @@ export default function ForecastPage() {
   
   const queryClient = useQueryClient();
   
-  // ✅ Token maliyetini veritabanından çek
+  // ✅ Kredi maliyetini veritabanından çek
   const { data: costData } = useQuery({
     queryKey: ['forecast-cost'],
     queryFn: async () => {
@@ -135,7 +135,7 @@ export default function ForecastPage() {
         });
         return res.data;
       } catch (error) {
-        console.error('❌ Token cost hatası:', error);
+        console.error('❌ Kredi cost hatası:', error);
         return { cost: 5 };
       }
     },
@@ -713,7 +713,7 @@ export default function ForecastPage() {
           <Typography variant="body1" color="text.secondary">
             4 farklı model ile talep tahmini yapar. Pattern analizi ile zenginleştirilmiştir.
             <Chip 
-              label={`${costData?.cost || 5} Token`} 
+              label={`${costData?.cost || 5} Kerdi`} 
               size="small" 
               color="warning" 
               sx={{ ml: 1 }} 

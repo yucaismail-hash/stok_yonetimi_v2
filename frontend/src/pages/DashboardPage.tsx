@@ -983,6 +983,42 @@ export default function DashboardPage() {
     }
   }, [checkoutOpen]);
 
+ // DashboardPage.tsx - useEffect ile URL'deki checkout_id'yi yakala
+  useEffect(() => {
+    const checkPaymentStatus = async () => {
+      // URL'de checkout_id var mı kontrol et
+      const params = new URLSearchParams(window.location.search);
+      const checkoutId = params.get('checkout_id');
+      const sessionToken = params.get('customer_session_token');
+      
+      if (checkoutId) {
+        try {
+          // Backend'den işlem durumunu kontrol et
+          const res = await api.get(`/api/polar/transaction/${checkoutId}`);
+          
+          if (res.data) {
+            // Başarılı mesajını göster
+            setPaymentStatus('success');
+            setPaymentMessage(`${res.data.credits} kredi hesabınıza eklendi!`);
+            setCreditDialogOpen(true);
+            
+            // URL'yi temizle (kullanıcı sayfayı yenilediğinde tekrar göstermesin)
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (error) {
+          console.error('❌ İşlem kontrol hatası:', error);
+          // Hata durumunda iptal olarak göster
+          setPaymentStatus('canceled');
+          setPaymentMessage('Ödeme işleminiz iptal edildi.');
+          setCreditDialogOpen(true);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+    };
+    
+    checkPaymentStatus();
+  }, []); 
+
   const navigateTo = (path: string) => {
     window.location.href = path;
   };
