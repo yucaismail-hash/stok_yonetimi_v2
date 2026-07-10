@@ -85,7 +85,7 @@ async def create_checkout(
             customer_email=current_user.email,
             customer_name=current_user.full_name or current_user.email,
             customer_id=current_user.polar_customer_id,
-            success_url=os.getenv("POLAR_SUCCESS_URL", "https://yourdomain.com/success"),
+            success_url=os.getenv("POLAR_SUCCESS_URL", "https://www.stokonomi.com/dashboard"),
             cancel_url=os.getenv("POLAR_CANCEL_URL", "https://yourdomain.com/cancel"),
             embed_origin=embed_origin
         )
