@@ -12,16 +12,13 @@ class User(Base):
     token_balance = Column(Integer, default=100)
     full_name = Column(String, default="")
     company_name = Column(String, default="")
-    sector_id = Column(Integer, nullable=True)  # ForeignKey yok
+    sector_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Tüm ilişkiler KALDIRILDI
-    # sector = relationship("Sector", back_populates="users")
-    # token_history = relationship("TokenHistory", back_populates="user")
-    # purchases = relationship("TokenPurchase", back_populates="user")
-    # analysis_results = relationship("UserAnalysisResult", back_populates="user")
-    # learning_data = relationship("UserLearningData", back_populates="user")
-    # materials = relationship("UserMaterial", back_populates="user")
+    # 🆕 Polar müşteri ID'si
+    polar_customer_id = Column(String, nullable=True, index=True)
+    
+    # Tüm ilişkiler KALDIRILDI (mevcut yapıya uygun)
 
 
 class Sector(Base):
@@ -30,10 +27,6 @@ class Sector(Base):
     name = Column(String, unique=True, nullable=False)
     description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Tüm ilişkiler KALDIRILDI
-    # users = relationship("User", back_populates="sector")
-    # product_groups = relationship("ProductGroup", back_populates="sector")
 
 
 class ProductGroup(Base):
@@ -41,8 +34,6 @@ class ProductGroup(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
-    # sector_id = Column(Integer, ForeignKey("sectors.id"))  # KALDIRILDI
-    # sector = relationship("Sector", back_populates="product_groups")  # KALDIRILDI
 
 
 class Supplier(Base):
@@ -56,19 +47,15 @@ class Supplier(Base):
     lt_mean = Column(Float, default=14.0)
     lt_std = Column(Float, default=3.0)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # materials = relationship("MaterialSupplier", back_populates="supplier")  # KALDIRILDI
 
 
 class UserMaterial(Base):
     __tablename__ = "user_materials"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))  # Bu foreign key kalabilir (kullanıcı-malzeme ilişkisi)
+    user_id = Column(Integer, ForeignKey("users.id"))
     material_code = Column(String, nullable=False)
     material_name = Column(String, nullable=True)
     group = Column(String, nullable=True)
-    # sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=True)  # KALDIRILDI
-    # product_group_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)  # KALDIRILDI
     
     lead_time_days = Column(Integer, default=14)
     unit_cost = Column(Float, default=100.0)
@@ -78,51 +65,37 @@ class UserMaterial(Base):
     eoq = Column(Integer, default=100)
     weekly_demand = Column(JSON, default=[])
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # user = relationship("User", back_populates="materials")  # KALDIRILDI
-    # sector = relationship("Sector")  # KALDIRILDI
-    # product_group = relationship("ProductGroup", back_populates="materials")  # KALDIRILDI
-    # suppliers = relationship("MaterialSupplier", back_populates="material")  # KALDIRILDI
 
 
 class MaterialSupplier(Base):
     __tablename__ = "material_suppliers"
     id = Column(Integer, primary_key=True)
-    material_id = Column(Integer, ForeignKey("user_materials.id"))  # Bu foreign key kalabilir
-    supplier_id = Column(Integer, ForeignKey("suppliers.id"))  # Bu foreign key kalabilir
+    material_id = Column(Integer, ForeignKey("user_materials.id"))
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"))
     share = Column(Float, default=1.0)
     is_primary = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # material = relationship("UserMaterial", back_populates="suppliers")  # KALDIRILDI
-    # supplier = relationship("Supplier", back_populates="materials")  # KALDIRILDI
 
 
 class UserAnalysisResult(Base):
     __tablename__ = "user_analysis_results"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))  # Bu foreign key kalabilir
+    user_id = Column(Integer, ForeignKey("users.id"))
     
     result_type = Column(String, nullable=False)
     material_code = Column(String, nullable=True)
     material_group = Column(String, nullable=True)
-    # sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=True)  # KALDIRILDI
-    # product_group_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)  # KALDIRILDI
     
     result_data = Column(JSON, nullable=False)
     params = Column(JSON, default={})
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
-    
-    # user = relationship("User", back_populates="analysis_results")  # KALDIRILDI
-    # sector = relationship("Sector")  # KALDIRILDI
-    # product_group = relationship("ProductGroup")  # KALDIRILDI
 
 
 class UserLearningData(Base):
     __tablename__ = "user_learning_data"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))  # Bu foreign key kalabilir
+    user_id = Column(Integer, ForeignKey("users.id"))
     
     learning_key = Column(String, unique=True, nullable=False)
     
@@ -132,41 +105,31 @@ class UserLearningData(Base):
     confidence = Column(Float, default=0.0)
     sample_count = Column(Integer, default=0)
     
-    # sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=True)  # KALDIRILDI
-    # product_group_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)  # KALDIRILDI
     pattern = Column(String, nullable=True)
     
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # user = relationship("User", back_populates="learning_data")  # KALDIRILDI
-    # sector = relationship("Sector")  # KALDIRILDI
-    # product_group = relationship("ProductGroup")  # KALDIRILDI
 
 
 class TokenHistory(Base):
     __tablename__ = "token_history"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))  # Bu foreign key kalabilir
+    user_id = Column(Integer, ForeignKey("users.id"))
     endpoint = Column(String, nullable=False)
     cost = Column(Integer, nullable=False)
     balance_after = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # user = relationship("User", back_populates="token_history")  # KALDIRILDI
 
 
 class TokenPurchase(Base):
     __tablename__ = "token_purchases"
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))  # Bu foreign key kalabilir
+    user_id = Column(Integer, ForeignKey("users.id"))
     amount = Column(Integer, nullable=False)
     price = Column(Float, nullable=False)
     currency = Column(String, default="USD")
     payment_id = Column(String, nullable=True)
     status = Column(String, default="completed")
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # user = relationship("User", back_populates="purchases")  # KALDIRILDI
 
 
 class TokenCost(Base):
@@ -179,12 +142,7 @@ class TokenCost(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# ============================================
-# 🆕 YENİ EKLENEN SINIFLAR (Mevcut yapıya dokunulmaz)
-# ============================================
-
 class UploadedData(Base):
-    """Kullanıcı tarafından yüklenen Excel verileri"""
     __tablename__ = "uploaded_data"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -195,45 +153,69 @@ class UploadedData(Base):
     raw_data = Column(JSON, default={})
     uploaded_at = Column(DateTime, default=datetime.utcnow)
     processed_at = Column(DateTime, nullable=True)
-    status = Column(String, default="pending")  # pending, processing, completed, failed
+    status = Column(String, default="pending")
 
 
 class AnalysisResult(Base):
-    """Forecast ve diğer analiz sonuçları"""
     __tablename__ = "analysis_results"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     result_type = Column(String, nullable=False, index=True)
     data = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    task_id = Column(String, nullable=True, index=True)  # Async işlemler için
+    task_id = Column(String, nullable=True, index=True)
 
-# app/models.py - Yeni modeller
 
 class Notification(Base):
     __tablename__ = "notifications"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Null = tüm kullanıcılar
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     title = Column(String, nullable=False)
     message = Column(Text, nullable=False)
-    type = Column(String, default="info")  # info, success, warning, error
+    type = Column(String, default="info")
     is_read = Column(Boolean, default=False)
-    link = Column(String, nullable=True)  # Tıklanınca gidilecek sayfa
+    link = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     read_at = Column(DateTime, nullable=True)
-    
-    # user = relationship("User", back_populates="notifications")  # İlişki kaldırıldı (diğerleriyle uyumlu)
 
 
 class UserTokenTransaction(Base):
     __tablename__ = "user_token_transactions"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Integer, nullable=False)  # Pozitif = kazanç, Negatif = harcama
-    type = Column(String, nullable=False)  # 'spend', 'purchase', 'bonus', 'refund'
+    amount = Column(Integer, nullable=False)
+    type = Column(String, nullable=False)
     description = Column(String, nullable=False)
     endpoint = Column(String, nullable=True)
     balance_after = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # user = relationship("User", back_populates="transactions")  # İlişki kaldırıldı
+
+
+# ============================================
+# 🆕 POLAR ENTEGRASYONU İÇİN YENİ MODELLER
+# ============================================
+
+class CreditPackage(Base):
+    """Kredi paketleri - Polar Product ID ile eşleştirme"""
+    __tablename__ = "credit_packages"
+    id = Column(Integer, primary_key=True, index=True)
+    polar_product_id = Column(String, unique=True, index=True, nullable=False)  # prod_xxx
+    name = Column(String, nullable=False)  # "Starter", "Growth", "Business"
+    credits = Column(Integer, nullable=False)  # 100, 250, 500
+    price_tl = Column(Float, nullable=False)  # 1990, 4490, 7990
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class CreditTransaction(Base):
+    """Kredi işlemleri (Polar ödemeleri için)"""
+    __tablename__ = "credit_transactions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Integer, nullable=False)  # Pozitif = eklendi, Negatif = iade
+    transaction_type = Column(String, nullable=False)  # "purchase", "refund", "bonus"
+    polar_order_id = Column(String, nullable=True, index=True)
+    polar_product_id = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

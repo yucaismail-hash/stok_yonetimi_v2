@@ -45,3 +45,43 @@ class MaterialCreate(BaseModel):
     initial_stock: float
     weekly_demand: List[float]
     eoq: float
+
+# ============================================
+# 🆕 POLAR ENTEGRASYONU İÇİN YENİ SCHEMALAR
+# ============================================
+
+class CreditPackageCreate(BaseModel):
+    polar_product_id: str
+    name: str
+    credits: int
+    price_tl: float
+
+class CreditPackageUpdate(BaseModel):
+    name: Optional[str] = None
+    credits: Optional[int] = None
+    price_tl: Optional[float] = None
+    is_active: Optional[bool] = None
+
+class CreditPackageResponse(BaseModel):
+    id: int
+    polar_product_id: str
+    name: str
+    credits: int
+    price_tl: float
+    is_active: bool
+
+class CheckoutRequest(BaseModel):
+    product_id: str  # Polar product ID
+
+class CheckoutResponse(BaseModel):
+    checkout_url: str
+    product_id: str
+    product_name: str
+
+class CreditTransactionResponse(BaseModel):
+    id: int
+    user_id: int
+    amount: int
+    transaction_type: str
+    description: Optional[str]
+    created_at: datetime

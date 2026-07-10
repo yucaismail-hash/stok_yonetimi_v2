@@ -1,102 +1,133 @@
-from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 from app.database import get_db
-from app.models import User
-import json
-import os
-import hmac
-import hashlib
-import re
+from app.models import User, UserTokenTransaction
+from app.auth import get_current_user
+import uuid
 
-router = APIRouter()
-
-# Lemon Squeezy Webhook Secret (Lemon Squeezy dashboard'dan alınacak)
-LEMON_SQUEEZY_SECRET = os.getenv("LEMON_SQUEEZY_SECRET", "your-webhook-secret")
+router = APIRouter(prefix="/payment", tags=["payment"])
 
 
-@router.post("/webhook/lemon-squeezy")
-async def lemon_squeezy_webhook(request: Request, db: Session = Depends(get_db)):
+class PurchaseRequest(BaseModel):
+    amount: int  # Satın alınacak kredi miktarı
+    payment_method: str = "credit_card"  # credit_card, bank_transfer, crypto
+
+
+class PurchaseResponse(BaseModel):
+    success: bool
+    message: str
+    transaction_id: Optional[str] = None
+    new_balance: Optional[int] = None
+    amount: Optional[int] = None
+
+
+# 📦 Kredi Paketleri
+KREDI_PAKETLERI = [
+    {"amount": 50, "price": 49.99, "bonus": 0, "label": "Başlangıç"},
+    {"amount": 100, "price": 89.99, "bonus": 10, "label": "Standart"},
+    {"amount": 250, "price": 199.99, "bonus": 30, "label": "Profesyonel"},
+    {"amount": 500, "price": 349.99, "bonus": 75, "label": "Kurumsal"},
+    {"amount": 1000, "price": 599.99, "bonus": 200, "label": "Premium"},
+]
+
+
+@router.get("/packages")
+async def get_packages():
+    """Kredi paketlerini getir"""
+    return {
+        "success": True,
+        "packages": KREDI_PAKETLERI
+    }
+
+
+@router.post("/purchase")
+async def purchase_credits(
+    request: PurchaseRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Kredi satın al"""
     try:
-        body = await request.body()
-        data = json.loads(body)
+        # Paketi bul
+        package = None
+        for p in KREDI_PAKETLERI:
+            if p["amount"] == request.amount:
+                package = p
+                break
         
-        if data.get("meta", {}).get("event_name") == "order_created":
-            order_data = data.get("data", {}).get("attributes", {})
-            user_email = order_data.get("user_email", "")
-            product_name = order_data.get("first_order_item", {}).get("product_name", "")
-            quantity = order_data.get("first_order_item", {}).get("quantity", 1)
-            price = order_data.get("first_order_item", {}).get("price", 0)
-            currency = order_data.get("first_order_item", {}).get("currency", "USD")
-            payment_id = order_data.get("id", "")
-            
-            token_amount = _extract_token_amount(product_name) * quantity
-            
-            if token_amount > 0 and user_email:
-                user = db.query(User).filter(User.email == user_email).first()
-                if user:
-                    # Token bakiyesini güncelle
-                    user.token_balance += token_amount
-                    
-                    # Satın alma kaydı oluştur
-                    purchase = TokenPurchase(
-                        user_id=user.id,
-                        amount=token_amount,
-                        price=price,
-                        currency=currency,
-                        payment_id=payment_id,
-                        status="completed"
-                    )
-                    db.add(purchase)
-                    db.commit()
-                    
-                    return {"status": "success"}
+        if not package:
+            raise HTTPException(status_code=400, detail="Geçersiz paket seçimi")
         
-        return {"status": "ignored"}
+        # Benzersiz işlem ID
+        transaction_id = str(uuid.uuid4())[:8].upper()
         
+        # Toplam kredi (paket + bonus)
+        total_credits = package["amount"] + package["bonus"]
+        
+        # Kullanıcı bakiyesini güncelle
+        current_user.token_balance += total_credits
+        
+        # İşlem kaydı
+        transaction = UserTokenTransaction(
+            user_id=current_user.id,
+            amount=total_credits,
+            type="purchase",
+            description=f"Kredi Satın Alma - {package['label']} ({package['amount']} + {package['bonus']} bonus)",
+            balance_after=current_user.token_balance,
+            created_at=datetime.utcnow()
+        )
+        db.add(transaction)
+        db.commit()
+        db.refresh(current_user)
+        
+        return {
+            "success": True,
+            "message": f"✅ {total_credits} kredi başarıyla satın alındı!",
+            "transaction_id": transaction_id,
+            "new_balance": current_user.token_balance,
+            "amount": total_credits,
+            "package": package
+        }
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Webhook hatası: {e}")
+        print(f"❌ Kredi satın alma hatası: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def _extract_token_amount(product_name: str) -> int:
-    """Ürün adından token miktarını çıkar"""
-    match = re.search(r'(\d+)\s*Token', product_name)
-    if match:
-        return int(match.group(1))
-    return 0
-
-
-@router.post("/payment/checkout")
-async def create_checkout(request: Request):
-    """
-    Lemon Squeezy ödeme sayfası URL'si oluştur
-    """
-    try:
-        body = await request.json()
-        email = body.get("email")
-        product_id = body.get("product_id")
-        
-        if not email or not product_id:
-            raise HTTPException(status_code=400, detail="Email ve product_id gerekli")
-        
-        checkout_url = f"https://app.lemonsqueezy.com/checkout?product_id={product_id}&email={email}"
-        
-        return {"checkout_url": checkout_url}
-        
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/payment/plans")
-def get_plans():
-    """
-    Token paketlerini getir
-    """
+@router.get("/history")
+async def get_purchase_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    limit: int = 20,
+    offset: int = 0
+):
+    """Kullanıcının kredi satın alma geçmişi"""
+    query = db.query(UserTokenTransaction).filter(
+        UserTokenTransaction.user_id == current_user.id,
+        UserTokenTransaction.type == "purchase"
+    )
+    
+    total = query.count()
+    history = query.order_by(UserTokenTransaction.created_at.desc()).offset(offset).limit(limit).all()
+    
     return {
-        "plans": [
-            {"id": "100-token", "name": "100 Token", "price": 10, "currency": "USD", "tokens": 100},
-            {"id": "500-token", "name": "500 Token", "price": 40, "currency": "USD", "tokens": 500},
-            {"id": "2000-token", "name": "2000 Token", "price": 150, "currency": "USD", "tokens": 2000},
-            {"id": "10000-token", "name": "10000 Token", "price": 700, "currency": "USD", "tokens": 10000},
+        "success": True,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "history": [
+            {
+                "id": t.id,
+                "amount": t.amount,
+                "description": t.description,
+                "balance_after": t.balance_after,
+                "created_at": t.created_at
+            }
+            for t in history
         ]
     }

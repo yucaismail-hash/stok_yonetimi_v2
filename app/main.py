@@ -1,8 +1,9 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.database import engine, Base
+from app.database import engine, Base, init_db
 from app.api.endpoints import notifications, tasks, upload, forecast, simulate, report, pattern, safety_stock, backtest, supplier, learning, export, payment, profile, sectors, cost
+from app.api.endpoints import polar
 from app.auth import auth_router
 from app.admin import router as admin_router
 from app.models import User, TokenCost, TokenHistory
@@ -19,6 +20,24 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Stok Yönetim Sistemi v2", version="0.1.0")
 
 
+# ============================================
+# Uygulama Başlangıç Olayı
+# ============================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Uygulama başlangıcında sadece tabloları oluştur."""
+    logger.info("🚀 Starting up...")
+    init_db()
+    logger.info("✅ Database tables ready")
+    logger.info("ℹ️  Run /admin/token-costs/init-defaults to initialize token costs")
+    logger.info("ℹ️  Run /admin/credit-packages/init-defaults to initialize credit packages")
+
+
+# ============================================
+# Token Middleware
+# ============================================
+
 @app.middleware("http")
 async def token_middleware(request: Request, call_next):
     # ✅ Muaf tutulacak endpoint'ler
@@ -34,6 +53,9 @@ async def token_middleware(request: Request, call_next):
         r"^/api/upload/upload",
         r"^/api/upload/clear",
         r"^/api/upload/results",
+        r"^/api/polar/webhook",
+        r"^/success$",        # ✅ Public
+        r"^/cancel$",         # ✅ Public
     ]
     
     path = request.url.path
@@ -148,6 +170,10 @@ async def token_middleware(request: Request, call_next):
         db.close()
 
 
+# ============================================
+# CORS Ayarları
+# ============================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -162,10 +188,10 @@ app.add_middleware(
 )
 
 
-Base.metadata.create_all(bind=engine)
+# ============================================
+# Router'ları Ekle
+# ============================================
 
-
-# Router'ları ekle
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
 app.include_router(admin_router, prefix="/admin", tags=["admin"])
 app.include_router(sectors.router, prefix="/api", tags=["sectors"])
@@ -184,21 +210,53 @@ app.include_router(profile.router, prefix="/api", tags=["profile"])
 app.include_router(cost.router, prefix="/api", tags=["cost"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
+app.include_router(polar.router, prefix="/api", tags=["polar"])
 
+
+# ============================================
+# Public Endpoint'ler (Success / Cancel)
+# ============================================
+
+# ✅ Success endpoint'i - Ödeme başarılı
+@app.get("/success")
+async def success_page(request: Request):
+    checkout_id = request.query_params.get("checkout_id")
+    return {
+        "message": "Ödeme başarıyla tamamlandı!",
+        "status": "success",
+        "checkout_id": checkout_id
+    }
+
+# ✅ Cancel endpoint'i - Ödeme iptal
+@app.get("/cancel")
+async def cancel_page(request: Request):
+    checkout_id = request.query_params.get("checkout_id")
+    return {
+        "message": "Ödeme iptal edildi.",
+        "status": "canceled",
+        "checkout_id": checkout_id
+    }
+
+
+# ============================================
+# Root Endpoint
+# ============================================
 
 @app.get("/")
 def root():
     return {"message": "Stok Yönetim Sistemi v2 API"}
 
-# app/main.py - En altına ekleyin
+
+# ============================================
+# Uygulama Çalıştırma
+# ============================================
 
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
         reload=True,
-        timeout_keep_alive=120,  # ✅ 120 saniye (varsayılan 5 saniye)
+        timeout_keep_alive=120,
         timeout_graceful_shutdown=30
     )

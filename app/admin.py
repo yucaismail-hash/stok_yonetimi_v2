@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
-from app.models import TokenCost, User, TokenHistory
+from app.models import TokenCost, User, TokenHistory, CreditPackage, CreditTransaction
 from app.auth import get_current_user
 import logging
 
@@ -42,6 +42,35 @@ class TokenCostResponse(BaseModel):
     cost: int
     is_active: bool
     updated_at: datetime
+
+
+# ============================================
+# 🆕 CREDIT PACKAGE MODELLERİ
+# ============================================
+
+class CreditPackageCreate(BaseModel):
+    polar_product_id: str
+    name: str
+    credits: int
+    price_tl: float
+    is_active: bool = True
+
+class CreditPackageUpdate(BaseModel):
+    name: Optional[str] = None
+    credits: Optional[int] = None
+    price_tl: Optional[float] = None
+    is_active: Optional[bool] = None
+
+class CreditPackageResponse(BaseModel):
+    id: int
+    polar_product_id: str
+    name: str
+    credits: int
+    price_tl: float
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
 
 # ============================================
 # Admin Token Cost Endpoint'leri
@@ -281,6 +310,211 @@ async def init_default_token_costs(
 
 
 # ============================================
+# 🆕 CREDIT PACKAGE ENDPOINT'LERİ
+# ============================================
+
+@router.post("/credit-packages/init-defaults")
+async def init_default_credit_packages(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Varsayılan kredi paketlerini yükler (Admin)
+    Sadece admin kullanıcılar erişebilir.
+    """
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    default_packages = [
+        {
+            "polar_product_id": "prod_starter_xxx",
+            "name": "Starter",
+            "credits": 100,
+            "price_tl": 1990,
+            "is_active": True
+        },
+        {
+            "polar_product_id": "prod_growth_yyy",
+            "name": "Growth",
+            "credits": 250,
+            "price_tl": 4490,
+            "is_active": True
+        },
+        {
+            "polar_product_id": "prod_business_zzz",
+            "name": "Business",
+            "credits": 500,
+            "price_tl": 7990,
+            "is_active": True
+        }
+    ]
+    
+    created_count = 0
+    updated_count = 0
+    
+    for package_data in default_packages:
+        existing = db.query(CreditPackage).filter(
+            CreditPackage.polar_product_id == package_data["polar_product_id"]
+        ).first()
+        
+        if existing:
+            # Güncelle (fiyat, kredi miktarı değişebilir)
+            existing.name = package_data["name"]
+            existing.credits = package_data["credits"]
+            existing.price_tl = package_data["price_tl"]
+            existing.is_active = package_data["is_active"]
+            existing.updated_at = datetime.utcnow()
+            updated_count += 1
+            print(f"🔄 Paket güncellendi: {package_data['name']}")
+        else:
+            new_package = CreditPackage(**package_data)
+            db.add(new_package)
+            created_count += 1
+            print(f"✅ Paket eklendi: {package_data['name']}")
+    
+    db.commit()
+    
+    return {
+        "message": "Default credit packages initialized",
+        "created": created_count,
+        "updated": updated_count,
+        "total": len(default_packages),
+        "packages": default_packages
+    }
+
+
+@router.get("/credit-packages", response_model=List[CreditPackageResponse])
+async def get_credit_packages(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Tüm kredi paketlerini listeler (sadece admin)."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    packages = db.query(CreditPackage).order_by(CreditPackage.price_tl).all()
+    return packages
+
+
+@router.post("/credit-packages", response_model=CreditPackageResponse)
+async def create_credit_package(
+    package_data: CreditPackageCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Yeni kredi paketi oluşturur (sadece admin)."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    existing = db.query(CreditPackage).filter(
+        CreditPackage.polar_product_id == package_data.polar_product_id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Package with product_id '{package_data.polar_product_id}' already exists"
+        )
+    
+    new_package = CreditPackage(**package_data.dict())
+    db.add(new_package)
+    db.commit()
+    db.refresh(new_package)
+    
+    return new_package
+
+
+@router.put("/credit-packages/{package_id}", response_model=CreditPackageResponse)
+async def update_credit_package(
+    package_id: int,
+    package_data: CreditPackageUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Kredi paketini günceller (sadece admin)."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    package = db.query(CreditPackage).filter(CreditPackage.id == package_id).first()
+    if not package:
+        raise HTTPException(
+            status_code=404,
+            detail="Package not found"
+        )
+    
+    # Güncelle
+    update_data = package_data.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(package, key, value)
+    
+    package.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(package)
+    
+    return package
+
+
+@router.delete("/credit-packages/{package_id}")
+async def delete_credit_package(
+    package_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Kredi paketini siler (sadece admin)."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    package = db.query(CreditPackage).filter(CreditPackage.id == package_id).first()
+    if not package:
+        raise HTTPException(
+            status_code=404,
+            detail="Package not found"
+        )
+    
+    db.delete(package)
+    db.commit()
+    
+    return {"message": f"Package '{package.name}' deleted successfully"}
+
+
+@router.get("/credit-transactions")
+async def get_credit_transactions(
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Tüm kredi işlemlerini listeler (sadece admin)."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    transactions = db.query(CreditTransaction).order_by(
+        CreditTransaction.created_at.desc()
+    ).limit(limit).all()
+    
+    return transactions
+
+
+@router.get("/credit-transactions/user/{user_id}")
+async def get_user_credit_transactions(
+    user_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Belirli bir kullanıcının kredi işlemlerini listeler (sadece admin)."""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    transactions = db.query(CreditTransaction).filter(
+        CreditTransaction.user_id == user_id
+    ).order_by(
+        CreditTransaction.created_at.desc()
+    ).limit(limit).all()
+    
+    return transactions
+
+
+# ============================================
 # Admin Dashboard İstatistikleri
 # ============================================
 
@@ -297,6 +531,7 @@ async def get_admin_stats(
     total_token_costs = db.query(TokenCost).count()
     active_token_costs = db.query(TokenCost).filter(TokenCost.is_active == True).count()
     
+    # Token istatistikleri
     yesterday = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_tokens = db.query(TokenHistory).filter(
         TokenHistory.created_at >= yesterday
@@ -304,12 +539,41 @@ async def get_admin_stats(
     
     total_spent = sum(t.cost for t in today_tokens)
     
+    # Credit paket istatistikleri
+    total_packages = db.query(CreditPackage).count()
+    active_packages = db.query(CreditPackage).filter(CreditPackage.is_active == True).count()
+    
+    # Toplam kredi satışları
+    total_credit_transactions = db.query(CreditTransaction).filter(
+        CreditTransaction.transaction_type == "purchase"
+    ).count()
+    
+    total_credits_sold = db.query(CreditTransaction).filter(
+        CreditTransaction.transaction_type == "purchase"
+    ).with_entities(
+        db.func.sum(CreditTransaction.amount)
+    ).scalar() or 0
+    
     return {
-        "total_users": total_users,
-        "total_token_costs": total_token_costs,
-        "active_token_costs": active_token_costs,
-        "today_token_spent": total_spent,
-        "today_transactions": len(today_tokens)
+        "users": {
+            "total": total_users
+        },
+        "token_costs": {
+            "total": total_token_costs,
+            "active": active_token_costs
+        },
+        "token_usage": {
+            "today_spent": total_spent,
+            "today_transactions": len(today_tokens)
+        },
+        "credit_packages": {
+            "total": total_packages,
+            "active": active_packages
+        },
+        "credit_sales": {
+            "total_transactions": total_credit_transactions,
+            "total_credits_sold": total_credits_sold
+        }
     }
 
 

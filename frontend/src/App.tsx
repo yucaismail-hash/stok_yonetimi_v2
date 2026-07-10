@@ -1,71 +1,99 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuth } from './hooks/useAuth';
+import { ThemeProvider, createTheme } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import Layout from './components/Layout/Layout';
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import ForecastPage from './pages/ForecastPage';
 import SafetyStockPage from './pages/SafetyStockPage';
 import SimulationPage from './pages/SimulationPage';
 import BacktestPage from './pages/BacktestPage';
 import SupplierPage from './pages/SupplierPage';
-import TaskListPage from './pages/TaskListPage';
-import AdminPage from './pages/AdminPage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import LandingPage from './pages/LandingPage';
+import RiskPage from './pages/RiskPage';
 import ProfilePage from './pages/ProfilePage';
+import AdminPage from './pages/AdminPage';
+import TaskListPage from './pages/TaskListPage';
+import SuccessPage from './pages/SuccessPage';
+import CancelPage from './pages/CancelPage';
+import { useAuth } from './hooks/useAuth';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// ✅ PrivateRoute Bileşeni - Zustand ile uyumlu
-const PrivateRoute = ({ children }: { children: JSX.Element }) => {
+// 🎨 Theme
+const theme = createTheme({
+  palette: {
+    mode: 'light',
+    primary: {
+      main: '#1976d2',
+    },
+    secondary: {
+      main: '#dc004e',
+    },
+  },
+  typography: {
+    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+  },
+});
+
+const queryClient = new QueryClient();
+
+// 🔒 Private Route Component - Outlet kullanımı için
+function PrivateRoute() {
   const { user, isLoading } = useAuth();
   
-  // ✅ Loading durumunda bekle
   if (isLoading) {
-    return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        Yükleniyor...
-      </div>
-    );
+    return <div>Yükleniyor...</div>;
   }
   
-  // ✅ Kullanıcı yoksa login sayfasına yönlendir
   if (!user) {
     return <Navigate to="/login" replace />;
   }
   
-  return children;
-};
+  return <Layout />; // ✅ Layout'u burada render et
+}
 
+// 🚀 App Routes
+function AppRoutes() {
+  return (
+    <Routes>
+      {/* Public Routes - Layout'sız */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
+      
+      {/* 🆕 Ödeme Sonuç Sayfaları - Layout'sız */}
+      <Route path="/success" element={<SuccessPage />} />
+      <Route path="/cancel" element={<CancelPage />} />
+      
+      {/* 🔒 Private Routes - Layout ile (Outlet kullanıyor) */}
+      <Route element={<PrivateRoute />}>
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/forecast" element={<ForecastPage />} />
+        <Route path="/safety-stock" element={<SafetyStockPage />} />
+        <Route path="/simulation" element={<SimulationPage />} />
+        <Route path="/backtest" element={<BacktestPage />} />
+        <Route path="/supplier" element={<SupplierPage />} />
+        <Route path="/risk" element={<RiskPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/admin" element={<AdminPage />} />
+        <Route path="/tasks" element={<TaskListPage />} />
+      </Route>
+    </Routes>
+  );
+}
+
+// 📦 Main App Component
 function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        {/* Public Routes - Giriş yapmadan erişilebilir */}
-        <Route path="/" element={<LandingPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        
-        {/* Private Routes - Giriş gerektirir */}
-        <Route element={<PrivateRoute><Layout /></PrivateRoute>}>
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/forecast" element={<ForecastPage />} />
-          <Route path="/safety-stock" element={<SafetyStockPage />} />
-          <Route path="/simulation" element={<SimulationPage />} />
-          <Route path="/backtest" element={<BacktestPage />} />
-          <Route path="/supplier" element={<SupplierPage />} />
-          <Route path="/tasks" element={<TaskListPage />} />
-          <Route path="/admin" element={<AdminPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-        </Route>
-        
-        {/* 404 - Tanımlı olmayan route'lar */}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </BrowserRouter>
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 
