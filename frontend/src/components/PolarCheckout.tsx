@@ -110,11 +110,10 @@ export default function PolarCheckout({
           if (!successCalledRef.current) {
             successCalledRef.current = true;
             setStatus('success');
-            onSuccess();
-            // ✅ 1 saniye sonra kapat
+            onSuccess();            
             setTimeout(() => {
               onClose();
-            }, 1000);
+            }, 100);
           }
         },
         onError: (error: any) => {
@@ -172,13 +171,13 @@ export default function PolarCheckout({
     <Dialog
       open={open}
       onClose={handleClose}
-      maxWidth="md"
+      maxWidth="xs"
       fullWidth
       slotProps={{
         paper: {
           sx: {
-            height: '80vh',
-            maxHeight: '80vh',
+            height: '10vh',
+            maxHeight: '10vh',
             borderRadius: 2,
             position: 'relative',
             overflow: 'hidden',
