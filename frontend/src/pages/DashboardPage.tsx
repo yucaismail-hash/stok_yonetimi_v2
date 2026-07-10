@@ -983,37 +983,42 @@ export default function DashboardPage() {
     }
   }, [checkoutOpen]);
 
-  // ✅ URL'deki checkout_id ve status'u yakala
+  // ✅ URL'deki checkout_id'yi yakala (Polar'dan gelen yönlendirme ile)
   useEffect(() => {
     const checkPaymentStatus = async () => {
       const params = new URLSearchParams(window.location.search);
       const checkoutId = params.get('checkout_id');
-      const status = params.get('status');
-      const credits = params.get('credits');
+      const sessionToken = params.get('customer_session_token');
       
-      if (checkoutId && status) {
-        console.log('🔍 [DEBUG] Ödeme sonucu:', { checkoutId, status, credits });
+      if (checkoutId) {
+        console.log('🔍 [DEBUG] checkout_id bulundu:', checkoutId);
         
-        if (status === 'success') {
-          // Kullanıcı bilgilerini yenile
-          await fetchUser();
-          refetchStats();
+        try {
+          // ✅ Direkt transaction endpoint'ini kullan (token ile)
+          const res = await api.get(`/api/polar/transaction/${checkoutId}`);
           
-          // Başarılı mesajını göster
-          setPaymentStatus('success');
-          setPaymentMessage(credits ? `${credits} kredi hesabınıza eklendi!` : 'Kredileriniz hesabınıza eklendi!');
-          setCreditDialogOpen(true);
-          setSuccessMessage('✅ Krediler başarıyla eklendi!');
-          setTimeout(() => setSuccessMessage(null), 5000);
-        } else {
-          // İptal mesajını göster
-          setPaymentStatus('canceled');
-          setPaymentMessage('Ödeme işleminiz iptal edildi.');
-          setCreditDialogOpen(true);
+          if (res.data) {
+            // Başarılı mesajını göster
+            setPaymentStatus('success');
+            setPaymentMessage(`${res.data.credits} kredi hesabınıza eklendi!`);
+            setCreditDialogOpen(true);
+            setSuccessMessage(`✅ ${res.data.credits} kredi eklendi!`);
+            setTimeout(() => setSuccessMessage(null), 5000);
+            
+            // URL'yi temizle
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } catch (error: any) {
+          console.error('❌ İşlem kontrol hatası:', error);
+          
+          // Hata durumunda (404 veya başka) iptal olarak göster
+          if (error.response?.status === 404) {
+            setPaymentStatus('canceled');
+            setPaymentMessage('Ödeme işleminiz iptal edildi.');
+            setCreditDialogOpen(true);
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
         }
-        
-        // URL'yi temizle (sayfa yenilenmesinde tekrar göstermesin)
-        window.history.replaceState({}, document.title, window.location.pathname);
       }
     };
     

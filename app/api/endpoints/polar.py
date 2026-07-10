@@ -181,55 +181,6 @@ async def get_transaction(
         detail="Transaction not found"
     )
 
-@router.get("/success")
-async def polar_success(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Polar başarılı ödeme sonrası dönecek endpoint.
-    """
-    checkout_id = request.query_params.get("checkout_id")
-    
-    if not checkout_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing checkout_id"
-        )
-    
-    # İşlemi kontrol et
-    transaction = db.query(CreditTransaction).filter(
-        CreditTransaction.polar_order_id == checkout_id,
-        CreditTransaction.user_id == current_user.id
-    ).first()
-    
-    # ✅ Frontend'e yönlendir (query parameter ile)
-    frontend_url = os.getenv("FRONTEND_URL", "https://www.stokonomi.com")
-    redirect_url = f"{frontend_url}/dashboard?checkout_id={checkout_id}&status=success"
-    
-    if transaction:
-        redirect_url = f"{frontend_url}/dashboard?checkout_id={checkout_id}&status=success&credits={transaction.amount}"
-    
-    return RedirectResponse(url=redirect_url)
-
-
-@router.get("/cancel")
-async def polar_cancel(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Polar iptal ödeme sonrası dönecek endpoint.
-    """
-    checkout_id = request.query_params.get("checkout_id")
-    
-    frontend_url = os.getenv("FRONTEND_URL", "https://www.stokonomi.com")
-    redirect_url = f"{frontend_url}/dashboard?checkout_id={checkout_id}&status=canceled"
-    
-    return RedirectResponse(url=redirect_url)
-
 # ============================================
 # WEBHOOK ENDPOINT'İ
 # ============================================
