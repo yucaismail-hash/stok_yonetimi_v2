@@ -180,7 +180,9 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:3000",
         "https://stok-yonetimi-frontend.onrender.com",
-        "https://*.onrender.com"
+        "https://*.onrender.com",
+        "https://www.stokonomi.com", 
+        "https://stokonomi.com"   
     ],
     allow_credentials=True,
     allow_methods=["*"],
