@@ -181,20 +181,31 @@ async def get_transaction(
         detail="Transaction not found"
     )
 
-
 # ============================================
 # 🆕 SUCCESS / CANCEL ENDPOINT'LERİ
 # ============================================
 
 @router.get("/success")
 async def polar_success(
-    checkout_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Polar başarılı ödeme sonrası dönecek endpoint.
     """
+    checkout_id = request.query_params.get("checkout_id")
+    
+    if not checkout_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing checkout_id"
+        )
+    
+    # Kullanıcı bilgilerini güncelle
+    db.refresh(current_user)
+    
+    # İşlemi kontrol et
     transaction = db.query(CreditTransaction).filter(
         CreditTransaction.polar_order_id == checkout_id,
         CreditTransaction.user_id == current_user.id
@@ -204,7 +215,8 @@ async def polar_success(
         return {
             "status": "success",
             "message": f"{transaction.amount} kredi hesabınıza eklendi!",
-            "credits": transaction.amount
+            "credits": transaction.amount,
+            "new_balance": current_user.token_balance
         }
     
     purchase = db.query(TokenPurchase).filter(
@@ -216,29 +228,33 @@ async def polar_success(
         return {
             "status": "success",
             "message": f"{purchase.amount} kredi hesabınıza eklendi!",
-            "credits": purchase.amount
+            "credits": purchase.amount,
+            "new_balance": current_user.token_balance
         }
     
     return {
         "status": "success",
-        "message": "Ödeme başarıyla tamamlandı!"
+        "message": "Ödeme başarıyla tamamlandı!",
+        "new_balance": current_user.token_balance
     }
 
 
 @router.get("/cancel")
 async def polar_cancel(
-    checkout_id: str,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
     Polar iptal ödeme sonrası dönecek endpoint.
     """
+    checkout_id = request.query_params.get("checkout_id")
+    
     return {
         "status": "canceled",
-        "message": "Ödeme işleminiz iptal edildi."
+        "message": "Ödeme işleminiz iptal edildi.",
+        "checkout_id": checkout_id
     }
-
 
 # ============================================
 # WEBHOOK ENDPOINT'İ

@@ -19,6 +19,7 @@ import SuccessPage from './pages/SuccessPage';
 import CancelPage from './pages/CancelPage';
 import { useAuth } from './hooks/useAuth';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import PaymentResultPage from './pages/PaymentResultPage';
 
 // 🎨 Theme
 const theme = createTheme({
@@ -61,6 +62,10 @@ function AppRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+
+      {/* 🆕 Ödeme Sonuç Sayfaları - Public (Geçiş Sayfaları) */}
+      <Route path="/payment/success" element={<PaymentResultPage />} />
+      <Route path="/payment/cancel" element={<PaymentResultPage />} />
       
       {/* 🔒 Private Routes - Layout ile (Outlet kullanıyor) */}
       <Route element={<PrivateRoute />}>

@@ -983,30 +983,45 @@ export default function DashboardPage() {
     }
   }, [checkoutOpen]);
 
- // DashboardPage.tsx - useEffect ile URL'deki checkout_id'yi yakala
+  // ✅ URL'deki checkout_id'yi yakala ve dialog'da göster
   useEffect(() => {
     const checkPaymentStatus = async () => {
-      // URL'de checkout_id var mı kontrol et
       const params = new URLSearchParams(window.location.search);
       const checkoutId = params.get('checkout_id');
       const sessionToken = params.get('customer_session_token');
       
       if (checkoutId) {
+        console.log('🔍 [DEBUG] checkout_id bulundu:', checkoutId);
+        
         try {
           // Backend'den işlem durumunu kontrol et
-          const res = await api.get(`/api/polar/transaction/${checkoutId}`);
+          const res = await api.get(`/api/polar/success?checkout_id=${checkoutId}`);
           
-          if (res.data) {
+          console.log('🔍 [DEBUG] Backend cevabı:', res.data);
+          
+          if (res.data.status === 'success') {
+            // Kullanıcı bilgilerini yenile
+            await fetchUser();
+            refetchStats();
+            
             // Başarılı mesajını göster
             setPaymentStatus('success');
-            setPaymentMessage(`${res.data.credits} kredi hesabınıza eklendi!`);
+            setPaymentMessage(res.data.message || 'Kredileriniz hesabınıza eklendi!');
             setCreditDialogOpen(true);
-            
-            // URL'yi temizle (kullanıcı sayfayı yenilediğinde tekrar göstermesin)
-            window.history.replaceState({}, document.title, window.location.pathname);
+            setSuccessMessage(`✅ ${res.data.message}`);
+            setTimeout(() => setSuccessMessage(null), 5000);
+          } else {
+            setPaymentStatus('canceled');
+            setPaymentMessage('Ödeme işleminiz iptal edildi.');
+            setCreditDialogOpen(true);
           }
-        } catch (error) {
+          
+          // URL'yi temizle (sayfa yenilenmesinde tekrar göstermesin)
+          window.history.replaceState({}, document.title, window.location.pathname);
+          
+        } catch (error: any) {
           console.error('❌ İşlem kontrol hatası:', error);
+          
           // Hata durumunda iptal olarak göster
           setPaymentStatus('canceled');
           setPaymentMessage('Ödeme işleminiz iptal edildi.');
@@ -1017,7 +1032,7 @@ export default function DashboardPage() {
     };
     
     checkPaymentStatus();
-  }, []); 
+  }, []);
 
   const navigateTo = (path: string) => {
     window.location.href = path;
