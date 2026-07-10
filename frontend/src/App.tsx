@@ -15,11 +15,8 @@ import RiskPage from './pages/RiskPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminPage from './pages/AdminPage';
 import TaskListPage from './pages/TaskListPage';
-import SuccessPage from './pages/SuccessPage';
-import CancelPage from './pages/CancelPage';
 import { useAuth } from './hooks/useAuth';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import PaymentResultPage from './pages/PaymentResultPage';
 
 // 🎨 Theme
 const theme = createTheme({
@@ -51,7 +48,7 @@ function PrivateRoute() {
     return <Navigate to="/login" replace />;
   }
   
-  return <Layout />; // ✅ Layout'u burada render et
+  return <Layout />;
 }
 
 // 🚀 App Routes
@@ -63,10 +60,6 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* 🆕 Ödeme Sonuç Sayfaları - Public (Geçiş Sayfaları) */}
-      <Route path="/payment/success" element={<PaymentResultPage />} />
-      <Route path="/payment/cancel" element={<PaymentResultPage />} />
-      
       {/* 🔒 Private Routes - Layout ile (Outlet kullanıyor) */}
       <Route element={<PrivateRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />

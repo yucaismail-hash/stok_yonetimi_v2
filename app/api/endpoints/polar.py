@@ -181,10 +181,6 @@ async def get_transaction(
         detail="Transaction not found"
     )
 
-# ============================================
-# 🆕 SUCCESS / CANCEL ENDPOINT'LERİ
-# ============================================
-
 @router.get("/success")
 async def polar_success(
     request: Request,
@@ -202,41 +198,20 @@ async def polar_success(
             detail="Missing checkout_id"
         )
     
-    # Kullanıcı bilgilerini güncelle
-    db.refresh(current_user)
-    
     # İşlemi kontrol et
     transaction = db.query(CreditTransaction).filter(
         CreditTransaction.polar_order_id == checkout_id,
         CreditTransaction.user_id == current_user.id
     ).first()
     
+    # ✅ Frontend'e yönlendir (query parameter ile)
+    frontend_url = os.getenv("FRONTEND_URL", "https://www.stokonomi.com")
+    redirect_url = f"{frontend_url}/dashboard?checkout_id={checkout_id}&status=success"
+    
     if transaction:
-        return {
-            "status": "success",
-            "message": f"{transaction.amount} kredi hesabınıza eklendi!",
-            "credits": transaction.amount,
-            "new_balance": current_user.token_balance
-        }
+        redirect_url = f"{frontend_url}/dashboard?checkout_id={checkout_id}&status=success&credits={transaction.amount}"
     
-    purchase = db.query(TokenPurchase).filter(
-        TokenPurchase.payment_id == checkout_id,
-        TokenPurchase.user_id == current_user.id
-    ).first()
-    
-    if purchase:
-        return {
-            "status": "success",
-            "message": f"{purchase.amount} kredi hesabınıza eklendi!",
-            "credits": purchase.amount,
-            "new_balance": current_user.token_balance
-        }
-    
-    return {
-        "status": "success",
-        "message": "Ödeme başarıyla tamamlandı!",
-        "new_balance": current_user.token_balance
-    }
+    return RedirectResponse(url=redirect_url)
 
 
 @router.get("/cancel")
@@ -250,11 +225,10 @@ async def polar_cancel(
     """
     checkout_id = request.query_params.get("checkout_id")
     
-    return {
-        "status": "canceled",
-        "message": "Ödeme işleminiz iptal edildi.",
-        "checkout_id": checkout_id
-    }
+    frontend_url = os.getenv("FRONTEND_URL", "https://www.stokonomi.com")
+    redirect_url = f"{frontend_url}/dashboard?checkout_id={checkout_id}&status=canceled"
+    
+    return RedirectResponse(url=redirect_url)
 
 # ============================================
 # WEBHOOK ENDPOINT'İ
