@@ -76,7 +76,7 @@ async def create_checkout(
             detail=f"Failed to create Polar customer: {str(e)}"
         )
     
-    # 3. Checkout oluştur
+    # 3. Checkout oluştur - SUCCESS/CANCEL URL OLMADAN!
     try:
         embed_origin = os.getenv("EMBED_ORIGIN", "http://localhost:5173")
         
@@ -85,8 +85,7 @@ async def create_checkout(
             customer_email=current_user.email,
             customer_name=current_user.full_name or current_user.email,
             customer_id=current_user.polar_customer_id,
-            success_url=os.getenv("POLAR_SUCCESS_URL", "https://www.stokonomi.com/dashboard"),
-            cancel_url=os.getenv("POLAR_CANCEL_URL", "https://yourdomain.com/cancel"),
+            # ✅ success_url ve cancel_url gönderme
             embed_origin=embed_origin
         )
         
@@ -105,7 +104,6 @@ async def create_checkout(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create checkout: {str(e)}"
         )
-
 
 @router.get("/packages")
 async def get_packages(db: Session = Depends(get_db)):
