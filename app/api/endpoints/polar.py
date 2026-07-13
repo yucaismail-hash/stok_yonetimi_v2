@@ -400,7 +400,7 @@ async def handle_order_paid(order_data: dict, db: Session):
     product_id = order_data.get("product_id")
     customer_id = order_data.get("customer_id")
     order_id = order_data.get("id")
-    amount = order_data.get("amount")  # Kuruş cinsinden
+    amount = order_data.get("amount")  # Kuruş cinsinden (KDV dahil toplam)
     currency = order_data.get("currency", "USD")
     status = order_data.get("status")
     
@@ -463,45 +463,41 @@ async def handle_order_paid(order_data: dict, db: Session):
             print(f"⚠️ Order {order_id} already processed")
             return
         
-        # 4. Para miktarını al (kuruştan TL'ye çevir)
-        price_tl = amount / 100 if amount else package.price_tl
+        # 4. Kuruştan TL'ye çevir ve KDV hesapla
+        total_price_tl = amount / 100 if amount else package.price_tl
+        
+        # 🆕 KDV hesapla (Polar'dan gelen tax_amount kullan)
+        tax_amount = order_data.get("tax_amount", 0)  # Kuruş cinsinden
+        tax_tl = tax_amount / 100 if tax_amount else 0
+        
+        # KDV'siz fiyat
+        net_price_tl = total_price_tl - tax_tl
+        
+        print(f"💰 Total: {total_price_tl} TL, Tax: {tax_tl} TL, Net: {net_price_tl} TL")
         
         # 5. Kredi ekle
         user.token_balance += package.credits
         print(f"💰 New balance: {user.token_balance}")
         
-        # ✅ CreditTransaction kaydı - price alanı ile birlikte
-        try:
-            transaction = CreditTransaction(
-                user_id=user.id,
-                amount=package.credits,
-                price=price_tl,  # ✅ price alanı
-                transaction_type="purchase",
-                polar_order_id=order_id,
-                polar_product_id=product_id,
-                description=f"{package.name} paketi satın alındı ({package.credits} kredi) - {price_tl} TL"
-            )
-            db.add(transaction)
-            print(f"✅ CreditTransaction added")
-        except Exception as e:
-            print(f"❌ CreditTransaction hatası: {e}")
-            # Eğer price alanı yoksa, price'siz dene
-            transaction = CreditTransaction(
-                user_id=user.id,
-                amount=package.credits,
-                transaction_type="purchase",
-                polar_order_id=order_id,
-                polar_product_id=product_id,
-                description=f"{package.name} paketi satın alındı ({package.credits} kredi)"
-            )
-            db.add(transaction)
-            print(f"✅ CreditTransaction added (without price)")
+        # 6. CreditTransaction kaydı (price = KDV'siz, tax = KDV)
+        transaction = CreditTransaction(
+            user_id=user.id,
+            amount=package.credits,
+            price=net_price_tl,  # KDV'siz fiyat
+            tax=tax_tl,          # 🆕 KDV tutarı
+            transaction_type="purchase",
+            polar_order_id=order_id,
+            polar_product_id=product_id,
+            description=f"{package.name} paketi satın alındı ({package.credits} kredi)"
+        )
+        db.add(transaction)
+        print(f"✅ CreditTransaction added (Net: {net_price_tl}, Tax: {tax_tl})")
         
-        # 6. TokenPurchase kaydı
+        # 7. TokenPurchase kaydı
         purchase = TokenPurchase(
             user_id=user.id,
             amount=package.credits,
-            price=price_tl,
+            price=total_price_tl,  # KDV dahil toplam fiyat
             currency=currency,
             payment_id=order_id,
             status="completed"
@@ -509,7 +505,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(purchase)
         print(f"✅ TokenPurchase added")
         
-        # 7. UserTokenTransaction kaydı
+        # 8. UserTokenTransaction kaydı
         token_tx = UserTokenTransaction(
             user_id=user.id,
             amount=package.credits,
@@ -521,7 +517,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(token_tx)
         print(f"✅ UserTokenTransaction added")
         
-        # 8. Bildirim ekle
+        # 9. Bildirim ekle
         try:
             notification = Notification(
                 user_id=user.id,

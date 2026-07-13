@@ -219,7 +219,8 @@ class CreditTransaction(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     amount = Column(Integer, nullable=False)  # Kredi miktarı
-    price = Column(Float, nullable=True)      # 🆕 Ödenen para miktarı (TL)
+    price = Column(Float, nullable=True)      # KDV'siz fiyat (TL)
+    tax = Column(Float, nullable=True, default=0)  # 🆕 KDV tutarı
     transaction_type = Column(String, nullable=False)  # "purchase", "refund", "bonus"
     polar_order_id = Column(String, nullable=True, index=True)
     polar_product_id = Column(String, nullable=True)

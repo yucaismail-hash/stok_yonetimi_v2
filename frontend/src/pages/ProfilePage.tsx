@@ -67,6 +67,8 @@ interface TransactionItem {
   balance_after: number;
   created_at: string;
   price?: number;
+  tax?: number;
+  total_price?: number;
   polar_order_id?: string;
 }
 
@@ -784,7 +786,7 @@ export default function ProfilePage() {
                               <TableCell>Tür</TableCell>
                               <TableCell>Açıklama</TableCell>
                               <TableCell align="right">Miktar</TableCell>
-                              <TableCell align="right">Tutar (TL)</TableCell>
+                              <TableCell align="right">Toplam (TL)</TableCell>
                               <TableCell align="right">Bakiye</TableCell>
                               <TableCell>Tarih</TableCell>
                               <TableCell align="center">İşlem</TableCell>
@@ -798,27 +800,36 @@ export default function ProfilePage() {
                                 </TableCell>
                               </TableRow>
                             ) : (
-                              transactions.map((item) => (
-                                <TableRow key={item.id} hover>
-                                  <TableCell>{getTypeChip(item.type)}</TableCell>
-                                  <TableCell>{item.description}</TableCell>
-                                  <TableCell align="right" sx={{ color: item.amount > 0 ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
-                                    {item.amount > 0 ? '+' : ''}{item.amount}
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    {item.price ? `₺${item.price.toFixed(2)}` : '-'}
-                                  </TableCell>
-                                  <TableCell align="right">{item.balance_after}</TableCell>
-                                  <TableCell>{formatDate(item.created_at)}</TableCell>
-                                  <TableCell align="center">
-                                    <Tooltip title="Detay">
-                                      <IconButton size="small" onClick={() => showDetail(item)}>
-                                        <Visibility fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </TableCell>
-                                </TableRow>
-                              ))
+                              transactions.map((item) => {
+                                const totalPrice = item.total_price || (item.price || 0) + (item.tax || 0);
+                                return (
+                                  <TableRow key={item.id} hover>
+                                    <TableCell>{getTypeChip(item.type)}</TableCell>
+                                    <TableCell>{item.description}</TableCell>
+                                    <TableCell align="right" sx={{ 
+                                      fontWeight: 'bold',
+                                      color: item.amount > 0 ? 'success.main' : 'error.main'
+                                    }}>
+                                      {item.amount > 0 ? '+' : ''}{item.amount}
+                                    </TableCell>
+                                    <TableCell align="right" sx={{ 
+                                      fontWeight: 'bold',
+                                      color: item.amount > 0 ? 'success.main' : 'error.main'
+                                    }}>
+                                      {totalPrice ? `₺${totalPrice.toFixed(2)}` : '-'}
+                                    </TableCell>
+                                    <TableCell align="right">{item.balance_after}</TableCell>
+                                    <TableCell>{formatDate(item.created_at)}</TableCell>
+                                    <TableCell align="center">
+                                      <Tooltip title="Detay">
+                                        <IconButton size="small" onClick={() => showDetail(item)}>
+                                          <Visibility fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })
                             )}
                           </TableBody>
                         </Table>
@@ -977,11 +988,22 @@ export default function ProfilePage() {
               <Typography variant="body2">
                 <strong>Miktar:</strong> {selectedItem.amount > 0 ? '+' : ''}{selectedItem.amount} Kredi
               </Typography>
-              {selectedItem.price && (
-                <Typography variant="body2">
-                  <strong>Tutar:</strong> ₺{selectedItem.price.toFixed(2)}
-                </Typography>
+              
+              {/* 🆕 Fiyat bilgileri */}
+              {selectedItem.price !== undefined && (
+                <>
+                  <Typography variant="body2">
+                    <strong>KDV'siz Tutar:</strong> ₺{(selectedItem.price || 0).toFixed(2)}
+                  </Typography>
+                  <Typography variant="body2">
+                    <strong>KDV:</strong> ₺{(selectedItem.tax || 0).toFixed(2)}
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                    <strong>Toplam:</strong> ₺{((selectedItem.price || 0) + (selectedItem.tax || 0)).toFixed(2)}
+                  </Typography>
+                </>
               )}
+              
               <Typography variant="body2">
                 <strong>Bakiye:</strong> {selectedItem.balance_after}
               </Typography>

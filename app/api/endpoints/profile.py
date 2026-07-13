@@ -178,13 +178,14 @@ async def get_transactions(
                 "description": t.description,
                 "balance_after": current_user.token_balance,
                 "created_at": t.created_at,
-                "price": t.price,
+                "price": t.price,           # KDV'siz fiyat
+                "tax": t.tax,               # 🆕 KDV tutarı
+                "total_price": (t.price or 0) + (t.tax or 0),  # 🆕 KDV dahil toplam
                 "polar_order_id": t.polar_order_id
             }
             for t in transactions
         ]
     }
-
 
 # ============================================
 # 🆕 POLAR FATURA PDF
