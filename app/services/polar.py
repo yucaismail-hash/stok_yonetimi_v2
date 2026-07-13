@@ -150,6 +150,87 @@ async def create_checkout(
         }
 
 
+# app/services/polar.py
+
+async def create_refund(
+    order_id: str,
+    amount: Optional[float] = None,
+    reason: str = "customer_request"  # ✅ Varsayılan değeri değiştir
+) -> Dict[str, Any]:
+    """
+    Polar üzerinden iade (refund) oluşturur.
+    reason: duplicate, fraudulent, customer_request, service_disruption, satisfaction_guarantee, other
+    """
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # ✅ reason'ı Polar'ın beklediği formata dönüştür
+        valid_reasons = [
+            "duplicate", "fraudulent", "customer_request", 
+            "service_disruption", "satisfaction_guarantee", "other"
+        ]
+        
+        # Eğer gönderilen reason geçerli değilse "other" kullan
+        if reason not in valid_reasons:
+            reason = "other"
+            logger.warning(f"⚠️ Geçersiz reason, 'other' olarak değiştirildi")
+        
+        payload = {
+            "order_id": order_id,
+            "reason": reason,  # ✅ Sabit değer
+        }
+        
+        if amount:
+            payload["amount"] = amount
+
+        logger.info(f"📤 Creating refund for order: {order_id}")
+        logger.info(f"📤 Payload: {json.dumps(payload, indent=2)}")
+
+        response = await client.post(
+            f"{POLAR_API_BASE}/refunds/",
+            headers={
+                "Authorization": f"Bearer {POLAR_ACCESS_TOKEN}",
+                "Content-Type": "application/json"
+            },
+            json=payload
+        )
+
+        if response.status_code not in [200, 201]:
+            error_msg = f"Polar API error: {response.status_code} - {response.text}"
+            logger.error(f"❌ {error_msg}")
+            raise Exception(error_msg)
+
+        result = response.json()
+        logger.info(f"✅ Refund created: {result.get('id')}")
+        return result
+
+
+async def get_order(order_id: str) -> Dict[str, Any]:
+    """
+    Polar'dan order detaylarını getirir.
+    """
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        logger.info(f"📤 Getting order: {order_id}")
+        
+        response = await client.get(
+            f"{POLAR_API_BASE}/orders/{order_id}",
+            headers={
+                "Authorization": f"Bearer {POLAR_ACCESS_TOKEN}",
+                "Content-Type": "application/json"
+            }
+        )
+        
+        if response.status_code != 200:
+            error_msg = f"Polar API error: {response.status_code} - {response.text}"
+            logger.error(f"❌ {error_msg}")
+            raise Exception(error_msg)
+        
+        result = response.json()
+        logger.info(f"✅ Order found: {result.get('id')}")
+        logger.info(f"💰 Total amount: {result.get('total_amount')}")
+        logger.info(f"💰 Refundable amount: {result.get('refundable_amount')}")
+        logger.info(f"💰 Net amount: {result.get('net_amount')}")
+        return result  
+
+
 def verify_webhook_signature(payload: bytes, webhook_id: str, webhook_timestamp: str, webhook_signature: str) -> bool:
     """
     Polar webhook imzasını doğrular.

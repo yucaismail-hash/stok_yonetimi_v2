@@ -1,10 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
-from app.models import TokenCost, User, TokenHistory, CreditPackage, CreditTransaction
+from app.models import (
+    TokenCost, 
+    User, 
+    TokenHistory, 
+    CreditPackage, 
+    CreditTransaction,
+    TokenPurchase,
+    Notification
+)
 from app.auth import get_current_user
 import logging
 
@@ -175,41 +184,24 @@ async def init_default_token_costs(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Varsayılan token cost kayıtlarını oluştur/güncelle (Admin)
-    Sadece raporlama endpoint'leri için token düşer.
-    Async status/result endpoint'leri ÜCRETSİZ.
-    """
+    """Varsayılan token cost kayıtlarını oluştur/güncelle (Admin)"""
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
-    # ✅ SADECE RAPORLAMA ENDPOINT'LERİ (5 analiz sayfası)
     default_costs = [
-        # 1. Talep Tahmini (Forecast)
         {"endpoint": "/api/forecast/batch", "method": "POST", "cost": 5, "is_active": True},
         {"endpoint": "/api/forecast/batch/async", "method": "POST", "cost": 8, "is_active": True},
-        
-        # 2. Emniyet Stoğu (Safety Stock)
         {"endpoint": "/api/safety-stock", "method": "POST", "cost": 3, "is_active": True},
         {"endpoint": "/api/safety-stock/batch/async", "method": "POST", "cost": 6, "is_active": True},
-        
-        # 3. Monte Carlo Simülasyonu
         {"endpoint": "/api/simulate", "method": "POST", "cost": 10, "is_active": True},
         {"endpoint": "/api/simulate/batch/async", "method": "POST", "cost": 15, "is_active": True},
-        
-        # 4. Backtest
         {"endpoint": "/api/backtest", "method": "POST", "cost": 15, "is_active": True},
         {"endpoint": "/api/backtest/batch/async", "method": "POST", "cost": 20, "is_active": True},
-        
-        # 5. Tedarikçi Analizi
         {"endpoint": "/api/supplier/optimize-shares", "method": "POST", "cost": 8, "is_active": True},
         {"endpoint": "/api/supplier/batch/async", "method": "POST", "cost": 12, "is_active": True},
-        
-        # 📋 Task Listesi (Ücretsiz)
         {"endpoint": "/api/tasks/async", "method": "GET", "cost": 0, "is_active": True},
     ]
     
-    # ❌ Silinecek eski endpoint'ler (kullanılmayanlar)
     obsolete_endpoints = [
         "/api/pattern",
         "/api/forecast",
@@ -218,7 +210,6 @@ async def init_default_token_costs(
         "/api/risk/service-level-gap",
     ]
     
-    # Eski endpoint'leri pasif yap
     for endpoint in obsolete_endpoints:
         existing = db.query(TokenCost).filter(
             TokenCost.endpoint == endpoint
@@ -256,12 +247,10 @@ async def init_default_token_costs(
     
     db.commit()
     
-    # ✅ ÜCRETSİZ endpoint'leri güncelle
     free_endpoints = [
         "/api/upload",
         "/api/upload/status",
         "/api/cost",
-        # ✅ Async status ve result endpoint'leri ücretsiz
         "/api/forecast/async/status/{task_id}",
         "/api/forecast/async/result/{task_id}",
     ]
@@ -273,11 +262,10 @@ async def init_default_token_costs(
         if records:
             for record in records:
                 record.cost = 0
-                record.is_active = False  # ✅ Pasif yap (token kontrolünden muaf)
+                record.is_active = False
                 record.updated_at = datetime.utcnow()
             print(f"🆓 Ücretsiz: {endpoint}")
         else:
-            # Yoksa oluştur
             token_cost = TokenCost(
                 endpoint=endpoint,
                 method="GET",
@@ -296,16 +284,6 @@ async def init_default_token_costs(
         "total": len(default_costs),
         "obsolete_disabled": len(obsolete_endpoints),
         "free_endpoints": free_endpoints,
-        "details": {
-            "active_analyses": [
-                "Talep Tahmini (Forecast)",
-                "Emniyet Stoğu (Safety Stock)",
-                "Monte Carlo Simülasyonu",
-                "Backtest",
-                "Tedarikçi Analizi"
-            ],
-            "free_endpoints": free_endpoints
-        }
     }
 
 
@@ -318,10 +296,7 @@ async def init_default_credit_packages(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Varsayılan kredi paketlerini yükler (Admin)
-    Sadece admin kullanıcılar erişebilir.
-    """
+    """Varsayılan kredi paketlerini yükler (Admin)"""
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
@@ -358,7 +333,6 @@ async def init_default_credit_packages(
         ).first()
         
         if existing:
-            # Güncelle (fiyat, kredi miktarı değişebilir)
             existing.name = package_data["name"]
             existing.credits = package_data["credits"]
             existing.price_tl = package_data["price_tl"]
@@ -442,7 +416,6 @@ async def update_credit_package(
             detail="Package not found"
         )
     
-    # Güncelle
     update_data = package_data.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(package, key, value)
@@ -480,6 +453,7 @@ async def delete_credit_package(
 @router.get("/credit-transactions")
 async def get_credit_transactions(
     limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -487,17 +461,43 @@ async def get_credit_transactions(
     if not is_admin(current_user):
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
+    total = db.query(CreditTransaction).count()
+    
     transactions = db.query(CreditTransaction).order_by(
         CreditTransaction.created_at.desc()
-    ).limit(limit).all()
+    ).offset(offset).limit(limit).all()
     
-    return transactions
+    result = []
+    for t in transactions:
+        user = db.query(User).filter(User.id == t.user_id).first()
+        result.append({
+            "id": t.id,
+            "user_id": t.user_id,
+            "amount": t.amount,
+            "price": t.price,
+            "transaction_type": t.transaction_type,
+            "polar_order_id": t.polar_order_id,
+            "polar_product_id": t.polar_product_id,
+            "description": t.description,
+            "created_at": t.created_at,
+            "user": {
+                "email": user.email if user else None,
+                "full_name": user.full_name if user else None,
+                "token_balance": user.token_balance if user else 0
+            } if user else None
+        })
+    
+    return {
+        "total": total,
+        "items": result
+    }
 
 
 @router.get("/credit-transactions/user/{user_id}")
 async def get_user_credit_transactions(
     user_id: int,
     limit: int = 50,
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -509,9 +509,55 @@ async def get_user_credit_transactions(
         CreditTransaction.user_id == user_id
     ).order_by(
         CreditTransaction.created_at.desc()
-    ).limit(limit).all()
+    ).offset(offset).limit(limit).all()
     
     return transactions
+
+
+# ============================================
+# 👥 KULLANICI BAZLI İSTATİSTİKLER
+# ============================================
+
+@router.get("/users/stats")
+async def get_user_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Kullanıcı bazlı istatistikler (sadece admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    users = db.query(User).all()
+    
+    result = []
+    for user in users:
+        total_purchases = db.query(func.sum(CreditTransaction.amount)).filter(
+            CreditTransaction.user_id == user.id,
+            CreditTransaction.transaction_type == "purchase"
+        ).scalar() or 0
+        
+        total_refunds = db.query(CreditTransaction).filter(
+            CreditTransaction.user_id == user.id,
+            CreditTransaction.transaction_type == "refund"
+        ).count()
+        
+        total_refund_amount = db.query(func.sum(CreditTransaction.amount)).filter(
+            CreditTransaction.user_id == user.id,
+            CreditTransaction.transaction_type == "refund"
+        ).scalar() or 0
+        
+        net_credits = total_purchases - abs(total_refund_amount)
+        
+        result.append({
+            "user_id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "total_purchases": total_purchases,
+            "total_refunds": total_refunds,
+            "net_credits": net_credits,
+        })
+    
+    return result
 
 
 # ============================================
@@ -528,30 +574,37 @@ async def get_admin_stats(
         raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
     
     total_users = db.query(User).count()
+    
     total_token_costs = db.query(TokenCost).count()
     active_token_costs = db.query(TokenCost).filter(TokenCost.is_active == True).count()
     
-    # Token istatistikleri
     yesterday = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_tokens = db.query(TokenHistory).filter(
         TokenHistory.created_at >= yesterday
     ).all()
+    total_spent = sum(t.cost for t in today_tokens) if today_tokens else 0
     
-    total_spent = sum(t.cost for t in today_tokens)
-    
-    # Credit paket istatistikleri
     total_packages = db.query(CreditPackage).count()
     active_packages = db.query(CreditPackage).filter(CreditPackage.is_active == True).count()
     
-    # Toplam kredi satışları
     total_credit_transactions = db.query(CreditTransaction).filter(
         CreditTransaction.transaction_type == "purchase"
     ).count()
     
-    total_credits_sold = db.query(CreditTransaction).filter(
+    total_credits_sold = db.query(
+        func.sum(CreditTransaction.amount)
+    ).filter(
         CreditTransaction.transaction_type == "purchase"
-    ).with_entities(
-        db.func.sum(CreditTransaction.amount)
+    ).scalar() or 0
+    
+    total_refunds = db.query(CreditTransaction).filter(
+        CreditTransaction.transaction_type == "refund"
+    ).count()
+    
+    total_revenue = db.query(
+        func.sum(TokenPurchase.price)
+    ).filter(
+        TokenPurchase.status == "completed"
     ).scalar() or 0
     
     return {
@@ -572,7 +625,9 @@ async def get_admin_stats(
         },
         "credit_sales": {
             "total_transactions": total_credit_transactions,
-            "total_credits_sold": total_credits_sold
+            "total_credits_sold": total_credits_sold,
+            "total_refunds": total_refunds,
+            "total_revenue": total_revenue
         }
     }
 

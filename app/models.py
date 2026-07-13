@@ -209,11 +209,11 @@ class CreditPackage(Base):
 
 
 class CreditTransaction(Base):
-    """Kredi işlemleri (Polar ödemeleri için)"""
     __tablename__ = "credit_transactions"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Integer, nullable=False)  # Pozitif = eklendi, Negatif = iade
+    amount = Column(Integer, nullable=False)  # Kredi miktarı
+    price = Column(Float, nullable=True)      # 🆕 Ödenen para miktarı (TL)
     transaction_type = Column(String, nullable=False)  # "purchase", "refund", "bonus"
     polar_order_id = Column(String, nullable=True, index=True)
     polar_product_id = Column(String, nullable=True)

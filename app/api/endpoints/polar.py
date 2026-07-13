@@ -76,7 +76,7 @@ async def create_checkout(
             detail=f"Failed to create Polar customer: {str(e)}"
         )
     
-    # 3. Checkout oluştur - SUCCESS/CANCEL URL OLMADAN!
+    # 3. Checkout oluştur
     try:
         embed_origin = os.getenv("EMBED_ORIGIN", "http://localhost:5173")
         
@@ -85,7 +85,8 @@ async def create_checkout(
             customer_email=current_user.email,
             customer_name=current_user.full_name or current_user.email,
             customer_id=current_user.polar_customer_id,
-            # ✅ success_url ve cancel_url gönderme
+            success_url=os.getenv("POLAR_SUCCESS_URL", "https://www.stokonomi.com/dashboard"),
+            cancel_url=os.getenv("POLAR_CANCEL_URL", "https://yourdomain.com/cancel"),
             embed_origin=embed_origin
         )
         
@@ -104,6 +105,7 @@ async def create_checkout(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create checkout: {str(e)}"
         )
+
 
 @router.get("/packages")
 async def get_packages(db: Session = Depends(get_db)):
@@ -152,6 +154,7 @@ async def get_transaction(
         return {
             "checkout_id": checkout_id,
             "credits": transaction.amount,
+            "price": transaction.price,
             "package_name": transaction.description,
             "status": "completed",
             "created_at": transaction.created_at
@@ -168,6 +171,7 @@ async def get_transaction(
         return {
             "checkout_id": checkout_id,
             "credits": purchase.amount,
+            "price": purchase.price,
             "package_name": "Kredi Satın Alma",
             "status": purchase.status,
             "created_at": purchase.created_at
@@ -178,6 +182,168 @@ async def get_transaction(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Transaction not found"
     )
+
+
+# ============================================
+# 🆕 POLAR ORDER DETAYLARI
+# ============================================
+
+@router.get("/order/{order_id}")
+async def get_polar_order(
+    order_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Polar'dan order detaylarını getirir.
+    Sadece admin kullanıcılar erişebilir.
+    """
+    admin_emails = ["admin@stok.com", "admin@admin.com"]
+    if current_user.email not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin yetkisi gerekli"
+        )
+    
+    try:
+        order = await polar_service.get_order(order_id)
+        return order
+    except Exception as e:
+        print(f"❌ Order getirme hatası: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Order not found: {order_id}"
+        )
+
+
+# ============================================
+# 🆕 REFUND ENDPOINT'İ (Para + Kredi İadesi)
+# ============================================
+
+@router.post("/refund")
+async def create_refund(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Polar üzerinden para iadesi (refund) oluşturur.
+    Sadece admin kullanıcılar erişebilir.
+    """
+    # Admin kontrolü
+    admin_emails = ["admin@stok.com", "admin@admin.com"]
+    if current_user.email not in admin_emails:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin yetkisi gerekli"
+        )
+    
+    # Request body'yi al
+    data = await request.json()
+    order_id = data.get("order_id")
+    refund_credits = data.get("refund_credits")
+    reason = data.get("reason", "customer_request")
+    refund_type = data.get("refund_type", "money")  # Varsayılan 'money'
+    
+    # Validasyon
+    if not order_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="order_id gerekli"
+        )
+    
+    # 1. Siparişi bul (CreditTransaction)
+    transaction = db.query(CreditTransaction).filter(
+        CreditTransaction.polar_order_id == order_id,
+        CreditTransaction.transaction_type == "purchase"
+    ).first()
+    
+    if not transaction:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sipariş bulunamadı"
+        )
+    
+    # 2. Kullanıcıyı bul
+    user = db.query(User).filter(User.id == transaction.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Kullanıcı bulunamadı"
+        )
+    
+    # 3. İade miktarını belirle
+    credits_to_refund = refund_credits if refund_credits else transaction.amount
+    
+    # 4. PARA İADESİ (Polar Refund)
+    polar_refund_result = None
+    try:
+        # Order detaylarını al
+        order = await polar_service.get_order(order_id)
+        
+        # ✅ Doğru iade miktarını al (refundable_amount veya net_amount)
+        total_amount = order.get("refundable_amount")
+        if not total_amount:
+            total_amount = order.get("net_amount", 0)
+        
+        # ✅ Eğer amount 0 veya None ise hata ver
+        if not total_amount or total_amount <= 0:
+            raise Exception("İade edilebilir miktar bulunamadı")
+        
+        print(f"💰 İade edilebilir miktar: {total_amount} kuruş")
+        
+        # Polar refund oluştur
+        polar_refund_result = await polar_service.create_refund(
+            order_id=order_id,
+            amount=total_amount,
+            reason=reason
+        )
+        print(f"✅ Polar refund created: {polar_refund_result}")
+    except Exception as e:
+        print(f"❌ Polar refund hatası: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Para iadesi başarısız: {str(e)}"
+        )
+    
+    # 5. KREDİ İADESİ
+    user.token_balance -= credits_to_refund
+    
+    # 6. İade kaydı oluştur
+    price_to_refund = transaction.price if transaction.price else 0
+    refund_transaction = CreditTransaction(
+        user_id=user.id,
+        amount=-credits_to_refund,
+        price=-price_to_refund if refund_type == "money" else 0,
+        transaction_type="refund",
+        polar_order_id=order_id,
+        polar_product_id=transaction.polar_product_id,
+        description=f"İade - {reason} (Kredi: {credits_to_refund})" + (f" - Para iadesi: {polar_refund_result.get('id') if polar_refund_result else 'Yok'}" if refund_type == "money" else "")
+    )
+    db.add(refund_transaction)
+    
+    # 7. TokenPurchase durumunu güncelle
+    purchase = db.query(TokenPurchase).filter(
+        TokenPurchase.payment_id == order_id
+    ).first()
+    if purchase:
+        purchase.status = "refunded"
+    
+    db.commit()
+    
+    return {
+        "success": True,
+        "refund_id": refund_transaction.id,
+        "user_id": user.id,
+        "user_email": user.email,
+        "refund_amount": credits_to_refund,
+        "refund_price": price_to_refund if refund_type == "money" else 0,
+        "refund_amount_kurus": total_amount,
+        "new_balance": user.token_balance,
+        "reason": reason,
+        "refund_type": refund_type,
+        "polar_refund": polar_refund_result
+    }
 
 # ============================================
 # WEBHOOK ENDPOINT'İ
@@ -243,7 +409,7 @@ async def handle_order_paid(order_data: dict, db: Session):
     product_id = order_data.get("product_id")
     customer_id = order_data.get("customer_id")
     order_id = order_data.get("id")
-    amount = order_data.get("amount")
+    amount = order_data.get("amount")  # Kuruş cinsinden
     currency = order_data.get("currency", "USD")
     status = order_data.get("status")
     
@@ -262,6 +428,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         return
     
     try:
+        # 1. Paketi bul
         package = db.query(CreditPackage).filter(
             CreditPackage.polar_product_id == product_id,
             CreditPackage.is_active == True
@@ -273,6 +440,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         
         print(f"✅ Package found: {package.name} ({package.credits} credits)")
         
+        # 2. Kullanıcıyı bul
         user = db.query(User).filter(
             User.polar_customer_id == customer_id
         ).first()
@@ -295,6 +463,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         print(f"✅ User found: {user.id} ({user.email})")
         print(f"💰 Current balance: {user.token_balance}")
         
+        # 3. Aynı sipariş kontrolü
         existing_transaction = db.query(CreditTransaction).filter(
             CreditTransaction.polar_order_id == order_id
         ).first()
@@ -303,24 +472,45 @@ async def handle_order_paid(order_data: dict, db: Session):
             print(f"⚠️ Order {order_id} already processed")
             return
         
+        # 4. Para miktarını al (kuruştan TL'ye çevir)
+        price_tl = amount / 100 if amount else package.price_tl
+        
+        # 5. Kredi ekle
         user.token_balance += package.credits
         print(f"💰 New balance: {user.token_balance}")
         
-        transaction = CreditTransaction(
-            user_id=user.id,
-            amount=package.credits,
-            transaction_type="purchase",
-            polar_order_id=order_id,
-            polar_product_id=product_id,
-            description=f"{package.name} paketi satın alındı ({package.credits} kredi) - {amount} {currency}"
-        )
-        db.add(transaction)
-        print(f"✅ CreditTransaction added")
+        # ✅ CreditTransaction kaydı - price alanı ile birlikte
+        try:
+            transaction = CreditTransaction(
+                user_id=user.id,
+                amount=package.credits,
+                price=price_tl,  # ✅ price alanı
+                transaction_type="purchase",
+                polar_order_id=order_id,
+                polar_product_id=product_id,
+                description=f"{package.name} paketi satın alındı ({package.credits} kredi) - {price_tl} TL"
+            )
+            db.add(transaction)
+            print(f"✅ CreditTransaction added")
+        except Exception as e:
+            print(f"❌ CreditTransaction hatası: {e}")
+            # Eğer price alanı yoksa, price'siz dene
+            transaction = CreditTransaction(
+                user_id=user.id,
+                amount=package.credits,
+                transaction_type="purchase",
+                polar_order_id=order_id,
+                polar_product_id=product_id,
+                description=f"{package.name} paketi satın alındı ({package.credits} kredi)"
+            )
+            db.add(transaction)
+            print(f"✅ CreditTransaction added (without price)")
         
+        # 6. TokenPurchase kaydı
         purchase = TokenPurchase(
             user_id=user.id,
             amount=package.credits,
-            price=amount / 100,
+            price=price_tl,
             currency=currency,
             payment_id=order_id,
             status="completed"
@@ -328,6 +518,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(purchase)
         print(f"✅ TokenPurchase added")
         
+        # 7. UserTokenTransaction kaydı
         token_tx = UserTokenTransaction(
             user_id=user.id,
             amount=package.credits,
@@ -339,6 +530,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(token_tx)
         print(f"✅ UserTokenTransaction added")
         
+        # 8. Bildirim ekle
         try:
             notification = Notification(
                 user_id=user.id,
@@ -358,8 +550,9 @@ async def handle_order_paid(order_data: dict, db: Session):
     except Exception as e:
         db.rollback()
         print(f"❌ Error processing order: {e}")
+        import traceback
+        traceback.print_exc()
         raise
-
 
 async def handle_order_refunded(order_data: dict, db: Session):
     """
@@ -392,6 +585,7 @@ async def handle_order_refunded(order_data: dict, db: Session):
         refund_tx = CreditTransaction(
             user_id=user.id,
             amount=-transaction.amount,
+            price=-transaction.price if transaction.price else 0,
             transaction_type="refund",
             polar_order_id=order_id,
             polar_product_id=product_id,
