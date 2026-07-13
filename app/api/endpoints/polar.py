@@ -76,7 +76,26 @@ async def create_checkout(
             detail=f"Failed to create Polar customer: {str(e)}"
         )
     
-    # 3. Checkout oluştur
+    # 3. Fatura bilgilerini hazırla
+    billing_address = None
+    if current_user.billing_address:
+        billing_address = {
+            "line1": current_user.billing_address,
+            "city": current_user.billing_city,
+            "state": current_user.billing_state,
+            "postal_code": current_user.billing_postal_code,
+            "country": current_user.billing_country or "TR"
+        }
+    
+    custom_field_data = {}
+    if current_user.tax_id:
+        custom_field_data["tax_id"] = current_user.tax_id
+    if current_user.tax_office:
+        custom_field_data["tax_office"] = current_user.tax_office
+    if current_user.identity_number:
+        custom_field_data["identity_number"] = current_user.identity_number
+    
+    # 4. Checkout oluştur
     try:
         embed_origin = os.getenv("EMBED_ORIGIN", "http://localhost:5173")
         
@@ -85,8 +104,10 @@ async def create_checkout(
             customer_email=current_user.email,
             customer_name=current_user.full_name or current_user.email,
             customer_id=current_user.polar_customer_id,
-            # ✅ success_url ve cancel_url GÖNDERME
-            embed_origin=embed_origin
+            embed_origin=embed_origin,
+            billing_address=billing_address,
+            custom_field_data=custom_field_data,
+            require_billing_address=True
         )
         
         print(f"✅ Checkout created: {checkout.get('url')}")
@@ -104,8 +125,7 @@ async def create_checkout(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create checkout: {str(e)}"
         )
-
-
+    
 @router.get("/packages")
 async def get_packages(db: Session = Depends(get_db)):
     """

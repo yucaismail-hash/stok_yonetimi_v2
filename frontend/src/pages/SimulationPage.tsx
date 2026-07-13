@@ -118,7 +118,7 @@ export default function SimulationPage() {
     severity: 'info',
   });
 
-  // ✅ Token maliyeti
+  // ✅ Kredi maliyeti
   const { data: costData } = useQuery({
     queryKey: ['simulation-cost'],
     queryFn: async () => {
@@ -131,7 +131,7 @@ export default function SimulationPage() {
         });
         return res.data;
       } catch (error) {
-        console.error('❌ Token cost hatası:', error);
+        console.error('❌ Kredi cost hatası:', error);
         return { cost: 10 };
       }
     },
@@ -447,7 +447,7 @@ export default function SimulationPage() {
           <Typography variant="body1" color="text.secondary">
             Binlerce senaryo ile stok performansınızı simüle edin.
             <Chip 
-              label={`${costData?.cost || 10} Token`} 
+              label={`${costData?.cost || 10} Kredi`} 
               size="small" 
               color="warning" 
               sx={{ ml: 1 }} 
@@ -627,12 +627,12 @@ export default function SimulationPage() {
         </CardContent>
       </Card>
 
-      {/* Token Bakiyesi */}
+      {/* Kredi Bakiyesi */}
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 10} token harcanır</Typography>
+            <Typography variant="body2">💰 Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 10} kredi harcanır</Typography>
           </Box>
         </CardContent>
       </Card>

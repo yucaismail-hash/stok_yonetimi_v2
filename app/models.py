@@ -14,11 +14,17 @@ class User(Base):
     company_name = Column(String, default="")
     sector_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # 🆕 Polar müşteri ID'si
     polar_customer_id = Column(String, nullable=True, index=True)
     
-    # Tüm ilişkiler KALDIRILDI (mevcut yapıya uygun)
+    # 🆕 FATURA BİLGİLERİ
+    billing_address = Column(String, nullable=True)  # Adres
+    billing_city = Column(String, nullable=True)     # Şehir
+    billing_state = Column(String, nullable=True)    # İl/İlçe
+    billing_country = Column(String, nullable=True, default="TR")  # Ülke
+    billing_postal_code = Column(String, nullable=True)  # Posta kodu
+    tax_id = Column(String, nullable=True)           # Vergi Numarası
+    tax_office = Column(String, nullable=True)       # Vergi Dairesi
+    identity_number = Column(String, nullable=True)  # TC Kimlik No / Vergi No
 
 
 class Sector(Base):
@@ -219,3 +225,19 @@ class CreditTransaction(Base):
     polar_product_id = Column(String, nullable=True)
     description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+# app/models.py - En alta ekleyin
+
+class SupportTicket(Base):
+    """Destek talepleri"""
+    __tablename__ = "support_tickets"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    subject = Column(String, nullable=False)
+    message = Column(Text, nullable=False)
+    priority = Column(String, default="medium")  # low, medium, high
+    status = Column(String, default="open")  # open, in_progress, resolved, closed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    resolved_at = Column(DateTime, nullable=True)
+    
+    # user = relationship("User")  # İlişki kaldırıldı (mevcut yapıya uygun)

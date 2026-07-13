@@ -96,7 +96,7 @@ export default function SupplierPage() {
     severity: 'info',
   });
 
-  // ✅ Token maliyeti
+  // ✅ Kredi maliyeti
   const { data: costData } = useQuery({
     queryKey: ['supplier-cost'],
     queryFn: async () => {
@@ -109,7 +109,7 @@ export default function SupplierPage() {
         });
         return res.data;
       } catch (error) {
-        console.error('❌ Token cost hatası:', error);
+        console.error('❌ Kredi cost hatası:', error);
         return { cost: 8 };
       }
     },
@@ -426,7 +426,7 @@ export default function SupplierPage() {
           <Typography variant="body1" color="text.secondary">
             Tedarikçi performansını ve risklerini analiz eder.
             <Chip 
-              label={`${costData?.cost || 8} Token`} 
+              label={`${costData?.cost || 8} Kredi`} 
               size="small" 
               color="warning" 
               sx={{ ml: 1 }} 
@@ -531,12 +531,12 @@ export default function SupplierPage() {
         </CardContent>
       </Card>
 
-      {/* Token Bakiyesi */}
+      {/* Kredi Bakiyesi */}
       <Card sx={{ mb: 3, bgcolor: 'grey.50' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2">💰 Token Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 8} token harcanır</Typography>
+            <Typography variant="body2">💰 Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
+            <Typography variant="caption" color="text.secondary">Analiz başına {costData?.cost || 8} kredi harcanır</Typography>
           </Box>
         </CardContent>
       </Card>

@@ -50,18 +50,14 @@ import {
   AdminPanelSettings,
   CalendarToday,
   LocationCity,
+  Receipt,
+  SupportAgent,
+  Send,
+  ReceiptLong,
+  Home,
 } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
 import api from '../services/api';
-
-interface TokenHistoryItem {
-  id: number;
-  endpoint: string;
-  cost: number;
-  balance_after: number;
-  created_at: string;
-  type: 'spend' | 'purchase' | 'bonus';
-}
 
 interface TransactionItem {
   id: number;
@@ -70,6 +66,18 @@ interface TransactionItem {
   description: string;
   balance_after: number;
   created_at: string;
+  price?: number;
+  polar_order_id?: string;
+}
+
+interface SupportTicket {
+  id: number;
+  subject: string;
+  message: string;
+  priority: string;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
 }
 
 export default function ProfilePage() {
@@ -87,6 +95,17 @@ export default function ProfilePage() {
   // ✅ Profil formu
   const [fullName, setFullName] = useState(user?.full_name || '');
   const [companyName, setCompanyName] = useState(user?.company_name || '');
+  
+  // 🆕 FATURA BİLGİLERİ
+  const [billingAddress, setBillingAddress] = useState(user?.billing_address || '');
+  const [billingCity, setBillingCity] = useState(user?.billing_city || '');
+  const [billingState, setBillingState] = useState(user?.billing_state || '');
+  const [billingCountry, setBillingCountry] = useState(user?.billing_country || 'TR');
+  const [billingPostalCode, setBillingPostalCode] = useState(user?.billing_postal_code || '');
+  const [taxId, setTaxId] = useState(user?.tax_id || '');
+  const [taxOffice, setTaxOffice] = useState(user?.tax_office || '');
+  const [identityNumber, setIdentityNumber] = useState(user?.identity_number || '');
+  
   const [isEditing, setIsEditing] = useState(false);
   
   // ✅ Şifre değiştirme
@@ -101,44 +120,25 @@ export default function ProfilePage() {
   // ✅ Tab
   const [tabValue, setTabValue] = useState(0);
   
-  // ✅ Kredi Geçmişi
-  const [tokenHistory, setTokenHistory] = useState<TokenHistoryItem[]>([]);
-  const [tokenTotal, setTokenTotal] = useState(0);
-  const [tokenPage, setTokenPage] = useState(0);
-  const [tokenRowsPerPage, setTokenRowsPerPage] = useState(5);
-  const [tokenLoading, setTokenLoading] = useState(false);
-  
   // ✅ İşlem Geçmişi
   const [transactions, setTransactions] = useState<TransactionItem[]>([]);
   const [transactionTotal, setTransactionTotal] = useState(0);
   const [transactionPage, setTransactionPage] = useState(0);
-  const [transactionRowsPerPage, setTransactionRowsPerPage] = useState(5);
+  const [transactionRowsPerPage, setTransactionRowsPerPage] = useState(10);
   const [transactionLoading, setTransactionLoading] = useState(false);
+  
+  // ✅ Destek Talepleri
+  const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
+  const [ticketSubject, setTicketSubject] = useState('');
+  const [ticketMessage, setTicketMessage] = useState('');
+  const [ticketPriority, setTicketPriority] = useState('medium');
+  const [ticketLoading, setTicketLoading] = useState(false);
   
   // ✅ Detay Dialog
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<any>(null);
-
-  // ✅ Kredi geçmişini getir (sadece cost > 0)
-  const fetchTokenHistory = async (page: number = 0) => {
-    setTokenLoading(true);
-    try {
-      const res = await api.get('/api/profile/token-history', {
-        params: {
-          limit: tokenRowsPerPage,
-          offset: page * tokenRowsPerPage
-        }
-      });
-      if (res.data.success) {
-        setTokenHistory(res.data.history || []);
-        setTokenTotal(res.data.total || 0);
-      }
-    } catch (error) {
-      console.error('❌ Kredi geçmişi hatası:', error);
-    } finally {
-      setTokenLoading(false);
-    }
-  };
+  const [invoiceLoading, setInvoiceLoading] = useState(false);
 
   // ✅ İşlem geçmişini getir
   const fetchTransactions = async (page: number = 0) => {
@@ -161,7 +161,61 @@ export default function ProfilePage() {
     }
   };
 
-  // ✅ Profil güncelle
+  // ✅ Destek taleplerini getir
+  const fetchTickets = async () => {
+    try {
+      const res = await api.get('/api/profile/support-tickets');
+      if (res.data.success) {
+        setTickets(res.data.tickets || []);
+      }
+    } catch (error) {
+      console.error('❌ Destek talebi hatası:', error);
+    }
+  };
+
+  // ✅ Destek talebi oluştur
+  const handleCreateTicket = async () => {
+    if (!ticketSubject.trim() || !ticketMessage.trim()) {
+      setSnackbar({
+        open: true,
+        message: 'Lütfen konu ve mesaj girin.',
+        severity: 'error',
+      });
+      return;
+    }
+    
+    setTicketLoading(true);
+    try {
+      const res = await api.post('/api/profile/support-ticket', {
+        subject: ticketSubject,
+        message: ticketMessage,
+        priority: ticketPriority,
+      });
+      
+      if (res.data.success) {
+        setSnackbar({
+          open: true,
+          message: '✅ Destek talebiniz başarıyla oluşturuldu.',
+          severity: 'success',
+        });
+        setTicketDialogOpen(false);
+        setTicketSubject('');
+        setTicketMessage('');
+        setTicketPriority('medium');
+        fetchTickets();
+      }
+    } catch (err: any) {
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.detail || 'Destek talebi oluşturulamadı.',
+        severity: 'error',
+      });
+    } finally {
+      setTicketLoading(false);
+    }
+  };
+
+  // ✅ Profil güncelle (Fatura bilgileri dahil)
   const handleSaveProfile = async () => {
     setSaving(true);
     setError(null);
@@ -169,7 +223,15 @@ export default function ProfilePage() {
     try {
       const res = await api.put('/api/profile/', {
         full_name: fullName,
-        company_name: companyName
+        company_name: companyName,
+        billing_address: billingAddress,
+        billing_city: billingCity,
+        billing_state: billingState,
+        billing_country: billingCountry,
+        billing_postal_code: billingPostalCode,
+        tax_id: taxId,
+        tax_office: taxOffice,
+        identity_number: identityNumber,
       });
       if (res.data.success) {
         setSuccess('Profil başarıyla güncellendi!');
@@ -246,24 +308,67 @@ export default function ProfilePage() {
     }
   };
 
+  // ✅ İşlem detayını göster
+  const showDetail = async (item: any) => {
+    setSelectedItem(item);
+    setDetailOpen(true);
+  };
+
+  // ✅ PDF indir
+  const handleDownloadInvoice = async (transactionId: number) => {
+    setInvoiceLoading(true);
+    try {
+      const res = await api.get(`/api/profile/transaction/${transactionId}/polar-invoice`);
+      if (res.data.success) {
+        if (res.data.type === 'dashboard' && res.data.dashboard_url) {
+          window.open(res.data.dashboard_url, '_blank');
+          setSnackbar({
+            open: true,
+            message: '📄 Fatura sayfası yeni sekmede açıldı.',
+            severity: 'info',
+          });
+          setInvoiceLoading(false);
+          return;
+        }
+        
+        if (res.data.pdf_base64) {
+          const link = document.createElement('a');
+          link.href = `data:application/pdf;base64,${res.data.pdf_base64}`;
+          link.download = res.data.filename || `fatura_${transactionId}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          setSnackbar({
+            open: true,
+            message: '✅ Fatura başarıyla indirildi.',
+            severity: 'success',
+          });
+        }
+      }
+    } catch (err: any) {
+      setSnackbar({
+        open: true,
+        message: err.response?.data?.detail || 'Fatura indirilemedi.',
+        severity: 'error',
+      });
+    } finally {
+      setInvoiceLoading(false);
+    }
+  };
+
   // ✅ Tab değişimi
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
     if (newValue === 0) {
-      fetchTokenHistory(0);
-      setTokenPage(0);
-    } else if (newValue === 1) {
       fetchTransactions(0);
       setTransactionPage(0);
+    } else if (newValue === 1) {
+      fetchTickets();
     }
   };
 
   // ✅ Pagination
-  const handleTokenPageChange = (event: unknown, newPage: number) => {
-    setTokenPage(newPage);
-    fetchTokenHistory(newPage);
-  };
-
   const handleTransactionPageChange = (event: unknown, newPage: number) => {
     setTransactionPage(newPage);
     fetchTransactions(newPage);
@@ -271,14 +376,8 @@ export default function ProfilePage() {
 
   // ✅ İlk yükleme
   useEffect(() => {
-    fetchTokenHistory(0);
+    fetchTransactions(0);
   }, []);
-
-  // ✅ Detay göster
-  const showDetail = (item: any) => {
-    setSelectedItem(item);
-    setDetailOpen(true);
-  };
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -287,27 +386,53 @@ export default function ProfilePage() {
 
   const getTypeChip = (type: string) => {
     switch(type) {
-      case 'spend':
-        return <Chip label="Harcama" size="small" color="error" icon={<TrendingDown />} />;
       case 'purchase':
         return <Chip label="Satın Alma" size="small" color="success" icon={<TrendingUp />} />;
+      case 'refund':
+        return <Chip label="İade" size="small" color="error" icon={<TrendingDown />} />;
       case 'bonus':
         return <Chip label="Bonus" size="small" color="warning" icon={<TrendingUp />} />;
+      case 'spend':
+        return <Chip label="Harcama" size="small" color="error" icon={<TrendingDown />} />;
       default:
         return <Chip label={type} size="small" />;
     }
   };
 
-  const getEndpointName = (endpoint: string) => {
-    const names: Record<string, string> = {
-      '/api/forecast/batch': 'Talep Tahmini',
-      '/api/forecast/batch/async': 'Talep Tahmini (ASYNC)',
-      '/api/safety-stock': 'Emniyet Stoğu',
-      '/api/simulate': 'Monte Carlo Simülasyonu',
-      '/api/backtest': 'Backtest',
-      '/api/supplier/optimize-shares': 'Tedarikçi Analizi',
-    };
-    return names[endpoint] || endpoint;
+  const getPriorityChip = (priority: string) => {
+    switch(priority) {
+      case 'high':
+        return <Chip label="Yüksek" size="small" color="error" />;
+      case 'medium':
+        return <Chip label="Orta" size="small" color="warning" />;
+      case 'low':
+        return <Chip label="Düşük" size="small" color="success" />;
+      default:
+        return <Chip label={priority} size="small" />;
+    }
+  };
+
+  const getStatusChip = (status: string) => {
+    switch(status) {
+      case 'open':
+        return <Chip label="Açık" size="small" color="error" />;
+      case 'in_progress':
+        return <Chip label="İşleniyor" size="small" color="warning" />;
+      case 'resolved':
+        return <Chip label="Çözüldü" size="small" color="success" />;
+      case 'closed':
+        return <Chip label="Kapalı" size="small" color="default" />;
+      default:
+        return <Chip label={status} size="small" />;
+    }
+  };
+
+  // 📊 İstatistikler
+  const stats = {
+    total_credits: user?.token_balance || 0,
+    total_purchases: transactions.filter(t => t.type === 'purchase').reduce((sum, t) => sum + t.amount, 0),
+    total_refunds: transactions.filter(t => t.type === 'refund').reduce((sum, t) => sum + Math.abs(t.amount), 0),
+    total_transactions: transactions.length,
   };
 
   return (
@@ -329,6 +454,24 @@ export default function ProfilePage() {
         <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
           👤 Profil Yönetimi
         </Typography>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<SupportAgent />}
+            onClick={() => setTicketDialogOpen(true)}
+          >
+            Destek Talebi
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={() => fetchTransactions(transactionPage)}
+            disabled={transactionLoading}
+          >
+            Yenile
+          </Button>
+        </Box>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
@@ -338,32 +481,30 @@ export default function ProfilePage() {
         {/* 📌 Profil Kartı */}
         <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{ position: 'relative', overflow: 'visible' }}>
-            {/* Arka plan gradient */}
             <Box
               sx={{
-                height: 100,
-                background: 'linear-gradient(135deg, #1f4e79 0%, #1976d2 100%)',
+                height: 120,
+                background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 50%, #1976d2 100%)',
                 borderRadius: '12px 12px 0 0',
                 position: 'relative',
               }}
             />
             
-            {/* Avatar */}
             <Box
               sx={{
                 display: 'flex',
                 justifyContent: 'center',
-                mt: -5,
+                mt: -6,
                 position: 'relative',
                 zIndex: 1,
               }}
             >
               <Avatar
                 sx={{
-                  width: 80,
-                  height: 80,
-                  bgcolor: '#1f4e79',
-                  fontSize: 32,
+                  width: 96,
+                  height: 96,
+                  bgcolor: '#1a237e',
+                  fontSize: 40,
                   border: '4px solid white',
                   boxShadow: 3,
                 }}
@@ -373,20 +514,50 @@ export default function ProfilePage() {
             </Box>
 
             <CardContent sx={{ textAlign: 'center' }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
                 {user?.full_name || 'Kullanıcı'}
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 {user?.email}
               </Typography>
               
               <Chip
                 label={`🪙 ${user?.token_balance || 0} Kredi`}
                 color="warning"
-                size="small"
-                sx={{ mb: 1 }}
+                size="medium"
+                sx={{ mb: 2, fontWeight: 'bold', fontSize: '0.9rem' }}
               />
               
+              <Divider sx={{ my: 2 }} />
+
+              {/* İstatistik Kartları */}
+              <Grid container spacing={1} sx={{ mb: 2 }}>
+                <Grid size={{ xs: 6 }}>
+                  <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'success.light' }}>
+                    <Typography variant="caption" color="text.secondary">Toplam Satın Alma</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{stats.total_purchases}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'error.light' }}>
+                    <Typography variant="caption" color="text.secondary">Toplam İade</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{stats.total_refunds}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'info.light' }}>
+                    <Typography variant="caption" color="text.secondary">Toplam İşlem</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{stats.total_transactions}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid size={{ xs: 6 }}>
+                  <Paper sx={{ p: 1, textAlign: 'center', bgcolor: 'warning.light' }}>
+                    <Typography variant="caption" color="text.secondary">Mevcut Kredi</Typography>
+                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>{stats.total_credits}</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+
               <Divider sx={{ my: 2 }} />
 
               {/* Bilgiler */}
@@ -428,6 +599,14 @@ export default function ProfilePage() {
                       setIsEditing(false);
                       setFullName(user?.full_name || '');
                       setCompanyName(user?.company_name || '');
+                      setBillingAddress(user?.billing_address || '');
+                      setBillingCity(user?.billing_city || '');
+                      setBillingState(user?.billing_state || '');
+                      setBillingCountry(user?.billing_country || 'TR');
+                      setBillingPostalCode(user?.billing_postal_code || '');
+                      setTaxId(user?.tax_id || '');
+                      setTaxOffice(user?.tax_office || '');
+                      setIdentityNumber(user?.identity_number || '');
                     }}
                   >
                     İptal
@@ -445,13 +624,14 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Profil Düzenleme Alanı */}
+          {/* 🆕 Fatura Bilgilerini Düzenleme Alanı */}
           {isEditing && (
             <Card sx={{ mt: 3 }}>
               <CardContent>
                 <Typography variant="subtitle1" sx={{ fontWeight: 'bold', mb: 2 }}>
-                  ✏️ Profil Bilgilerini Düzenle
+                  ✏️ Profil ve Fatura Bilgilerini Düzenle
                 </Typography>
+                
                 <TextField
                   fullWidth
                   label="Ad Soyad"
@@ -468,6 +648,108 @@ export default function ProfilePage() {
                   sx={{ mb: 2 }}
                   slotProps={{ input: { startAdornment: <Business sx={{ mr: 1, color: 'text.secondary' }} /> } }}
                 />
+                
+                <Divider sx={{ my: 2 }} />
+                
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  🏢 Fatura Bilgileri
+                </Typography>
+                
+                <TextField
+                  fullWidth
+                  label="Fatura Adresi"
+                  value={billingAddress}
+                  onChange={(e) => setBillingAddress(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: İstiklal Cad. No:123"
+                  slotProps={{ input: { startAdornment: <Home sx={{ mr: 1, color: 'text.secondary' }} /> } }}
+                />
+                <TextField
+                  fullWidth
+                  label="Şehir"
+                  value={billingCity}
+                  onChange={(e) => setBillingCity(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: İstanbul"
+                />
+                <TextField
+                  fullWidth
+                  label="İl/İlçe"
+                  value={billingState}
+                  onChange={(e) => setBillingState(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: Kadıköy"
+                />
+                <TextField
+                  fullWidth
+                  label="Posta Kodu"
+                  value={billingPostalCode}
+                  onChange={(e) => setBillingPostalCode(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: 34700"
+                />
+                <TextField
+                  fullWidth
+                  select
+                  label="Ülke"
+                  value={billingCountry}
+                  onChange={(e) => setBillingCountry(e.target.value)}
+                  sx={{ mb: 2 }}
+                  slotProps={{
+                    select: {
+                      native: true,
+                    },
+                  }}
+                >
+                  <option value="TR">Türkiye</option>
+                  <option value="US">Amerika Birleşik Devletleri</option>
+                  <option value="GB">Birleşik Krallık</option>
+                  <option value="DE">Almanya</option>
+                  <option value="FR">Fransa</option>
+                  <option value="IT">İtalya</option>
+                </TextField>
+                
+                <Divider sx={{ my: 2 }} />
+                
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                  📋 Vergi Bilgileri
+                </Typography>
+                
+                <TextField
+                  fullWidth
+                  label="Vergi Numarası"
+                  value={taxId}
+                  onChange={(e) => setTaxId(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: 1234567890"
+                />
+                <TextField
+                  fullWidth
+                  label="Vergi Dairesi"
+                  value={taxOffice}
+                  onChange={(e) => setTaxOffice(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: İstanbul Vergi Dairesi"
+                />
+                <TextField
+                  fullWidth
+                  label="TC Kimlik Numarası"
+                  value={identityNumber}
+                  onChange={(e) => setIdentityNumber(e.target.value)}
+                  sx={{ mb: 2 }}
+                  placeholder="Örn: 12345678901"
+                />
+
+                <Button
+                  fullWidth
+                  variant="contained"
+                  color="primary"
+                  onClick={handleSaveProfile}
+                  disabled={saving}
+                  sx={{ mt: 2 }}
+                >
+                  {saving ? 'Kaydediliyor...' : 'Bilgileri Güncelle'}
+                </Button>
               </CardContent>
             </Card>
           )}
@@ -482,80 +764,12 @@ export default function ProfilePage() {
                 onChange={handleTabChange}
                 sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}
               >
-                <Tab label={`🪙 Kredi Harcamaları (${tokenTotal})`} />
                 <Tab label={`💳 İşlem Geçmişi (${transactionTotal})`} />
+                <Tab label={`📩 Destek Taleplerim (${tickets.length})`} />
               </Tabs>
 
-              {/* Tab 0: Kredi Geçmişi */}
+              {/* Tab 0: İşlem Geçmişi */}
               {tabValue === 0 && (
-                <Box>
-                  {tokenLoading ? (
-                    <Box sx={{ textAlign: 'center', py: 4 }}>
-                      <CircularProgress />
-                    </Box>
-                  ) : (
-                    <>
-                      <TableContainer>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow sx={{ bgcolor: 'grey.50' }}>
-                              <TableCell>İşlem</TableCell>
-                              <TableCell align="right">Maliyet</TableCell>
-                              <TableCell align="right">Bakiye</TableCell>
-                              <TableCell>Tarih</TableCell>
-                              <TableCell align="center">İşlem</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {tokenHistory.length === 0 ? (
-                              <TableRow>
-                                <TableCell colSpan={5} align="center">
-                                  <Typography variant="body2" color="text.secondary">Henüz kredi harcaması yok</Typography>
-                                </TableCell>
-                              </TableRow>
-                            ) : (
-                              tokenHistory.map((item) => (
-                                <TableRow key={item.id} hover>
-                                  <TableCell>{getEndpointName(item.endpoint)}</TableCell>
-                                  <TableCell align="right" sx={{ color: 'error.main', fontWeight: 'bold' }}>
-                                    -{item.cost}
-                                  </TableCell>
-                                  <TableCell align="right">{item.balance_after}</TableCell>
-                                  <TableCell>{formatDate(item.created_at)}</TableCell>
-                                  <TableCell align="center">
-                                    <Tooltip title="Detay">
-                                      <IconButton size="small" onClick={() => showDetail(item)}>
-                                        <Visibility fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </TableCell>
-                                </TableRow>
-                              ))
-                            )}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                      <TablePagination
-                        rowsPerPageOptions={[5, 10, 25]}
-                        component="div"
-                        count={tokenTotal}
-                        rowsPerPage={tokenRowsPerPage}
-                        page={tokenPage}
-                        onPageChange={handleTokenPageChange}
-                        onRowsPerPageChange={(e) => {
-                          setTokenRowsPerPage(parseInt(e.target.value, 10));
-                          setTokenPage(0);
-                          fetchTokenHistory(0);
-                        }}
-                        labelRowsPerPage="Sayfa başına satır:"
-                      />
-                    </>
-                  )}
-                </Box>
-              )}
-
-              {/* Tab 1: İşlem Geçmişi */}
-              {tabValue === 1 && (
                 <Box>
                   {transactionLoading ? (
                     <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -570,6 +784,7 @@ export default function ProfilePage() {
                               <TableCell>Tür</TableCell>
                               <TableCell>Açıklama</TableCell>
                               <TableCell align="right">Miktar</TableCell>
+                              <TableCell align="right">Tutar (TL)</TableCell>
                               <TableCell align="right">Bakiye</TableCell>
                               <TableCell>Tarih</TableCell>
                               <TableCell align="center">İşlem</TableCell>
@@ -578,7 +793,7 @@ export default function ProfilePage() {
                           <TableBody>
                             {transactions.length === 0 ? (
                               <TableRow>
-                                <TableCell colSpan={6} align="center">
+                                <TableCell colSpan={7} align="center">
                                   <Typography variant="body2" color="text.secondary">Henüz işlem geçmişi yok</Typography>
                                 </TableCell>
                               </TableRow>
@@ -589,6 +804,9 @@ export default function ProfilePage() {
                                   <TableCell>{item.description}</TableCell>
                                   <TableCell align="right" sx={{ color: item.amount > 0 ? 'success.main' : 'error.main', fontWeight: 'bold' }}>
                                     {item.amount > 0 ? '+' : ''}{item.amount}
+                                  </TableCell>
+                                  <TableCell align="right">
+                                    {item.price ? `₺${item.price.toFixed(2)}` : '-'}
                                   </TableCell>
                                   <TableCell align="right">{item.balance_after}</TableCell>
                                   <TableCell>{formatDate(item.created_at)}</TableCell>
@@ -606,7 +824,7 @@ export default function ProfilePage() {
                         </Table>
                       </TableContainer>
                       <TablePagination
-                        rowsPerPageOptions={[5, 10, 25]}
+                        rowsPerPageOptions={[10, 25, 50]}
                         component="div"
                         count={transactionTotal}
                         rowsPerPage={transactionRowsPerPage}
@@ -620,6 +838,51 @@ export default function ProfilePage() {
                         labelRowsPerPage="Sayfa başına satır:"
                       />
                     </>
+                  )}
+                </Box>
+              )}
+
+              {/* Tab 1: Destek Talepleri */}
+              {tabValue === 1 && (
+                <Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+                    <Button
+                      variant="contained"
+                      size="small"
+                      startIcon={<SupportAgent />}
+                      onClick={() => setTicketDialogOpen(true)}
+                    >
+                      Yeni Talep
+                    </Button>
+                  </Box>
+                  
+                  {tickets.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 4 }}>
+                      <Typography variant="body2" color="text.secondary">Henüz destek talebiniz yok</Typography>
+                    </Box>
+                  ) : (
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow sx={{ bgcolor: 'grey.50' }}>
+                            <TableCell>Konu</TableCell>
+                            <TableCell>Öncelik</TableCell>
+                            <TableCell>Durum</TableCell>
+                            <TableCell>Tarih</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {tickets.map((ticket) => (
+                            <TableRow key={ticket.id} hover>
+                              <TableCell>{ticket.subject}</TableCell>
+                              <TableCell>{getPriorityChip(ticket.priority)}</TableCell>
+                              <TableCell>{getStatusChip(ticket.status)}</TableCell>
+                              <TableCell>{formatDate(ticket.created_at)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
                   )}
                 </Box>
               )}
@@ -705,42 +968,109 @@ export default function ProfilePage() {
             <Box>
               <Typography variant="body2" sx={{ fontWeight: 'bold' }}>ID: {selectedItem.id}</Typography>
               <Divider sx={{ my: 1 }} />
-              {selectedItem.endpoint && (
+              <Typography variant="body2">
+                <strong>Tür:</strong> {getTypeChip(selectedItem.type)}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Açıklama:</strong> {selectedItem.description}
+              </Typography>
+              <Typography variant="body2">
+                <strong>Miktar:</strong> {selectedItem.amount > 0 ? '+' : ''}{selectedItem.amount} Kredi
+              </Typography>
+              {selectedItem.price && (
                 <Typography variant="body2">
-                  <strong>İşlem:</strong> {getEndpointName(selectedItem.endpoint)}
-                </Typography>
-              )}
-              {selectedItem.cost !== undefined && (
-                <Typography variant="body2">
-                  <strong>Maliyet:</strong> <span style={{ color: 'red', fontWeight: 'bold' }}>-{selectedItem.cost}</span> Kredi
-                </Typography>
-              )}
-              {selectedItem.amount !== undefined && (
-                <Typography variant="body2">
-                  <strong>Miktar:</strong> {selectedItem.amount > 0 ? '+' : ''}{selectedItem.amount} Kredi
+                  <strong>Tutar:</strong> ₺{selectedItem.price.toFixed(2)}
                 </Typography>
               )}
               <Typography variant="body2">
                 <strong>Bakiye:</strong> {selectedItem.balance_after}
               </Typography>
-              {selectedItem.description && (
-                <Typography variant="body2">
-                  <strong>Açıklama:</strong> {selectedItem.description}
-                </Typography>
-              )}
               <Typography variant="body2">
                 <strong>Tarih:</strong> {formatDate(selectedItem.created_at)}
               </Typography>
-              {selectedItem.type && (
-                <Box sx={{ mt: 1 }}>
-                  <strong>Tür:</strong> {getTypeChip(selectedItem.type)}
-                </Box>
+              {selectedItem.polar_order_id && (
+                <Typography variant="body2">
+                  <strong>Sipariş ID:</strong> {selectedItem.polar_order_id}
+                </Typography>
               )}
+              
+              <Divider sx={{ my: 2 }} />
+              
+              <Button
+                variant="contained"
+                color="primary"
+                fullWidth
+                startIcon={invoiceLoading ? <CircularProgress size={20} /> : <ReceiptLong />}
+                onClick={() => handleDownloadInvoice(selectedItem.id)}
+                disabled={invoiceLoading}
+              >
+                {invoiceLoading ? 'İndiriliyor...' : '📄 Faturayı İndir (PDF)'}
+              </Button>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDetailOpen(false)}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ✅ Destek Talebi Dialog */}
+      <Dialog open={ticketDialogOpen} onClose={() => setTicketDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">📩 Destek Talebi Oluştur</Typography>
+            <IconButton onClick={() => setTicketDialogOpen(false)}>
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Konu"
+            value={ticketSubject}
+            onChange={(e) => setTicketSubject(e.target.value)}
+            sx={{ mb: 2, mt: 1 }}
+            placeholder="Örn: Kredi iadesi talebi"
+          />
+          <TextField
+            fullWidth
+            label="Mesaj"
+            multiline
+            rows={4}
+            value={ticketMessage}
+            onChange={(e) => setTicketMessage(e.target.value)}
+            sx={{ mb: 2 }}
+            placeholder="Lütfen talebinizi detaylı olarak açıklayın..."
+          />
+          <TextField
+            fullWidth
+            select
+            label="Öncelik"
+            value={ticketPriority}
+            onChange={(e) => setTicketPriority(e.target.value)}
+            slotProps={{
+              select: {
+                native: true,
+              },
+            }}
+          >
+            <option value="low">Düşük</option>
+            <option value="medium">Orta</option>
+            <option value="high">Yüksek</option>
+          </TextField>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTicketDialogOpen(false)}>İptal</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={handleCreateTicket}
+            disabled={ticketLoading || !ticketSubject || !ticketMessage}
+            startIcon={ticketLoading ? <CircularProgress size={20} /> : <Send />}
+          >
+            {ticketLoading ? 'Gönderiliyor...' : 'Gönder'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

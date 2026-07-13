@@ -77,8 +77,10 @@ async def create_checkout(
     customer_email: str,
     customer_name: Optional[str] = None,
     customer_id: Optional[str] = None,
-    embed_origin: Optional[str] = None
-    # ✅ success_url ve cancel_url parametrelerini TAMAMEN KALDIR
+    embed_origin: Optional[str] = None,
+    billing_address: Optional[Dict[str, str]] = None,  # 🆕 Fatura adresi
+    custom_field_data: Optional[Dict[str, str]] = None,  # 🆕 Custom field'lar
+    require_billing_address: bool = False  # 🆕 Adres zorunlu mu?
 ) -> Dict[str, Any]:
     """
     Polar'da checkout link'i oluşturur.
@@ -95,7 +97,19 @@ async def create_checkout(
             "customer_id": customer_id,
         }
         
-        # ✅ success_url ve cancel_url YOK
+        # ✅ Fatura adresi ekle
+        if billing_address:
+            payload["customer_billing_address"] = billing_address
+            logger.info(f"📍 Billing address: {billing_address}")
+        
+        # ✅ Custom field'ları ekle (vergi no, vergi dairesi, kimlik no)
+        if custom_field_data:
+            payload["custom_field_data"] = custom_field_data
+            logger.info(f"📋 Custom fields: {custom_field_data}")
+        
+        # ✅ Adres zorunlu mu?
+        if require_billing_address:
+            payload["require_billing_address"] = True
         
         if embed_origin:
             payload["embed_origin"] = embed_origin
@@ -118,19 +132,13 @@ async def create_checkout(
             raise Exception(error_msg)
         
         result = response.json()
-        
-        logger.info("=" * 60)
-        logger.info("📦 CHECKOUT RESPONSE:")
-        logger.info(json.dumps(result, indent=2))
-        logger.info("=" * 60)
-        
         logger.info(f"✅ Checkout created: {result.get('url')}")
         return {
             "id": result.get("id"),
             "url": result.get("url"),
             "product_id": product_id,
         }
-
+    
 # app/services/polar.py
 
 async def create_refund(
@@ -209,8 +217,23 @@ async def get_order(order_id: str) -> Dict[str, Any]:
         logger.info(f"💰 Total amount: {result.get('total_amount')}")
         logger.info(f"💰 Refundable amount: {result.get('refundable_amount')}")
         logger.info(f"💰 Net amount: {result.get('net_amount')}")
-        return result  
-
+        
+        # ✅ Fatura URL'lerini logla
+        receipt_url = result.get('receipt_url')
+        invoice_url = result.get('invoice_url')
+        logger.info(f"📄 Receipt URL: {receipt_url}")
+        logger.info(f"📄 Invoice URL: {invoice_url}")
+        
+        # ✅ Eğer URL yoksa, dashboard link'ini oluştur
+        if not receipt_url and not invoice_url:
+            organization_id = result.get('organization_id')
+            if organization_id:
+                # Dashboard link'ini oluştur
+                dashboard_url = f"https://sandbox.polar.sh/dashboard/{organization_id}/sales/{order_id}"
+                result['dashboard_url'] = dashboard_url
+                logger.info(f"📄 Dashboard URL: {dashboard_url}")
+        
+        return result
 
 def verify_webhook_signature(payload: bytes, webhook_id: str, webhook_timestamp: str, webhook_signature: str) -> bool:
     """
