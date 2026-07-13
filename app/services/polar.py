@@ -76,34 +76,27 @@ async def create_checkout(
     product_id: str,
     customer_email: str,
     customer_name: Optional[str] = None,
-    success_url: Optional[str] = None,
-    cancel_url: Optional[str] = None,
     customer_id: Optional[str] = None,
     embed_origin: Optional[str] = None
+    # ✅ success_url ve cancel_url parametrelerini TAMAMEN KALDIR
 ) -> Dict[str, Any]:
     """
     Polar'da checkout link'i oluşturur.
     """
-    # ✅ follow_redirects=True eklendi
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        # 1. Customer ID yoksa oluştur
         if not customer_id:
             customer = await create_or_get_customer(customer_email, customer_name)
             customer_id = customer.get("id")
         
-        # 2. Checkout oluştur
         logger.info(f"📤 Creating checkout for product: {product_id}")
         
         payload = {
             "product_id": product_id,
             "customer_id": customer_id,
         }
-        if success_url:
-            payload["success_url"] = success_url
-        if cancel_url:
-            payload["cancel_url"] = cancel_url
         
-        # embed_origin ekle (Embed Checkout için)
+        # ✅ success_url ve cancel_url YOK
+        
         if embed_origin:
             payload["embed_origin"] = embed_origin
             logger.info(f"🔍 embed_origin: {embed_origin}")
@@ -126,29 +119,17 @@ async def create_checkout(
         
         result = response.json()
         
-        # Tüm yanıtı logla
         logger.info("=" * 60)
         logger.info("📦 CHECKOUT RESPONSE:")
         logger.info(json.dumps(result, indent=2))
         logger.info("=" * 60)
-        
-        # Önemli alanları logla
-        logger.info(f"🔍 checkout_id: {result.get('id')}")
-        logger.info(f"🔍 url: {result.get('url')}")
-        logger.info(f"🔍 status: {result.get('status')}")
-        logger.info(f"🔍 embed_origin: {result.get('embed_origin')}")
-        logger.info(f"🔍 success_url: {result.get('success_url')}")
         
         logger.info(f"✅ Checkout created: {result.get('url')}")
         return {
             "id": result.get("id"),
             "url": result.get("url"),
             "product_id": product_id,
-            "status": result.get("status"),
-            "embed_origin": result.get("embed_origin"),
-            "success_url": result.get("success_url"),
         }
-
 
 # app/services/polar.py
 

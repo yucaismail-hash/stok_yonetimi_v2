@@ -85,8 +85,7 @@ async def create_checkout(
             customer_email=current_user.email,
             customer_name=current_user.full_name or current_user.email,
             customer_id=current_user.polar_customer_id,
-            success_url=os.getenv("POLAR_SUCCESS_URL", "https://www.stokonomi.com/dashboard"),
-            cancel_url=os.getenv("POLAR_CANCEL_URL", "https://yourdomain.com/cancel"),
+            # ✅ success_url ve cancel_url GÖNDERME
             embed_origin=embed_origin
         )
         
@@ -371,6 +370,7 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
             detail="Missing webhook headers"
         )
     
+    # ✅ İMZA DOĞRULAMAYI AÇ
     if not polar_service.verify_webhook_signature(
         payload, webhook_id, webhook_timestamp, webhook_signature
     ):
@@ -400,7 +400,6 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
         print(f"Unhandled webhook event: {event_type}")
     
     return {"status": "accepted"}
-
 
 async def handle_order_paid(order_data: dict, db: Session):
     """
