@@ -226,13 +226,28 @@ def verify_webhook_signature(payload: bytes, webhook_id: str, webhook_timestamp:
             logger.error("❌ POLAR_WEBHOOK_SECRET not set")
             return False
         
-        # Secret'ı base64 decode et
-        try:
-            secret = base64.b64decode(POLAR_WEBHOOK_SECRET)
-            logger.info("🔍 Secret decoded from base64")
-        except Exception as e:
-            logger.warning(f"⚠️ Base64 decode failed: {e}, using raw secret")
-            secret = POLAR_WEBHOOK_SECRET.encode()
+        # ✅ Secret'ı doğru şekilde kullan
+        # Polar secret'ı genellikle whsec_ ile başlar ve base64 encoded'dir
+        secret = POLAR_WEBHOOK_SECRET.encode('utf-8')
+        
+        # Eğer secret whsec_ ile başlıyorsa, base64 decode et
+        if POLAR_WEBHOOK_SECRET.startswith("whsec_"):
+            try:
+                # whsec_ prefix'ini kaldır ve decode et
+                secret_raw = POLAR_WEBHOOK_SECRET[6:]  # whsec_ kaldır
+                # Eksik base64 padding'ini ekle
+                missing_padding = len(secret_raw) % 4
+                if missing_padding:
+                    secret_raw += '=' * (4 - missing_padding)
+                secret = base64.b64decode(secret_raw)
+                logger.info("🔍 Secret decoded from base64 (whsec_ format)")
+            except Exception as e:
+                logger.warning(f"⚠️ Base64 decode failed: {e}, using raw secret")
+                secret = POLAR_WEBHOOK_SECRET.encode('utf-8')
+        else:
+            # Doğrudan secret'ı kullan
+            secret = POLAR_WEBHOOK_SECRET.encode('utf-8')
+            logger.info("🔍 Using raw secret")
         
         # Mesajı oluştur: id + timestamp + payload
         message = f"{webhook_id}.{webhook_timestamp}.{payload.decode('utf-8')}".encode()
@@ -266,4 +281,7 @@ def verify_webhook_signature(payload: bytes, webhook_id: str, webhook_timestamp:
         
     except Exception as e:
         logger.error(f"❌ Webhook verification error: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+    

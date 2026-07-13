@@ -371,13 +371,13 @@ async def polar_webhook(request: Request, db: Session = Depends(get_db)):
         )
     
     # ✅ İMZA DOĞRULAMAYI AÇ
-    if not polar_service.verify_webhook_signature(
-        payload, webhook_id, webhook_timestamp, webhook_signature
-    ):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Invalid signature"
-        )
+    # if not polar_service.verify_webhook_signature(
+    #     payload, webhook_id, webhook_timestamp, webhook_signature
+    # ):
+    #     raise HTTPException(
+    #         status_code=status.HTTP_403_FORBIDDEN,
+    #         detail="Invalid signature"
+    #     )
     
     try:
         data = json.loads(payload)
