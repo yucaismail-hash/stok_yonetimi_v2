@@ -502,62 +502,77 @@ export default function AdminPage() {
                         <TableCell align="center">İşlem</TableCell>
                       </TableRow>
                     </TableHead>
+                    {/* 📋 Tablo Satırı */}
                     <TableBody>
-                      {paginatedTransactions.map((item) => (
-                        <TableRow key={item.id} hover>
-                          <TableCell>
-                            <Box>
-                              <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                                {item.user?.full_name || 'Bilinmiyor'}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                <Email fontSize="inherit" /> {item.user?.email || '-'}
-                              </Typography>
-                            </Box>
-                          </TableCell>
-                          <TableCell>
-                            <Chip 
-                              label={getPackageName(item.description)} 
-                              size="small" 
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell>{getStatusChip(item.transaction_type)}</TableCell>
-                          <TableCell align="right" sx={{ 
-                            fontWeight: 'bold',
-                            color: item.transaction_type === 'refund' ? 'error.main' : 'success.main'
-                          }}>
-                            {formatCredits(item.amount, item.transaction_type)}
-                          </TableCell>
-                          <TableCell align="right" sx={{ 
-                            fontWeight: 'bold',
-                            color: item.transaction_type === 'refund' ? 'error.main' : 'success.main'
-                          }}>
-                            {formatCurrency(item.price)}
-                          </TableCell>
-                          <TableCell>
-                            <Tooltip title={item.polar_order_id} arrow>
-                              <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                                {item.polar_order_id?.slice(0, 10)}...
-                              </Typography>
-                            </Tooltip>
-                          </TableCell>
-                          <TableCell>{formatDate(item.created_at)}</TableCell>
-                          <TableCell align="center">
-                            {item.transaction_type === 'purchase' && (
-                              <Button
-                                size="small"
+                      {paginatedTransactions.map((item) => {
+                        // ✅ İade kontrolünü burada yap
+                        const isRefunded = transactions.some(t => 
+                          t.polar_order_id === item.polar_order_id && 
+                          t.transaction_type === 'refund'
+                        );
+                        
+                        return (
+                          <TableRow key={item.id} hover>
+                            <TableCell>
+                              <Box>
+                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
+                                  {item.user?.full_name || 'Bilinmiyor'}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  <Email fontSize="inherit" /> {item.user?.email || '-'}
+                                </Typography>
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Chip 
+                                label={getPackageName(item.description)} 
+                                size="small" 
                                 variant="outlined"
-                                color="error"
-                                startIcon={<Cancel />}
-                                onClick={() => openRefundDialog(item)}
-                              >
-                                İade
-                              </Button>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                              />
+                            </TableCell>
+                            <TableCell>{getStatusChip(item.transaction_type)}</TableCell>
+                            <TableCell align="right" sx={{ 
+                              fontWeight: 'bold',
+                              color: item.transaction_type === 'refund' ? 'error.main' : 'success.main'
+                            }}>
+                              {formatCredits(item.amount, item.transaction_type)}
+                            </TableCell>
+                            <TableCell align="right" sx={{ 
+                              fontWeight: 'bold',
+                              color: item.transaction_type === 'refund' ? 'error.main' : 'success.main'
+                            }}>
+                              {formatCurrency(item.price)}
+                            </TableCell>
+                            <TableCell>
+                              <Tooltip title={item.polar_order_id} arrow>
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                                  {item.polar_order_id?.slice(0, 10)}...
+                                </Typography>
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell>{formatDate(item.created_at)}</TableCell>
+                            
+                            {/* ✅ İade Butonu - Düzeltilmiş */}
+                            <TableCell align="center">
+                              {item.transaction_type === 'purchase' && (
+                                !isRefunded ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    startIcon={<Cancel />}
+                                    onClick={() => openRefundDialog(item)}
+                                  >
+                                    İade
+                                  </Button>
+                                ) : (
+                                  <Chip label="İade Edildi" size="small" color="success" />
+                                )
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </TableContainer>

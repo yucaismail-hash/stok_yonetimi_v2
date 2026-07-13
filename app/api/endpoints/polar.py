@@ -229,7 +229,6 @@ async def create_refund(
     Polar üzerinden para iadesi (refund) oluşturur.
     Sadece admin kullanıcılar erişebilir.
     """
-    # Admin kontrolü
     admin_emails = ["admin@stok.com", "admin@admin.com"]
     if current_user.email not in admin_emails:
         raise HTTPException(
@@ -237,14 +236,10 @@ async def create_refund(
             detail="Admin yetkisi gerekli"
         )
     
-    # Request body'yi al
     data = await request.json()
     order_id = data.get("order_id")
-    refund_credits = data.get("refund_credits")
     reason = data.get("reason", "customer_request")
-    refund_type = data.get("refund_type", "money")  # Varsayılan 'money'
     
-    # Validasyon
     if not order_id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -271,33 +266,40 @@ async def create_refund(
             detail="Kullanıcı bulunamadı"
         )
     
-    # 3. İade miktarını belirle
-    credits_to_refund = refund_credits if refund_credits else transaction.amount
+    # ✅ 3. Zaten iade edilmiş mi kontrol et
+    existing_refund = db.query(CreditTransaction).filter(
+        CreditTransaction.polar_order_id == order_id,
+        CreditTransaction.transaction_type == "refund"
+    ).first()
     
-    # 4. PARA İADESİ (Polar Refund)
-    polar_refund_result = None
+    if existing_refund:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Bu sipariş zaten iade edilmiş"
+        )
+    
+    # 4. Order detaylarını al
     try:
-        # Order detaylarını al
         order = await polar_service.get_order(order_id)
         
-        # ✅ Doğru iade miktarını al (refundable_amount veya net_amount)
-        total_amount = order.get("refundable_amount")
-        if not total_amount:
-            total_amount = order.get("net_amount", 0)
+        # ✅ refundable_amount kontrol et (0 ise zaten iade edilmiştir)
+        refundable_amount = order.get("refundable_amount", 0)
+        if refundable_amount <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bu sipariş için iade edilebilir miktar kalmamış"
+            )
         
-        # ✅ Eğer amount 0 veya None ise hata ver
-        if not total_amount or total_amount <= 0:
-            raise Exception("İade edilebilir miktar bulunamadı")
-        
-        print(f"💰 İade edilebilir miktar: {total_amount} kuruş")
+        print(f"💰 İade edilebilir miktar: {refundable_amount} kuruş")
         
         # Polar refund oluştur
         polar_refund_result = await polar_service.create_refund(
             order_id=order_id,
-            amount=total_amount,
+            amount=refundable_amount,
             reason=reason
         )
         print(f"✅ Polar refund created: {polar_refund_result}")
+        
     except Exception as e:
         print(f"❌ Polar refund hatası: {e}")
         raise HTTPException(
@@ -305,43 +307,13 @@ async def create_refund(
             detail=f"Para iadesi başarısız: {str(e)}"
         )
     
-    # 5. KREDİ İADESİ
-    user.token_balance -= credits_to_refund
-    
-    # 6. İade kaydı oluştur
-    price_to_refund = transaction.price if transaction.price else 0
-    refund_transaction = CreditTransaction(
-        user_id=user.id,
-        amount=-credits_to_refund,
-        price=-price_to_refund if refund_type == "money" else 0,
-        transaction_type="refund",
-        polar_order_id=order_id,
-        polar_product_id=transaction.polar_product_id,
-        description=f"İade - {reason} (Kredi: {credits_to_refund})" + (f" - Para iadesi: {polar_refund_result.get('id') if polar_refund_result else 'Yok'}" if refund_type == "money" else "")
-    )
-    db.add(refund_transaction)
-    
-    # 7. TokenPurchase durumunu güncelle
-    purchase = db.query(TokenPurchase).filter(
-        TokenPurchase.payment_id == order_id
-    ).first()
-    if purchase:
-        purchase.status = "refunded"
-    
-    db.commit()
-    
     return {
         "success": True,
-        "refund_id": refund_transaction.id,
+        "refund_id": polar_refund_result.get("id"),
         "user_id": user.id,
         "user_email": user.email,
-        "refund_amount": credits_to_refund,
-        "refund_price": price_to_refund if refund_type == "money" else 0,
-        "refund_amount_kurus": total_amount,
-        "new_balance": user.token_balance,
-        "reason": reason,
-        "refund_type": refund_type,
-        "polar_refund": polar_refund_result
+        "refund_amount_kurus": refundable_amount,
+        "message": "Para iadesi başarıyla oluşturuldu. Kredi iadesi webhook ile gerçekleşecek."
     }
 
 # ============================================
@@ -556,12 +528,26 @@ async def handle_order_paid(order_data: dict, db: Session):
 async def handle_order_refunded(order_data: dict, db: Session):
     """
     İade durumunda kredileri geri al.
+    (Polar'dan gelen webhook ile çalışır)
     """
     product_id = order_data.get("product_id")
     customer_id = order_data.get("customer_id")
     order_id = order_data.get("id")
+    amount = order_data.get("amount")
+    refunded_amount = order_data.get("refunded_amount", 0)
+    
+    print(f"🔍 Webhook order_refunded:")
+    print(f"  product_id: {product_id}")
+    print(f"  customer_id: {customer_id}")
+    print(f"  order_id: {order_id}")
+    print(f"  refunded_amount: {refunded_amount}")
+    
+    if not product_id or not customer_id:
+        print("Missing product_id or customer_id")
+        return
     
     try:
+        # 1. Kullanıcıyı bul
         user = db.query(User).filter(
             User.polar_customer_id == customer_id
         ).first()
@@ -570,6 +556,7 @@ async def handle_order_refunded(order_data: dict, db: Session):
             print(f"User not found for customer: {customer_id}")
             return
         
+        # 2. Orijinal satın alma işlemini bul
         transaction = db.query(CreditTransaction).filter(
             CreditTransaction.polar_order_id == order_id,
             CreditTransaction.transaction_type == "purchase"
@@ -579,8 +566,20 @@ async def handle_order_refunded(order_data: dict, db: Session):
             print(f"No purchase transaction found for order: {order_id}")
             return
         
+        # 3. Zaten iade edilmiş mi kontrol et
+        existing_refund = db.query(CreditTransaction).filter(
+            CreditTransaction.polar_order_id == order_id,
+            CreditTransaction.transaction_type == "refund"
+        ).first()
+        
+        if existing_refund:
+            print(f"⚠️ Order {order_id} already refunded")
+            return
+        
+        # 4. Kredileri geri al (tek sefer)
         user.token_balance -= transaction.amount
         
+        # 5. İade kaydı oluştur (tek sefer)
         refund_tx = CreditTransaction(
             user_id=user.id,
             amount=-transaction.amount,
@@ -592,6 +591,7 @@ async def handle_order_refunded(order_data: dict, db: Session):
         )
         db.add(refund_tx)
         
+        # 6. TokenPurchase durumunu güncelle
         purchase = db.query(TokenPurchase).filter(
             TokenPurchase.payment_id == order_id
         ).first()
@@ -600,8 +600,10 @@ async def handle_order_refunded(order_data: dict, db: Session):
         
         db.commit()
         print(f"✅ Refund processed for order {order_id}")
+        print(f"💰 New balance: {user.token_balance}")
         
     except Exception as e:
         db.rollback()
         print(f"❌ Error processing refund: {e}")
         raise
+
