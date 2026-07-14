@@ -1,4 +1,4 @@
-// frontend/src/hooks/useAuth.ts
+// frontend/src/hooks/useAuth.ts - Tam düzeltilmiş dosya
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -12,6 +12,7 @@ interface User {
   company_name: string;
   token_balance: number;
   sector_id: number | null;
+  sector_name?: string | null; // ✅ EKLENDİ
   created_at: string;
   polar_customer_id?: string;
   billing_address?: string;
@@ -195,5 +196,4 @@ api.interceptors.response.use(
   }
 );
 
-// ✅ Sadece store'u export et - AuthProvider kaldırıldı
 export default useAuth;
