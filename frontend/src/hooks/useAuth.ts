@@ -1,10 +1,31 @@
+// frontend/src/hooks/useAuth.ts
+
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { login as apiLogin, register as apiRegister, getUser } from '../services/auth';
 import api from '../services/api';
 
+interface User {
+  id: number;
+  email: string;
+  full_name: string;
+  company_name: string;
+  token_balance: number;
+  sector_id: number | null;
+  created_at: string;
+  polar_customer_id?: string;
+  billing_address?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_country?: string;
+  billing_postal_code?: string;
+  tax_id?: string;
+  tax_office?: string;
+  identity_number?: string;
+}
+
 interface AuthState {
-  user: any | null;
+  user: User | null;
   token: string | null;
   isLoading: boolean;
   error: string | null;
@@ -13,8 +34,9 @@ interface AuthState {
   logout: () => void;
   fetchUser: () => Promise<void>;
   clearError: () => void;
-  updateUser: (userData: any) => void;
+  updateUser: (userData: Partial<User>) => void;
   refreshToken: () => Promise<boolean>;
+  refreshUser: () => Promise<void>;
 }
 
 export const useAuth = create<AuthState>()(
@@ -24,11 +46,11 @@ export const useAuth = create<AuthState>()(
       token: null,
       isLoading: false,
       error: null,
+
       login: async (email, password) => {
         set({ isLoading: true, error: null });
         try {
           const data = await apiLogin(email, password);
-          // Kullanıcı bilgilerini /auth/me'den al
           const userData = await getUser(data.access_token);
           console.log('👤 Login sonrası user:', userData);
           set({
@@ -37,15 +59,25 @@ export const useAuth = create<AuthState>()(
             isLoading: false,
           });
           return true;
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Login error:', err);
+          let errorMessage = 'Giriş başarısız';
+          if (err && typeof err === 'object' && 'response' in err) {
+            const axiosError = err as { response?: { data?: { detail?: string } } };
+            if (axiosError.response?.data?.detail) {
+              errorMessage = axiosError.response.data.detail;
+            }
+          } else if (err instanceof Error) {
+            errorMessage = err.message;
+          }
           set({
-            error: err.response?.data?.detail || 'Giriş başarısız',
+            error: errorMessage,
             isLoading: false,
           });
           return false;
         }
       },
+
       register: async (email, password, fullName = '', companyName = '', sectorId = null) => {
         set({ isLoading: true, error: null });
         try {
@@ -53,19 +85,30 @@ export const useAuth = create<AuthState>()(
           const success = await get().login(email, password);
           set({ isLoading: false });
           return success;
-        } catch (err: any) {
+        } catch (err: unknown) {
           console.error('Register error:', err);
+          let errorMessage = 'Kayıt başarısız';
+          if (err && typeof err === 'object' && 'response' in err) {
+            const axiosError = err as { response?: { data?: { detail?: string } } };
+            if (axiosError.response?.data?.detail) {
+              errorMessage = axiosError.response.data.detail;
+            }
+          } else if (err instanceof Error) {
+            errorMessage = err.message;
+          }
           set({
-            error: err.response?.data?.detail || 'Kayıt başarısız',
+            error: errorMessage,
             isLoading: false,
           });
           return false;
         }
       },
+
       logout: () => {
         set({ user: null, token: null, error: null });
         localStorage.removeItem('auth-storage');
       },
+
       fetchUser: async () => {
         const { token } = get();
         if (token) {
@@ -77,10 +120,37 @@ export const useAuth = create<AuthState>()(
           }
         }
       },
-      clearError: () => set({ error: null }),
-      updateUser: (userData: any) => {
-        set({ user: userData });
+
+      refreshUser: async () => {
+        const { token } = get();
+        if (!token) {
+          set({ user: null });
+          return;
+        }
+        try {
+          const userData = await getUser(token);
+          set({ user: userData });
+          console.log('🔄 Kullanıcı bilgileri yenilendi:', userData);
+        } catch (err: unknown) {
+          console.error('❌ Kullanıcı bilgisi yenilenemedi:', err);
+          if (err && typeof err === 'object' && 'response' in err) {
+            const axiosError = err as { response?: { status?: number } };
+            if (axiosError.response?.status === 401) {
+              get().logout();
+            }
+          }
+        }
       },
+
+      clearError: () => set({ error: null }),
+
+      updateUser: (userData: Partial<User>) => {
+        const currentUser = get().user;
+        if (currentUser) {
+          set({ user: { ...currentUser, ...userData } });
+        }
+      },
+
       refreshToken: async () => {
         const { token } = get();
         if (!token) return false;
@@ -88,7 +158,8 @@ export const useAuth = create<AuthState>()(
           const userData = await getUser(token);
           set({ user: userData });
           return true;
-        } catch (error) {
+        } catch (err: unknown) {
+          console.error('Token yenileme hatası:', err);
           return false;
         }
       },
@@ -123,3 +194,6 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+// ✅ Sadece store'u export et - AuthProvider kaldırıldı
+export default useAuth;

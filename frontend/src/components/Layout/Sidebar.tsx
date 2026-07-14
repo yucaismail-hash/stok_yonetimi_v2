@@ -1,39 +1,94 @@
-import { Drawer, List, ListItem, ListItemIcon, ListItemText, Toolbar, Divider, ListItemButton } from '@mui/material';
+import { Drawer, List, ListItem, ListItemIcon, ListItemText, Toolbar, Divider, ListItemButton, Box, Typography } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
-import DashboardIcon from '@mui/icons-material/Dashboard';
-import AnalyticsIcon from '@mui/icons-material/Analytics';
-import SecurityIcon from '@mui/icons-material/Security';
-import ShowChartIcon from '@mui/icons-material/ShowChart';
-import TuneIcon from '@mui/icons-material/Tune';
-import BackpackIcon from '@mui/icons-material/Backpack';
-import LocalShippingIcon from '@mui/icons-material/LocalShipping';
-import WarningIcon from '@mui/icons-material/Warning';
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
-import HistoryIcon from '@mui/icons-material/History';
 import { useAuth } from '../../hooks/useAuth';
+import stokonomiLogo from '/src/assets/stokonomi_logo_yeni.png';
+import {
+  LayoutDashboard,
+  Shield,
+  TrendingUp,
+  Dice5,
+  School,
+  Truck,
+  ClipboardList,
+  User,
+  Sparkles,
+} from 'lucide-react';
 
 interface SidebarProps {
   drawerWidth: number;
 }
 
-const menuItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: <DashboardIcon /> },
-  { path: '/safety-stock', label: 'Emniyet Stoku', icon: <SecurityIcon /> },
-  { path: '/forecast', label: 'Talep Tahmini', icon: <ShowChartIcon /> },
-  { path: '/simulation', label: 'Simülasyon', icon: <TuneIcon /> },
-  { path: '/backtest', label: 'Backtest', icon: <BackpackIcon /> },
-  { path: '/supplier', label: 'Tedarikçi', icon: <LocalShippingIcon /> },
-  { path: '/tasks', label: 'ASYNC Görevler', icon: <HistoryIcon /> },
+// ✅ Menü grupları - Lucide icon'lar ile
+const menuGroups = [
+  {
+    title: 'GENEL',
+    items: [
+      { 
+        path: '/dashboard', 
+        label: 'Ana Panel', 
+        icon: <LayoutDashboard size={18} strokeWidth={1.8} /> 
+      },
+    ]
+  },
+  {
+    title: 'ANALİZLER',
+    items: [
+      { 
+        path: '/safety-stock', 
+        label: 'Emniyet Stoku', 
+        icon: <Shield size={18} strokeWidth={1.8} /> 
+      },
+      { 
+        path: '/forecast', 
+        label: 'Talep Tahmini', 
+        icon: <TrendingUp size={18} strokeWidth={1.8} /> 
+      },
+      { 
+        path: '/simulation', 
+        label: 'Senaryo Simülasyonu', 
+        icon: <Dice5 size={18} strokeWidth={1.8} /> 
+      },
+      { 
+        path: '/backtest', 
+        label: 'Geçmiş Performans Testi', 
+        icon: <School size={18} strokeWidth={1.8} /> 
+      },
+    ]
+  },
+  {
+    title: 'OPERASYON',
+    items: [
+      { 
+        path: '/supplier', 
+        label: 'Tedarikçi Analizi', 
+        icon: <Truck size={18} strokeWidth={1.8} /> 
+      },
+    ]
+  },
+  {
+    title: 'SİSTEM',
+    items: [
+      { 
+        path: '/tasks', 
+        label: 'Görev Merkezi', 
+        icon: <ClipboardList size={18} strokeWidth={1.8} /> 
+      },
+    ]
+  }
 ];
 
-const adminItem = { path: '/admin', label: 'Admin Panel', icon: <AdminPanelSettingsIcon /> };
+// ✅ Admin için ekstra menü
+const adminItem = { 
+  path: '/admin', 
+  label: 'Admin Panel', 
+  icon: <Sparkles size={18} strokeWidth={1.8} /> 
+};
 
 export default function Sidebar({ drawerWidth }: SidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
 
-  const isAdmin = user?.email === 'admin@stok.com';
-  const allMenuItems = isAdmin ? [...menuItems, adminItem] : menuItems;
+  const isAdmin = user?.email === 'admin@stok.com' || user?.email === 'admin@admin.com';
 
   return (
     <Drawer
@@ -41,31 +96,219 @@ export default function Sidebar({ drawerWidth }: SidebarProps) {
       sx={{
         width: drawerWidth,
         flexShrink: 0,
-        [`& .MuiDrawer-paper`]: { width: drawerWidth, boxSizing: 'border-box' },
+        [`& .MuiDrawer-paper`]: {
+          width: drawerWidth,
+          boxSizing: 'border-box',
+          backgroundColor: '#ffffff',
+          borderRight: '1px solid #f0f0f0',
+          boxShadow: '2px 0 12px rgba(0,0,0,0.04)',
+          display: 'flex',
+          flexDirection: 'column',
+        },
       }}
     >
-      <Toolbar />
-      <Divider />
-      <List>
-        {allMenuItems.map((item) => (
-          <ListItem key={item.path} disablePadding>
-            <ListItemButton
-              component={Link}
-              to={item.path}
-              selected={location.pathname === item.path}
-              sx={{
-                '&.Mui-selected': {
-                  backgroundColor: '#e3f2fd',
-                  borderRight: '4px solid #1f4e79',
-                },
-              }}
-            >
-              <ListItemIcon>{item.icon}</ListItemIcon>
-              <ListItemText primary={item.label} />
-            </ListItemButton>
-          </ListItem>
-        ))}
-      </List>
+      {/* ✅ Logo Alanı */}
+      <Toolbar sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        py: 2,
+        minHeight: 64,
+      }}>
+        <Box
+          sx={{
+            width: 180,
+            height: 55,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Box
+            component="img"
+            src={stokonomiLogo}
+            alt="Stokonomi - Karar Destek Platformu"
+            sx={{
+              width: 300,
+              height: 200,
+              objectFit: 'contain',
+            }}
+          />
+        </Box>
+      </Toolbar>
+      
+      <Divider sx={{ borderColor: '#f0f0f0', mb: 0.5 }} />
+
+      {/* ✅ Menü Grupları */}
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 1 }}>
+        <List sx={{ py: 0.5 }}>
+          {menuGroups.map((group, groupIndex) => (
+            <Box key={groupIndex}>
+              {/* Grup Başlığı */}
+              <Typography
+                variant="caption"
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  display: 'block',
+                  color: '#9e9e9e',
+                  fontWeight: 600,
+                  letterSpacing: '0.8px',
+                  fontSize: '0.6rem',
+                  textTransform: 'uppercase',
+                }}
+              >
+                {group.title}
+              </Typography>
+
+              {/* Grup Öğeleri */}
+              {group.items.map((item) => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <ListItem key={item.path} disablePadding sx={{ mb: 0.25 }}>
+                    <ListItemButton
+                      component={Link}
+                      to={item.path}
+                      sx={{
+                        borderRadius: 1.5,
+                        py: 0.5,
+                        px: 1.5,
+                        position: 'relative',
+                        backgroundColor: isActive ? '#f0f7ff' : 'transparent',
+                        minHeight: 32,
+                        '&:hover': {
+                          backgroundColor: '#f5f5f5',
+                        },
+                        '& .MuiListItemIcon-root': {
+                          minWidth: 32,
+                          color: isActive ? '#1f4e79' : '#6b7280',
+                        },
+                        '& .MuiListItemText-primary': {
+                          fontSize: '0.8rem',
+                          fontWeight: isActive ? 600 : 400,
+                          color: isActive ? '#1f4e79' : '#374151',
+                        },
+                      }}
+                    >
+                      {/* ✅ İnce Mavi Çizgi */}
+                      {isActive && (
+                        <Box
+                          sx={{
+                            position: 'absolute',
+                            left: 0,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            width: 2.5,
+                            height: 20,
+                            backgroundColor: '#1f4e79',
+                            borderRadius: '0 3px 3px 0',
+                          }}
+                        />
+                      )}
+                      
+                      <ListItemIcon>{item.icon}</ListItemIcon>
+                      <ListItemText primary={item.label} />
+                    </ListItemButton>
+                  </ListItem>
+                );
+              })}
+
+              {/* ✅ Gruplar arası ayraç */}
+              {groupIndex < menuGroups.length - 1 && (
+                <Divider sx={{ borderColor: '#f0f0f0', my: 0.5 }} />
+              )}
+            </Box>
+          ))}
+
+          {/* ✅ Admin Paneli (varsa) */}
+          {isAdmin && (
+            <>
+              <Divider sx={{ borderColor: '#f0f0f0', my: 0.5 }} />
+              <Typography
+                variant="caption"
+                sx={{
+                  px: 1.5,
+                  py: 1,
+                  display: 'block',
+                  color: '#9e9e9e',
+                  fontWeight: 600,
+                  letterSpacing: '0.8px',
+                  fontSize: '0.6rem',
+                  textTransform: 'uppercase',
+                }}
+              >
+                YÖNETİM
+              </Typography>
+              <ListItem key={adminItem.path} disablePadding sx={{ mb: 0.25 }}>
+                <ListItemButton
+                  component={Link}
+                  to={adminItem.path}
+                  sx={{
+                    borderRadius: 1.5,
+                    py: 0.5,
+                    px: 1.5,
+                    position: 'relative',
+                    backgroundColor: location.pathname === adminItem.path ? '#f0f7ff' : 'transparent',
+                    minHeight: 32,
+                    '&:hover': {
+                      backgroundColor: '#f5f5f5',
+                    },
+                    '& .MuiListItemIcon-root': {
+                      minWidth: 32,
+                      color: location.pathname === adminItem.path ? '#1f4e79' : '#6b7280',
+                    },
+                    '& .MuiListItemText-primary': {
+                      fontSize: '0.8rem',
+                      fontWeight: location.pathname === adminItem.path ? 600 : 400,
+                      color: location.pathname === adminItem.path ? '#1f4e79' : '#374151',
+                    },
+                  }}
+                >
+                  {location.pathname === adminItem.path && (
+                    <Box
+                      sx={{
+                        position: 'absolute',
+                        left: 0,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: 2.5,
+                        height: 20,
+                        backgroundColor: '#1f4e79',
+                        borderRadius: '0 3px 3px 0',
+                      }}
+                    />
+                  )}
+                  <ListItemIcon>{adminItem.icon}</ListItemIcon>
+                  <ListItemText primary={adminItem.label} />
+                </ListItemButton>
+              </ListItem>
+            </>
+          )}
+        </List>
+      </Box>
+
+      {/* ✅ Footer - Versiyon bilgisi */}
+      <Box
+        sx={{
+          borderTop: '1px solid #f0f0f0',
+          py: 1.5,
+          textAlign: 'center',
+          backgroundColor: '#fafafa',
+          flexShrink: 0,
+        }}
+      >
+        <Typography
+          variant="caption"
+          sx={{
+            color: '#b0b0b0',
+            fontSize: '0.6rem',
+            letterSpacing: '0.5px',
+            fontWeight: 400,
+          }}
+        >
+          v2.0 • Premium
+        </Typography>
+      </Box>
     </Drawer>
   );
 }

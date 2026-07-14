@@ -12,7 +12,14 @@ logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./stok_db.db")
 
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL,
+                       pool_size=20,        # Varsayılan 5 -> 20
+    max_overflow=30,     # Varsayılan 10 -> 30
+    pool_timeout=60,     # Varsayılan 30 -> 60 saniye
+    pool_pre_ping=True,  # Bağlantıyı kontrol et
+    pool_recycle=3600    # 1 saatte bir bağlantıyı yenile
+    )
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

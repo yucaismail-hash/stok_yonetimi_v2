@@ -11,7 +11,6 @@ from app.models import (
     TokenHistory, 
     CreditPackage, 
     CreditTransaction,
-    TokenPurchase,
     Notification
 )
 from app.auth import get_current_user
@@ -588,23 +587,24 @@ async def get_admin_stats(
     active_packages = db.query(CreditPackage).filter(CreditPackage.is_active == True).count()
     
     total_credit_transactions = db.query(CreditTransaction).filter(
-        CreditTransaction.transaction_type == "purchase"
+        CreditTransaction.transaction_type == "purchase"  # ✅ Düzeltildi
     ).count()
     
     total_credits_sold = db.query(
         func.sum(CreditTransaction.amount)
     ).filter(
-        CreditTransaction.transaction_type == "purchase"
+        CreditTransaction.transaction_type == "purchase"  # ✅ Düzeltildi
     ).scalar() or 0
     
     total_refunds = db.query(CreditTransaction).filter(
-        CreditTransaction.transaction_type == "refund"
+        CreditTransaction.transaction_type == "refund"  # ✅ Düzeltildi
     ).count()
     
+    # ✅ Düzeltildi: status yerine transaction_type kullan
     total_revenue = db.query(
-        func.sum(TokenPurchase.price)
+        func.sum(CreditTransaction.price)
     ).filter(
-        TokenPurchase.status == "completed"
+        CreditTransaction.transaction_type == "purchase"  # ✅ DÜZELTME
     ).scalar() or 0
     
     return {
@@ -630,7 +630,6 @@ async def get_admin_stats(
             "total_revenue": total_revenue
         }
     }
-
 
 @router.get("/token-history")
 async def get_token_history(

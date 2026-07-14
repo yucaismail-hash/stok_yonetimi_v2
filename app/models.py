@@ -126,18 +126,6 @@ class TokenHistory(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class TokenPurchase(Base):
-    __tablename__ = "token_purchases"
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
-    amount = Column(Integer, nullable=False)
-    price = Column(Float, nullable=False)
-    currency = Column(String, default="USD")
-    payment_id = Column(String, nullable=True)
-    status = Column(String, default="completed")
-    created_at = Column(DateTime, default=datetime.utcnow)
-
-
 class TokenCost(Base):
     __tablename__ = "token_costs"
     id = Column(Integer, primary_key=True)

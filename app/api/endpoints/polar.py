@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 
 from app.database import get_db
-from app.models import User, CreditPackage, CreditTransaction, TokenPurchase, UserTokenTransaction, Notification
+from app.models import User, CreditPackage, CreditTransaction, UserTokenTransaction, Notification
 from app.schemas import CheckoutRequest, CheckoutResponse
 from app.services import polar as polar_service
 from app.auth import get_current_user
@@ -177,26 +177,8 @@ async def get_transaction(
             "package_name": transaction.description,
             "status": "completed",
             "created_at": transaction.created_at
-        }
+        }    
     
-    # TokenPurchase tablosunda ara
-    purchase = db.query(TokenPurchase).filter(
-        TokenPurchase.payment_id == checkout_id,
-        TokenPurchase.user_id == current_user.id
-    ).first()
-    
-    if purchase:
-        print(f"✅ [DEBUG] Found in TokenPurchase: {purchase}")
-        return {
-            "checkout_id": checkout_id,
-            "credits": purchase.amount,
-            "price": purchase.price,
-            "package_name": "Kredi Satın Alma",
-            "status": purchase.status,
-            "created_at": purchase.created_at
-        }
-    
-    print("❌ [DEBUG] Transaction not found")
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Transaction not found"
@@ -408,6 +390,7 @@ async def handle_order_paid(order_data: dict, db: Session):
     print(f"  product_id: {product_id}")
     print(f"  customer_id: {customer_id}")
     print(f"  order_id: {order_id}")
+    print(f"  amount (kurus): {amount}")
     print(f"  status: {status}")
     
     if not product_id or not customer_id:
@@ -430,6 +413,7 @@ async def handle_order_paid(order_data: dict, db: Session):
             return
         
         print(f"✅ Package found: {package.name} ({package.credits} credits)")
+        print(f"💰 Package price: {package.price_tl} TL")
         
         # 2. Kullanıcıyı bul
         user = db.query(User).filter(
@@ -437,7 +421,6 @@ async def handle_order_paid(order_data: dict, db: Session):
         ).first()
         
         if not user:
-            print(f"User not found with customer_id: {customer_id}")
             customer_email = order_data.get("customer", {}).get("email")
             if customer_email:
                 print(f"🔍 Trying email: {customer_email}")
@@ -463,28 +446,35 @@ async def handle_order_paid(order_data: dict, db: Session):
             print(f"⚠️ Order {order_id} already processed")
             return
         
-        # 4. Kuruştan TL'ye çevir ve KDV hesapla
+        # 4. ✅ KDV HESAPLAMA - DÜZELTİLDİ
+        # Polar'dan gelen amount KDV DAHİL toplam fiyattır (kuruş cinsinden)
         total_price_tl = amount / 100 if amount else package.price_tl
         
-        # 🆕 KDV hesapla (Polar'dan gelen tax_amount kullan)
+        # Polar'dan tax_amount geliyorsa kullan, yoksa hesapla
         tax_amount = order_data.get("tax_amount", 0)  # Kuruş cinsinden
-        tax_tl = tax_amount / 100 if tax_amount else 0
+        if tax_amount:
+            tax_tl = tax_amount / 100
+        else:
+            # KDV oranı %20 (Varsayılan)
+            tax_tl = total_price_tl * 0.20 / 1.20
         
         # KDV'siz fiyat
         net_price_tl = total_price_tl - tax_tl
         
-        print(f"💰 Total: {total_price_tl} TL, Tax: {tax_tl} TL, Net: {net_price_tl} TL")
+        print(f"💰 Total (KDV dahil): {total_price_tl} TL")
+        print(f"💰 Tax (KDV): {tax_tl} TL")
+        print(f"💰 Net (KDV'siz): {net_price_tl} TL")
         
         # 5. Kredi ekle
         user.token_balance += package.credits
         print(f"💰 New balance: {user.token_balance}")
         
-        # 6. CreditTransaction kaydı (price = KDV'siz, tax = KDV)
+        # 6. CreditTransaction kaydı
         transaction = CreditTransaction(
             user_id=user.id,
             amount=package.credits,
-            price=net_price_tl,  # KDV'siz fiyat
-            tax=tax_tl,          # 🆕 KDV tutarı
+            price=net_price_tl,        # ✅ KDV'siz fiyat
+            tax=tax_tl,                # ✅ KDV tutarı
             transaction_type="purchase",
             polar_order_id=order_id,
             polar_product_id=product_id,
@@ -493,19 +483,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(transaction)
         print(f"✅ CreditTransaction added (Net: {net_price_tl}, Tax: {tax_tl})")
         
-        # 7. TokenPurchase kaydı
-        purchase = TokenPurchase(
-            user_id=user.id,
-            amount=package.credits,
-            price=total_price_tl,  # KDV dahil toplam fiyat
-            currency=currency,
-            payment_id=order_id,
-            status="completed"
-        )
-        db.add(purchase)
-        print(f"✅ TokenPurchase added")
-        
-        # 8. UserTokenTransaction kaydı
+        # 7. UserTokenTransaction kaydı
         token_tx = UserTokenTransaction(
             user_id=user.id,
             amount=package.credits,
@@ -517,7 +495,7 @@ async def handle_order_paid(order_data: dict, db: Session):
         db.add(token_tx)
         print(f"✅ UserTokenTransaction added")
         
-        # 9. Bildirim ekle
+        # 8. Bildirim ekle
         try:
             notification = Notification(
                 user_id=user.id,
@@ -592,14 +570,22 @@ async def handle_order_refunded(order_data: dict, db: Session):
             print(f"⚠️ Order {order_id} already refunded")
             return
         
-        # 4. Kredileri geri al (tek sefer)
-        user.token_balance -= transaction.amount
+        # ✅ 4. Kullanıcı bakiyesini kontrol et
+        if user.token_balance < transaction.amount:
+            print(f"❌ Insufficient balance: {user.token_balance} < {transaction.amount}")
+            # Yine de iadeyi işleme devam et, ama logla
+            # veya hata fırlatabilirsin
+            user.token_balance = 0  # Minimum 0 yap
+        else:
+            # 5. Kredileri geri al
+            user.token_balance -= transaction.amount
         
-        # 5. İade kaydı oluştur (tek sefer)
+        # ✅ 6. İade kaydı oluştur (tüm alanlar negatif)
         refund_tx = CreditTransaction(
             user_id=user.id,
-            amount=-transaction.amount,
-            price=-transaction.price if transaction.price else 0,
+            amount=-abs(transaction.amount),  # Negatif değer
+            price=-abs(transaction.price) if transaction.price else 0,  # Negatif
+            tax=-abs(transaction.tax) if transaction.tax else 0,  # Negatif
             transaction_type="refund",
             polar_order_id=order_id,
             polar_product_id=product_id,
@@ -607,12 +593,31 @@ async def handle_order_refunded(order_data: dict, db: Session):
         )
         db.add(refund_tx)
         
-        # 6. TokenPurchase durumunu güncelle
-        purchase = db.query(TokenPurchase).filter(
-            TokenPurchase.payment_id == order_id
-        ).first()
-        if purchase:
-            purchase.status = "refunded"
+        # ✅ 7. UserTokenTransaction kaydı ekle (token hareketi)
+        token_tx = UserTokenTransaction(
+            user_id=user.id,
+            amount=-abs(transaction.amount),  # Eksi değer
+            type="refund",
+            description=f"İade - {transaction.description}",
+            endpoint="/api/polar/webhook",
+            balance_after=user.token_balance
+        )
+        db.add(token_tx)
+        print(f"✅ UserTokenTransaction added for refund")
+        
+        # ✅ 8. Bildirim ekle
+        try:
+            notification = Notification(
+                user_id=user.id,
+                title="↩️ İade İşlemi Tamamlandı",
+                message=f"{abs(transaction.amount)} kredi hesabınızdan geri alındı.",
+                type="warning",
+                link="/profile"
+            )
+            db.add(notification)
+            print(f"✅ Bildirim eklendi: User {user.id}")
+        except Exception as e:
+            print(f"❌ Bildirim hatası: {e}")
         
         db.commit()
         print(f"✅ Refund processed for order {order_id}")
@@ -621,5 +626,7 @@ async def handle_order_refunded(order_data: dict, db: Session):
     except Exception as e:
         db.rollback()
         print(f"❌ Error processing refund: {e}")
+        import traceback
+        traceback.print_exc()
         raise
 

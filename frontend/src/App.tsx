@@ -15,7 +15,7 @@ import RiskPage from './pages/RiskPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminPage from './pages/AdminPage';
 import TaskListPage from './pages/TaskListPage';
-import { useAuth } from './hooks/useAuth';
+import useAuth from './hooks/useAuth'; // ✅ default import olarak değiştirildi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // 🎨 Theme
