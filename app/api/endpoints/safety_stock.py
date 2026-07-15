@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from app.analysis.safety_stock import ComprehensiveSafetyStockOptimizer
@@ -27,9 +27,17 @@ def calculate_safety_stock_batch(
 ):
     """
     Toplu Safety Stock analizi - Pattern bilgisi ile zenginleştirilmiş.
-    Token maliyeti: 10 token
+    Token maliyeti: 4 token
     """
     try:
+        # ✅ 0. Kredi kontrolü ve harcama
+        token_cost = 4
+        if current_user.token_balance < token_cost:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail=f"Yetersiz kredi! Gerekli: {token_cost}, Mevcut: {current_user.token_balance}"
+            )
+        
         # 1. Cache'ten verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
@@ -120,11 +128,16 @@ def calculate_safety_stock_batch(
             ]
             update_learning_from_pattern(current_user.id, pattern_results, db)
         
+        # ✅ 5. Krediyi düş
+        current_user.token_balance -= token_cost
+        db.commit()
+        
         return {
             'success': True,
             'total': len(results),
             'results': results,
-            'token_cost': 10,
+            'token_cost': token_cost,
+            'new_balance': current_user.token_balance,
             'pattern_analysis': True
         }
         
@@ -146,6 +159,14 @@ def start_async_safety_stock(
 ):
     """Async safety stock analizi - Pattern ile zenginleştirilmiş."""
     
+    # ✅ 0. Kredi kontrolü ve harcama
+    token_cost = 6
+    if current_user.token_balance < token_cost:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=f"Yetersiz kredi! Gerekli: {token_cost}, Mevcut: {current_user.token_balance}"
+        )
+    
     cached_data = get_user_upload_data(current_user.id)
     if not cached_data:
         raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
@@ -157,6 +178,10 @@ def start_async_safety_stock(
     service_level = request.get('service_level', 0.95)
     task_id = str(uuid.uuid4())
     
+    # ✅ Krediyi hemen düş
+    current_user.token_balance -= token_cost
+    db.commit()
+    
     # ✅ Başlangıç kaydı
     initial_data = {
         'status': 'processing',
@@ -166,7 +191,8 @@ def start_async_safety_stock(
         'service_level': service_level,
         'task_id': task_id,
         'pattern_analysis': True,
-        'started_at': datetime.utcnow().isoformat()
+        'started_at': datetime.utcnow().isoformat(),
+        'token_cost': token_cost,
     }
     
     initial_record = AnalysisResult(
@@ -190,7 +216,8 @@ def start_async_safety_stock(
         "task_id": task_id,
         "status": "started",
         "message": "Safety Stock analizi arka planda başlatıldı.",
-        "token_cost": 10
+        "token_cost": token_cost,
+        "new_balance": current_user.token_balance
     }
 
 
@@ -275,7 +302,8 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
             'status': 'completed',
             'message': 'Safety Stock analizi tamamlandı!',
             'pattern_analysis': True,
-            'completed_at': datetime.utcnow().isoformat()
+            'completed_at': datetime.utcnow().isoformat(),
+            'token_cost': 6,  # Async maliyet
         }
         
         db.query(AnalysisResult).filter(
@@ -327,10 +355,9 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
 
 
 # ============================================================
-# 📌 YARDIMCI FONKSİYONLAR
+# 📌 YARDIMCI FONKSİYONLAR (aynı)
 # ============================================================
 def get_pattern_label(pattern: str) -> str:
-    """Pattern label'ını döndür"""
     labels = {
         'DUZENLI_SABIT': 'Düzenli Sabit',
         'DUZENLI_ARTS': 'Düzenli Artan',
@@ -346,7 +373,6 @@ def get_pattern_label(pattern: str) -> str:
 
 
 def get_pattern_color(pattern: str) -> str:
-    """Pattern renk kodu"""
     colors = {
         'DUZENLI_SABIT': 'success',
         'DUZENLI_ARTS': 'info',
@@ -362,7 +388,6 @@ def get_pattern_color(pattern: str) -> str:
 
 
 def get_recommended_method(pattern: str, pattern_stats: Dict) -> str:
-    """Pattern'e göre önerilen SS metodunu döndür"""
     cv = pattern_stats.get('cv', 0)
     zero_ratio = pattern_stats.get('zero_ratio', 0)
     
@@ -390,7 +415,6 @@ def get_recommended_method(pattern: str, pattern_stats: Dict) -> str:
 
 
 def get_method_label(method: str) -> str:
-    """SS metodu label'ı"""
     labels = {
         'classic_ss': 'Klasik SS',
         'croston_ss': 'Croston',
