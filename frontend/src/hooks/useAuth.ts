@@ -1,4 +1,4 @@
-// frontend/src/hooks/useAuth.ts - Tam düzeltilmiş dosya
+// frontend/src/hooks/useAuth.ts
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -12,9 +12,25 @@ interface User {
   company_name: string;
   token_balance: number;
   sector_id: number | null;
-  sector_name?: string | null; // ✅ EKLENDİ
+  sector_name?: string | null;
   created_at: string;
   polar_customer_id?: string;
+  billing_address?: string;
+  billing_city?: string;
+  billing_state?: string;
+  billing_country?: string;
+  billing_postal_code?: string;
+  tax_id?: string;
+  tax_office?: string;
+  identity_number?: string;
+}
+
+interface RegisterParams {
+  email: string;
+  password: string;
+  full_name?: string;
+  company_name?: string;
+  sector_id?: number | null;
   billing_address?: string;
   billing_city?: string;
   billing_state?: string;
@@ -31,7 +47,7 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (email: string, password: string, fullName?: string, companyName?: string, sectorId?: number | null) => Promise<boolean>;
+  register: (params: RegisterParams) => Promise<boolean>;
   logout: () => void;
   fetchUser: () => Promise<void>;
   clearError: () => void;
@@ -79,11 +95,26 @@ export const useAuth = create<AuthState>()(
         }
       },
 
-      register: async (email, password, fullName = '', companyName = '', sectorId = null) => {
+      // ✅ GÜNCELLENMİŞ register fonksiyonu
+      register: async (params: RegisterParams) => {
         set({ isLoading: true, error: null });
         try {
-          await apiRegister(email, password, fullName, companyName, sectorId);
-          const success = await get().login(email, password);
+          await apiRegister({
+            email: params.email,
+            password: params.password,
+            full_name: params.full_name || '',
+            company_name: params.company_name || '',
+            sector_id: params.sector_id || null,
+            billing_address: params.billing_address || '',
+            billing_city: params.billing_city || '',
+            billing_state: params.billing_state || '',
+            billing_country: params.billing_country || 'TR',
+            billing_postal_code: params.billing_postal_code || '',
+            tax_id: params.tax_id || '',
+            tax_office: params.tax_office || '',
+            identity_number: params.identity_number || '',
+          });
+          const success = await get().login(params.email, params.password);
           set({ isLoading: false });
           return success;
         } catch (err: unknown) {

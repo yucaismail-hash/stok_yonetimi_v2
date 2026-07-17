@@ -11,7 +11,7 @@ from app.analysis.supplier import (
     calculate_service_level_gap
 )
 from app.auth import get_current_user
-from app.models import User, AnalysisResult, UserAnalysisResult
+from app.models import User, AnalysisResult, Notification
 from app.database import get_db
 from sqlalchemy.orm import Session
 from app.api.endpoints.upload import get_user_upload_data
@@ -19,14 +19,29 @@ import uuid
 
 router = APIRouter()
 
-# Global analyzer instance
 supplier_analyzer = SupplierPerformanceAnalyzer()
 share_optimizer = SupplierShareOptimizer(supplier_analyzer)
 
 
 # ============================================================
-# 📌 SENKRON TEDARİKÇİ ANALİZİ (ORİJİNAL)
+# 📌 YARDIMCI FONKSİYONLAR
 # ============================================================
+
+def update_async_task_status(db: Session, task_id: str, status: str, message: str):
+    db.query(AnalysisResult).filter(
+        AnalysisResult.task_id == task_id
+    ).update({
+        'status': status,
+        'message': message,
+        'updated_at': datetime.utcnow()
+    })
+    db.commit()
+
+
+# ============================================================
+# 📌 SENKRON TEDARİKÇİ ANALİZİ
+# ============================================================
+
 @router.post("/supplier/batch")
 def analyze_suppliers_batch(
     current_user: User = Depends(get_current_user),
@@ -37,16 +52,16 @@ def analyze_suppliers_batch(
     Token maliyeti: 5 token
     """
     try:
-        # 1. Cache'ten verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
         
         suppliers = cached_data.get('suppliers', {})
         supplier_mapping = cached_data.get('supplier_mapping', {})
         materials = cached_data.get('materials', [])
         
-        # 2. Tedarikçi verisi var mı kontrol et
         if not suppliers:
             return {
                 'success': False,
@@ -61,25 +76,19 @@ def analyze_suppliers_batch(
                 'has_suppliers': False
             }
         
-        print(f"✅ {len(suppliers)} tedarikçi, {len(supplier_mapping)} eşleştirme bulundu")
-        
-        # 3. Tedarikçi performans analizi
         supplier_results = []
         recommendations = []
         
         for supplier_id, supplier_data in suppliers.items():
-            # Tedarikçi istatistikleri
             name = supplier_data.get('name', supplier_id)
             factor = supplier_data.get('factor', 1.0)
             ontime_rate = supplier_data.get('ontime_rate', 0.8)
             lt_mean = supplier_data.get('lt_mean', 14)
             lt_std = supplier_data.get('lt_std', 3)
             
-            # Risk ve performans skorları
             risk_score = 1.0 - ontime_rate
             perf_score = ontime_rate * (1.0 / factor) if factor > 0 else ontime_rate
             
-            # Bu tedarikçiye bağlı malzemeler
             material_count = 0
             total_share = 0
             for mat_code, mappings in supplier_mapping.items():
@@ -88,7 +97,6 @@ def analyze_suppliers_batch(
                         material_count += 1
                         total_share += m.get('share', 0)
             
-            # 📌 Detaylı tavsiye
             recommendation_parts = []
             
             if risk_score < 0.15 and perf_score > 0.85:
@@ -104,7 +112,6 @@ def analyze_suppliers_batch(
                 recommendation_parts.append(f"🟢 {name} orta seviyede (Risk: {risk_score*100:.0f}%, Performans: {perf_score*100:.0f}%)")
                 recommendation_parts.append("📊 Düzenli takip edilmeli")
             
-            # Lead time bilgisi
             recommendation_parts.append(f"⏱️ Ortalama LT: {lt_mean:.0f} gün (Std: {lt_std:.0f})")
             if material_count > 0:
                 recommendation_parts.append(f"📦 {material_count} malzeme bağlı, toplam pay: {total_share*100:.1f}%")
@@ -127,25 +134,13 @@ def analyze_suppliers_batch(
                 'recommendation': recommendation
             })
             
-            # Genel tavsiyeler
             if risk_score < 0.15 and perf_score > 0.85:
                 recommendations.append(f"✅ {name}: Tercih edilen tedarikçi")
             elif risk_score > 0.4:
                 recommendations.append(f"⚠️ {name}: Yüksek risk, alternatif değerlendir")
         
-        # 4. Pay optimizasyonu önerisi (eğer birden fazla tedarikçi varsa)
         if len(supplier_results) > 1:
-            # En iyi tedarikçiyi bul
             best_supplier = min(supplier_results, key=lambda x: x['risk_score'] * x['factor'])
-            
-            # Tavsiye
-            share_recommendation = {
-                'best_supplier': best_supplier['supplier_id'],
-                'best_supplier_name': best_supplier['name'],
-                'reason': f"Düşük risk ({best_supplier['risk_score']*100:.0f}%) ve yüksek performans ({best_supplier['performance_score']*100:.0f}%)"
-            }
-            
-            # Pay dağılım önerisi
             share_advice = []
             for s in supplier_results:
                 if s['supplier_id'] == best_supplier['supplier_id']:
@@ -154,31 +149,36 @@ def analyze_suppliers_batch(
                     share_advice.append(f"{s['name']}: %15-%25")
                 else:
                     share_advice.append(f"{s['name']}: %5-%10 (alternatif)")
-            
             recommendations.append("📊 Pay Dağılım Önerisi: " + " | ".join(share_advice))
         
-        # 5. Sonuçları kaydet
-        if supplier_results:
-            from app.models import UserAnalysisResult
-            
-            result_data = {
-                'suppliers': supplier_results,
-                'recommendations': recommendations,
-                'total_suppliers': len(supplier_results),
-                'has_suppliers': True
-            }
-            
-            analysis_result = UserAnalysisResult(
-                user_id=current_user.id,
-                result_type='supplier_batch',
-                material_code='ALL_SUPPLIERS',
-                material_group='TEDARIKCI',
-                result_data=result_data,
-                params={'total_suppliers': len(supplier_results)},
-                expires_at=datetime.utcnow() + timedelta(days=15)
-            )
-            db.add(analysis_result)
-            db.commit()
+        if not supplier_results:
+            raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
+        
+        # ============================================================
+        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
+        # ============================================================
+        
+        result_data = {
+            'suppliers': supplier_results,
+            'recommendations': recommendations,
+            'total_suppliers': len(supplier_results),
+            'has_suppliers': True
+        }
+        
+        analysis_result = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='supplier_batch',
+            data=result_data,
+            params={'total_suppliers': len(supplier_results)},
+            total_materials=len(supplier_results),
+            task_id=None,
+            status=None,
+            progress=100,
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(analysis_result)
+        db.commit()
         
         return {
             'success': True,
@@ -186,26 +186,26 @@ def analyze_suppliers_batch(
             'suppliers': supplier_results,
             'recommendations': recommendations,
             'has_suppliers': True,
-            'token_cost': 5
+            'token_cost': 5,
+            'result_id': analysis_result.id
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         print(f"❌ Tedarikçi analiz hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================
-# 📌 SENKRON TEDARİKÇİ KONTROL (ORİJİNAL)
+# 📌 SENKRON TEDARİKÇİ KONTROL
 # ============================================================
+
 @router.get("/supplier/check")
 def check_supplier_data(
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Tedarikçi verisi var mı kontrol et
-    """
     try:
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
@@ -223,7 +223,7 @@ def check_supplier_data(
             'has_suppliers': has_suppliers,
             'supplier_count': len(suppliers),
             'mapping_count': len(supplier_mapping),
-            'message': 'Tedarikçi verileri mevcut' if has_suppliers else 'Tedarikçi verisi bulunamadı. Excel\'e "Tedarikciler" ve "Malzeme_Tedarikciler" sheet\'leri ekleyin.'
+            'message': 'Tedarikçi verileri mevcut' if has_suppliers else 'Tedarikçi verisi bulunamadı.'
         }
         
     except Exception as e:
@@ -231,11 +231,11 @@ def check_supplier_data(
 
 
 # ============================================================
-# 📌 SENKRON TEDARİKÇİ RİSK (ORİJİNAL)
+# 📌 SENKRON TEDARİKÇİ RİSK
 # ============================================================
+
 @router.get("/supplier/{supplier_id}/risk")
 def get_supplier_risk(supplier_id: str):
-    """Tedarikçi risk skorunu getir"""
     try:
         risk_score = supplier_analyzer.get_supplier_risk_score(supplier_id)
         perf_score = supplier_analyzer.get_supplier_performance_score(supplier_id)
@@ -252,8 +252,9 @@ def get_supplier_risk(supplier_id: str):
 
 
 # ============================================================
-# 📌 ASYNC TEDARİKÇİ ANALİZİ (YENİ)
+# 📌 ASYNC TEDARİKÇİ ANALİZİ
 # ============================================================
+
 @router.post("/supplier/batch/async")
 def start_async_supplier_analysis(
     background_tasks: BackgroundTasks,
@@ -266,6 +267,7 @@ def start_async_supplier_analysis(
     if not cached_data:
         raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
     
+    upload_id = cached_data.get('upload_id')
     suppliers = cached_data.get('suppliers', {})
     supplier_mapping = cached_data.get('supplier_mapping', {})
     
@@ -277,11 +279,14 @@ def start_async_supplier_analysis(
     
     task_id = str(uuid.uuid4())
     
-    # ✅ Başlangıç kaydı
+    # ============================================================
+    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
+    # ============================================================
+    
     initial_data = {
         'status': 'processing',
         'message': 'Tedarikçi analizi başlatıldı, işleniyor...',
-        'total': len(suppliers),  
+        'total': len(suppliers),
         'total_suppliers': len(suppliers),
         'results': [],
         'task_id': task_id,
@@ -290,9 +295,16 @@ def start_async_supplier_analysis(
     
     initial_record = AnalysisResult(
         user_id=current_user.id,
+        upload_id=upload_id,
         result_type='supplier_batch_async',
         data=initial_data,
-        task_id=task_id
+        params={'total_suppliers': len(suppliers)},
+        total_materials=len(suppliers),
+        task_id=task_id,
+        status='processing',
+        progress=0,
+        message='Başlatıldı...',
+        expires_at=datetime.utcnow() + timedelta(days=15)
     )
     db.add(initial_record)
     db.commit()
@@ -301,6 +313,7 @@ def start_async_supplier_analysis(
         run_async_supplier_job,
         task_id=task_id,
         user_id=current_user.id,
+        upload_id=upload_id,
         db=db
     )
     
@@ -312,7 +325,7 @@ def start_async_supplier_analysis(
     }
 
 
-def run_async_supplier_job(task_id: str, user_id: int, db: Session):
+def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Session):
     """Async tedarikçi analizi işini gerçekleştirir."""
     try:
         print(f"🔄 Async tedarikçi analizi başladı: Task ID {task_id}")
@@ -408,11 +421,14 @@ def run_async_supplier_job(task_id: str, user_id: int, db: Session):
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
         
-        # ✅ 1. AnalysisResult'u güncelle (ASYNC görevler için) - DÜZELTİLDİ
+        # ============================================================
+        # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
+        # ============================================================
+        
         result_data = {
             'success': True,
-            'total': len(supplier_results),        # ✅ Task listesi için
-            'results': supplier_results,           # ✅ Task listesi için
+            'total': len(supplier_results),
+            'results': supplier_results,
             'total_suppliers': len(supplier_results),
             'suppliers': supplier_results,
             'recommendations': recommendations,
@@ -425,45 +441,34 @@ def run_async_supplier_job(task_id: str, user_id: int, db: Session):
         
         db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({'data': result_data})
+        ).update({
+            'data': result_data,
+            'status': 'completed',
+            'progress': 100,
+            'message': 'Tamamlandı!',
+            'total_materials': len(supplier_results),
+            'updated_at': datetime.utcnow()
+        })
         
-        # ✅ 2. UserAnalysisResult'a kaydet (Geçmiş için)
-        from app.models import UserAnalysisResult
-        
-        analysis_result = UserAnalysisResult(
-            user_id=user_id,
-            result_type='supplier_batch',
-            material_code='ALL_SUPPLIERS',
-            material_group='TEDARIKCI',
-            result_data={
-                'suppliers': supplier_results,
-                'recommendations': recommendations,
-                'total_suppliers': len(supplier_results),
-                'has_suppliers': True
-            },
-            params={
-                'total_suppliers': len(supplier_results),
-                'task_id': task_id
-            },
-            expires_at=datetime.utcnow() + timedelta(days=15)
-        )
-        db.add(analysis_result)
         db.commit()
+        
+        # Bildirim oluştur
+        try:
+            notification = Notification(
+                user_id=user_id,
+                title=f"✅ Tedarikçi Analizi Tamamlandı!",
+                message=f"Tedarikçi analiz raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
+                type="success",
+                link="/tasks"
+            )
+            db.add(notification)
+            db.commit()
+        except Exception as e:
+            print(f"⚠️ Bildirim hatası: {e}")
         
         print(f"✅ Async tedarikçi analizi tamamlandı: Task ID {task_id}, {len(supplier_results)} tedarikçi")
         
     except Exception as e:
         print(f"❌ Async tedarikçi analizi hatası: {e}")
         update_async_task_status(db, task_id, 'failed', str(e))
-
-# ============================================================
-# 📌 YARDIMCI FONKSİYONLAR
-# ============================================================
-def update_async_task_status(db: Session, task_id: str, status: str, message: str):
-    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-    if result:
-        data = result.data if isinstance(result.data, dict) else {}
-        data['status'] = status
-        data['message'] = message
-        result.data = data
-        db.commit()
+        db.rollback()

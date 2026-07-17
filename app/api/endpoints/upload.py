@@ -2,9 +2,10 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
+import uuid  # ✅ YENİ EKLENDİ
 from app.database import get_db
-from app.models import User, UploadedData, AnalysisResult
-from app.auth import get_current_user, get_current_user_optional  # ✅ Yeni fonksiyon
+from app.models import User, UploadedData, AnalysisResult, AnalysisInput  # ✅ AnalysisInput EKLENDİ
+from app.auth import get_current_user, get_current_user_optional
 from app.utils.excel_reader import ExcelReader
 from app.utils.excel_processor import ExcelProcessor
 import shutil
@@ -20,7 +21,7 @@ excel_processor = ExcelProcessor()
 upload_cache = {}
 
 def get_user_upload_data(user_id: int):
-    """Kullanıcının yüklediği verileri getir"""
+    """Kullanıcının yüklediği verileri getir - SADECE CACHE!"""
     data = upload_cache.get(user_id)
     if data:
         print(f"✅ Cache verisi bulundu: {data.get('total_materials', 0)} malzeme")
@@ -34,6 +35,13 @@ def set_user_upload_data(user_id: int, data: dict):
     """Kullanıcının yüklediği verileri cache'e kaydet"""
     upload_cache[user_id] = data
 
+def get_active_upload_id(user_id: int) -> Optional[str]:
+    """Kullanıcının aktif upload_id'sini cache'den getir"""
+    data = get_user_upload_data(user_id)
+    if data:
+        return data.get('upload_id')
+    return None
+
 @router.post("/upload")
 async def upload_excel(
     file: UploadFile = File(...),
@@ -42,7 +50,7 @@ async def upload_excel(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Excel dosyası yükle - SADECE VERİYİ KAYDET, ANALİZ YAPMA!
+    Excel dosyası yükle - Veriyi hem cache'e hem DB'ye kaydet
     Token maliyeti: 0 (ücretsiz)
     """
     temp_path = None
@@ -50,6 +58,12 @@ async def upload_excel(
         # 1. Dosya tipi kontrolü
         if not file.filename.endswith(('.xlsx', '.xls')):
             raise HTTPException(status_code=400, detail="Sadece Excel dosyaları kabul edilir (.xlsx, .xls)")
+        
+        if not current_user:
+            return JSONResponse(
+                status_code=401,
+                content={'success': False, 'error': "Lütfen giriş yaparak tekrar deneyin."}
+            )
         
         # 2. Dosyayı geçici olarak kaydet
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
@@ -69,41 +83,15 @@ async def upload_excel(
                 }
             )
         
-        # 4. Verileri cache'e kaydet
+        # 4. Verileri hazırla
         materials = read_result['data']['materials']
         
-        # ============================================================
-        # 📌 DEBUG: Okunan verileri kontrol et
-        # ============================================================
-        print(f"\n{'='*60}")
-        print("📊 UPLOAD SONRASI VERİ KONTROLÜ")
-        print(f"📊 Toplam malzeme: {len(materials)}")
+        # 5. Benzersiz upload_id oluştur
+        upload_id = str(uuid.uuid4())
         
-        if materials:
-            # İlk 3 malzemenin verilerini göster
-            for i, m in enumerate(materials[:3]):
-                historical = m.get('historical_demand', [])
-                print(f"\n📊 Malzeme {i+1}: {m.get('code', '')}")
-                print(f"   - Grup: {m.get('group', '')}")
-                print(f"   - Lead Time: {m.get('lead_time_days', 0)}")
-                print(f"   - EOQ: {m.get('eoq', 0)}")
-                print(f"   - Historical Demand uzunluğu: {len(historical)}")
-                print(f"   - İlk 5 değer: {historical[:5] if historical else 'BOŞ'}")
-                print(f"   - Son 5 değer: {historical[-5:] if historical else 'BOŞ'}")
-                print(f"   - Sıfır olmayan: {len([d for d in historical if d != 0])}")
-            
-            # Tüm malzemelerin veri uzunluklarını göster
-            print(f"\n📊 Tüm malzemelerin veri uzunlukları:")
-            for m in materials:
-                historical = m.get('historical_demand', [])
-                print(f"   {m.get('code', '')}: {len(historical)} hafta")
-        else:
-            print("❌ Hiç malzeme yok!")
-        
-        print(f"{'='*60}\n")
-        # ============================================================
-        
+        # 6. Cache verisini hazırla
         cached_data = {
+            'upload_id': upload_id,  # ✅ YENİ
             'materials': materials,
             'supplier_mapping': read_result['data'].get('supplier_mapping', {}),
             'suppliers': read_result['data'].get('suppliers', {}),
@@ -114,40 +102,41 @@ async def upload_excel(
             'mode': mode
         }
         
-        # ✅ KULLANICI ID'SİNİ DOĞRU AL!
-        if current_user:
-            user_id = current_user.id
-            print(f"🔑 Kullanıcı ID: {user_id} için cache'e kaydediliyor...")
-            set_user_upload_data(user_id, cached_data)
-            print(f"✅ Cache'e kaydedildi: Kullanıcı {user_id}, {len(materials)} malzeme")
-            
-            # Veritabanına da kaydet
-            user_upload = UploadedData(
-                user_id=current_user.id,
-                filename=file.filename,
-                file_size=0,
-                processed_data=cached_data,
-                raw_data={"filename": file.filename, "mode": mode},
-                status="completed",
-                processed_at=datetime.utcnow()
-            )
-            db.add(user_upload)
-            db.commit()
-            db.refresh(user_upload)
-        else:
-            # Token yoksa - bu durumda cache'e kaydetme, sadece hata döndür
-            print("❌ Token olmadan upload yapılamaz!")
-            return JSONResponse(
-                status_code=401,
-                content={
-                    'success': False,
-                    'error': "Lütfen giriş yaparak tekrar deneyin."
-                }
-            )
+        # 7. Cache'e kaydet
+        user_id = current_user.id
+        set_user_upload_data(user_id, cached_data)
+        print(f"✅ Cache'e kaydedildi: Kullanıcı {user_id}, {len(materials)} malzeme, upload_id: {upload_id}")
+        
+        # 8. Veritabanına kaydet (AnalysisInput - KALICI)
+        analysis_input = AnalysisInput(
+            upload_id=upload_id,
+            user_id=user_id,
+            file_name=file.filename,
+            file_size=0,
+            data=cached_data,  # Tüm veriyi JSON olarak kaydet
+            is_active=True
+        )
+        db.add(analysis_input)
+        
+        # 9. UploadedData tablosuna da kaydet (eski sistem uyumu)
+        user_upload = UploadedData(
+            user_id=user_id,
+            filename=file.filename,
+            file_size=0,
+            processed_data=cached_data,
+            raw_data={"filename": file.filename, "mode": mode, "upload_id": upload_id},
+            status="completed",
+            processed_at=datetime.utcnow()
+        )
+        db.add(user_upload)
+        db.commit()
+        
+        print(f"✅ Veritabanına kaydedildi: upload_id: {upload_id}")
         
         return {
             'success': True,
-            'message': f"{len(materials)} malzeme başarıyla yüklendi. Analiz için ilgili sayfaya gidin.",
+            'message': f"{len(materials)} malzeme başarıyla yüklendi.",
+            'upload_id': upload_id,  # ✅ DÖNDÜR
             'total_materials': len(materials),
             'file_name': file.filename,
             'mode': mode,
@@ -160,10 +149,7 @@ async def upload_excel(
         print(f"❌ Upload hatası: {str(e)}")
         return JSONResponse(
             status_code=500,
-            content={
-                'success': False,
-                'error': f"Sunucu hatası: {str(e)}"
-            }
+            content={'success': False, 'error': f"Sunucu hatası: {str(e)}"}
         )
     finally:
         if temp_path and os.path.exists(temp_path):
@@ -171,7 +157,7 @@ async def upload_excel(
                 os.unlink(temp_path)
             except:
                 pass
-            
+
 @router.get("/upload/status")
 async def get_upload_status(
     db: Session = Depends(get_db),
@@ -187,29 +173,83 @@ async def get_upload_status(
     user_id = current_user.id
     cached_data = get_user_upload_data(user_id)
     
-    # ✅ Cache'de varsa direkt döndür
     if cached_data and cached_data.get('materials'):
-        print(f"✅ Cache'den veri bulundu: {len(cached_data.get('materials', []))} malzeme")
+        materials = cached_data.get('materials', [])
+        
+        # ✅ Hafta sayısını hesapla
+        week_count = 0
+        if materials:
+            # İlk malzemenin historical_demand uzunluğu
+            first_material = materials[0] if materials else {}
+            historical = first_material.get('historical_demand', [])
+            week_count = len(historical)
+        
         return {
             "has_data": True,
+            "upload_id": cached_data.get('upload_id'),
             "filename": cached_data.get('file_name', 'unknown.xlsx'),
             "uploaded_at": cached_data.get('uploaded_at'),
             "status": "completed",
-            "materials_count": len(cached_data.get('materials', []))
+            "materials_count": len(materials),
+            "week_count": week_count,  # ✅ EKLENDİ
         }
     
-    # ❌ Cache'de yoksa veritabanına gitme, direkt false döndür
-    print(f"❌ Cache'de veri yok: Kullanıcı {user_id}")
     return {"has_data": False}
+
+@router.get("/upload/materials-info")
+async def get_materials_info(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Yüklenen verilerin detaylı bilgisini getir.
+    """
+    cached_data = get_user_upload_data(current_user.id)
+    if not cached_data:
+        return {"has_data": False, "message": "Veri bulunamadı"}
+    
+    materials = cached_data.get('materials', [])
+    
+    # ✅ Hafta sayısını hesapla
+    week_count = 0
+    if materials:
+        first_material = materials[0] if materials else {}
+        historical = first_material.get('historical_demand', [])
+        week_count = len(historical)
+    
+    return {
+        "has_data": True,
+        "materials_count": len(materials),
+        "week_count": week_count,
+        "total_materials": len(materials),
+        "file_name": cached_data.get('file_name')
+    }
 
 @router.delete("/upload/clear")
 def clear_upload_data(
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Kullanıcının yüklediği verileri temizle"""
-    if current_user.id in upload_cache:
-        del upload_cache[current_user.id]
+    """Kullanıcının yüklediği verileri temizle (Cache + DB)"""
+    user_id = current_user.id
+    
+    # 1. Cache'den temizle
+    if user_id in upload_cache:
+        del upload_cache[user_id]
+    
+    # 2. Veritabanından pasif yap (silme, is_active=False)
+    db.query(AnalysisInput).filter(
+        AnalysisInput.user_id == user_id,
+        AnalysisInput.is_active == True
+    ).update({"is_active": False})
+    db.commit()
+    
     return {'success': True, 'message': 'Veriler temizlendi'}
+
+# app/api/endpoints/upload.py
+
+# app/api/endpoints/upload.py - SADECE get_upload_results fonksiyonu
+
 
 @router.get("/upload/results")
 async def get_upload_results(
@@ -218,86 +258,65 @@ async def get_upload_results(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Kullanıcının tüm analiz sonuçlarını getir - DÜZELTİLMİŞ"""
-    from app.models import UserAnalysisResult, AnalysisResult
+    """
+    Kullanıcının tüm analiz sonuçlarını getir.
+    SADECE analysis_results tablosundan okur.
+    """
+    from app.models import AnalysisResult
     from datetime import datetime
     
-    # Benzersiz sonuçları toplamak için set
-    seen = set()
     results = []
+    seen = set()
     
-    # 1. UserAnalysisResult'tan normal sonuçları al
-    query = db.query(UserAnalysisResult).filter(
-        UserAnalysisResult.user_id == current_user.id,
-        UserAnalysisResult.expires_at > datetime.utcnow()
+    # ============================================================
+    # 📌 TEK TABLO: analysis_results
+    # ============================================================
+    
+    query = db.query(AnalysisResult).filter(
+        AnalysisResult.user_id == current_user.id
     )
     
     if result_type:
-        query = query.filter(UserAnalysisResult.result_type == result_type)
+        query = query.filter(AnalysisResult.result_type.like(f"{result_type}%"))
     
-    user_results = query.order_by(UserAnalysisResult.created_at.desc()).limit(limit).all()
+    # ✅ Sadece tamamlanmış veya senkron olanları al
+    query = query.filter(
+        (AnalysisResult.status == None) | (AnalysisResult.status == 'completed')
+    )
     
-    for r in user_results:
-        data = r.result_data if isinstance(r.result_data, dict) else {}
-        
-        # Batch sonucu (içinde results listesi var)
-        if 'results' in data and isinstance(data['results'], list):
-            for item in data['results']:
-                # ✅ Benzersiz anahtar oluştur (material_code + created_at)
-                key = f"{item.get('material_code', '')}_{r.created_at.isoformat()}"
-                if key not in seen:
-                    seen.add(key)
-                    results.append({
-                        'id': r.id,
-                        'created_at': r.created_at,
-                        'data': item,
-                        'material_code': item.get('material_code', ''),
-                        'material_group': item.get('group', ''),
-                        'result_type': r.result_type
-                    })
-        else:
-            # Tekil sonuç
-            key = f"{r.material_code}_{r.created_at.isoformat()}"
-            if key not in seen:
-                seen.add(key)
-                results.append({
-                    'id': r.id,
-                    'created_at': r.created_at,
-                    'data': data,
-                    'material_code': r.material_code,
-                    'material_group': r.material_group,
-                    'result_type': r.result_type
-                })
+    db_results = query.order_by(AnalysisResult.created_at.desc()).limit(limit).all()
     
-    # 2. AnalysisResult'tan ASYNC tamamlanan sonuçları al
-    async_results = db.query(AnalysisResult).filter(
-        AnalysisResult.user_id == current_user.id,
-        AnalysisResult.result_type == 'forecast_batch_async'
-    ).order_by(AnalysisResult.created_at.desc()).limit(limit).all()
+    print(f"📊 analysis_results: {len(db_results)} kayıt (filtre: {result_type}%)")
     
-    for r in async_results:
+    for r in db_results:
         data = r.data if isinstance(r.data, dict) else {}
+        items = data.get('results', [])
+        is_async = r.task_id is not None
         
-        # ✅ Sadece tamamlananları al
-        if data.get('status') == 'completed':
-            items = data.get('results', [])
-            for item in items:
-                key = f"{item.get('material_code', '')}_{r.created_at.isoformat()}"
-                if key not in seen:
-                    seen.add(key)
-                    results.append({
-                        'id': r.id,
-                        'created_at': r.created_at,
-                        'data': item,
-                        'material_code': item.get('material_code', ''),
-                        'material_group': item.get('group', ''),
-                        'result_type': 'forecast_batch_async'
-                    })
+        # ✅ SADECE BATCH KAYDI EKLE (malzemeleri TEK TEK EKLEME!)
+        key = f"result_{r.id}_{r.created_at.isoformat()}"
+        if key not in seen:
+            seen.add(key)
+            results.append({
+                'id': r.id,
+                'created_at': r.created_at,
+                'result_type': r.result_type,
+                'material_code': 'BATCH',
+                'material_group': 'TOPLU',
+                'source': 'analysis_results',
+                'is_batch': True,
+                'is_async': is_async,
+                'is_completed': True,
+                'task_id': r.task_id,
+                'status': r.status or 'completed',
+                'progress': r.progress or 100,
+                'total_materials': r.total_materials or len(items),
+                'data': data
+            })
     
-    # ✅ Tarihe göre sırala (en yeni önce)
     results.sort(key=lambda x: x['created_at'], reverse=True)
     
-    print(f"📊 Toplam {len(results)} benzersiz sonuç bulundu")
+    print(f"📊 Toplam {len(results)} benzersiz sonuç bulundu (filtre: {result_type}%)")
     
     return {
         "success": True,

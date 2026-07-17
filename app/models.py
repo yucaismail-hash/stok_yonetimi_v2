@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Boolean, JSON, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -82,37 +83,55 @@ class MaterialSupplier(Base):
     is_primary = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+# ============================================================
+# ✅ GÜNCELLENMİŞ AnalysisResult (TEK TABLO - HEM SENKRON HEM ASYNC)
+# ============================================================
 
-class UserAnalysisResult(Base):
-    __tablename__ = "user_analysis_results"
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"))
+class AnalysisResult(Base):
+    """
+    Tüm analiz sonuçları (Senkron + Async)
+    - Senkron: task_id = NULL, status = NULL
+    - Async: task_id = UUID, status = processing/completed/failed
+    """
+    __tablename__ = "analysis_results"
     
-    result_type = Column(String, nullable=False)
-    material_code = Column(String, nullable=True)
-    material_group = Column(String, nullable=True)
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    upload_id = Column(String, nullable=True, index=True)
+    result_type = Column(String, nullable=False, index=True)
     
-    result_data = Column(JSON, nullable=False)
-    params = Column(JSON, default={})
+    # 📌 TÜM VERİ (JSONB)
+    data = Column(JSONB, nullable=False)
+    params = Column(JSONB, default={})
+    
+    # 📌 ASYNC TAKİP (NULL ise senkron)
+    task_id = Column(String, nullable=True, index=True)
+    status = Column(String, nullable=True)  # processing, completed, failed
+    progress = Column(Integer, default=0)
+    message = Column(String, nullable=True)
+    
+    # 📌 METADATA
+    total_materials = Column(Integer, default=0)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
-    expires_at = Column(DateTime)
-
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    
+    # ✅ İlişki
+    user = relationship("User")
 
 class UserLearningData(Base):
     __tablename__ = "user_learning_data"
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    
-    learning_key = Column(String, unique=True, nullable=False)
-    
+    sector_id = Column(Integer, nullable=True)
+    learning_key = Column(String, unique=True, nullable=False)    
     pattern_multiplier = Column(Float, default=1.0)
-    seasonal_multiplier = Column(Float, default=1.0)
-    
+    seasonal_multiplier = Column(Float, default=1.0)    
     confidence = Column(Float, default=0.0)
-    sample_count = Column(Integer, default=0)
-    
-    pattern = Column(String, nullable=True)
-    
+    sample_count = Column(Integer, default=0)    
+    pattern = Column(String, nullable=True)    
+    learning_type = Column(String, default="group")  # "group" veya "material"
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
@@ -129,7 +148,7 @@ class TokenHistory(Base):
 class TokenCost(Base):
     __tablename__ = "token_costs"
     id = Column(Integer, primary_key=True)
-    endpoint = Column(String, unique=True, nullable=False)
+    endpoint = Column(String, nullable=False)
     method = Column(String, default="POST")
     cost = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
@@ -148,16 +167,6 @@ class UploadedData(Base):
     uploaded_at = Column(DateTime, default=datetime.utcnow)
     processed_at = Column(DateTime, nullable=True)
     status = Column(String, default="pending")
-
-
-class AnalysisResult(Base):
-    __tablename__ = "analysis_results"
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    result_type = Column(String, nullable=False, index=True)
-    data = Column(JSON, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    task_id = Column(String, nullable=True, index=True)
 
 
 class Notification(Base):
@@ -230,3 +239,69 @@ class SupportTicket(Base):
     resolved_at = Column(DateTime, nullable=True)
     
     # user = relationship("User")  # İlişki kaldırıldı (mevcut yapıya uygun)
+
+# ============================================
+# 🆕 ANALYSIS INPUTS (KALICI VERİ SAKLAMA)
+# ============================================
+
+class AnalysisInput(Base):
+    """Kullanıcı tarafından yüklenen Excel verileri (Kalıcı)"""
+    __tablename__ = "analysis_inputs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_id = Column(String, unique=True, index=True, nullable=False)  # UUID
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    file_name = Column(String, nullable=False)
+    file_size = Column(Integer, default=0)
+    data = Column(JSON, nullable=False)  # Tüm Excel verisi (materials, suppliers, mapping)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# app/models.py - En sona (SupportTicket'ten sonra) EKLEYİN
+
+# ============================================
+# 🆕 ANALYSIS BATCH RESULTS (TEK KAYIT)
+# ============================================
+
+class AnalysisBatchResult(Base):
+    """Batch analiz sonuçları - Tüm veri TEK kayıtta"""
+    __tablename__ = "analysis_batch_results"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    upload_id = Column(String, nullable=True, index=True)  # Hangi upload'dan geldiği
+    result_type = Column(String, nullable=False, index=True)  # forecast_batch, safety_stock_batch, etc.
+    
+    # 📌 TEK JSON'da TÜM veri
+    result_data = Column(JSON, nullable=False)  # Tüm malzemelerin sonuçları
+    params = Column(JSON, default={})
+    
+    total_materials = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+
+# ============================================
+# 🆕 ANALYSIS MATERIAL SUMMARY (Hafif Özet)
+# ============================================
+
+class AnalysisMaterialSummary(Base):
+    """Malzeme bazlı analiz özetleri - Sadece önemli metrikler"""
+    __tablename__ = "analysis_material_summary"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    upload_id = Column(String, nullable=True, index=True)  # Hangi upload'dan geldiği
+    batch_id = Column(Integer, ForeignKey("analysis_batch_results.id"), nullable=True)  # Hangi batch'ten
+    
+    material_code = Column(String, nullable=False, index=True)
+    material_group = Column(String, nullable=True)
+    result_type = Column(String, nullable=False, index=True)
+    
+    # 📌 Sadece ÖZET veri (hafif - AI için)
+    summary = Column(JSON, nullable=False)  # {pattern, cv, trend, service_level, ...}
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)

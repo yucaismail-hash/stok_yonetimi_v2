@@ -1,3 +1,5 @@
+// frontend/src/pages/RegisterPage.tsx
+
 import { useState, useEffect } from 'react';
 import {
   Box,
@@ -20,6 +22,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Grid,
+  Paper,
 } from '@mui/material';
 import {
   Email,
@@ -30,6 +34,10 @@ import {
   VisibilityOff,
   AppRegistration,
   CheckCircle,
+  LocationOn,
+  Receipt,
+  AccountBalance,
+  CreditCard,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
@@ -50,13 +58,21 @@ export default function RegisterPage() {
     fullName: '',
     companyName: '',
     sectorId: '',
+    billingAddress: '',
+    billingCity: '',
+    billingState: '',
+    billingCountry: 'TR',
+    billingPostalCode: '',
+    taxId: '',
+    taxOffice: '',
+    identityNumber: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  const steps = ['Hesap Bilgileri', 'Profil Bilgileri', 'Tamamlandı'];
+  const steps = ['Hesap Bilgileri', 'Profil Bilgileri', 'Fatura Bilgileri', 'Tamamlandı'];
 
   // Sektör listesini al
   useEffect(() => {
@@ -110,8 +126,32 @@ export default function RegisterPage() {
       setError('Ad ve soyad gerekli');
       return false;
     }
+    if (!formData.companyName) {
+      setError('Şirket adı gerekli');
+      return false;
+    }
     if (!formData.sectorId) {
       setError('Lütfen sektörünüzü seçin');
+      return false;
+    }
+    return true;
+  };
+
+  const validateStep3 = () => {
+    if (!formData.billingAddress) {
+      setError('Fatura adresi gerekli');
+      return false;
+    }
+    if (!formData.billingCity) {
+      setError('Şehir gerekli');
+      return false;
+    }
+    if (!formData.taxId) {
+      setError('Vergi numarası gerekli');
+      return false;
+    }
+    if (!formData.taxOffice) {
+      setError('Vergi dairesi gerekli');
       return false;
     }
     return true;
@@ -121,6 +161,8 @@ export default function RegisterPage() {
     if (activeStep === 0 && validateStep1()) {
       setActiveStep(1);
     } else if (activeStep === 1 && validateStep2()) {
+      setActiveStep(2);
+    } else if (activeStep === 2 && validateStep3()) {
       handleSubmit();
     }
   };
@@ -130,43 +172,30 @@ export default function RegisterPage() {
     setError(null);
   };
 
+  // ✅ DÜZELTİLMİŞ handleSubmit - register'a TEK OBJE gönder
   const handleSubmit = async () => {
     setError(null);
 
-      // ============ DEBUG ALERT ============
-    alert(`📝 Kayıt Verileri:
-    Email: ${formData.email}
-    Full Name: ${formData.fullName}
-    Company: ${formData.companyName}
-    Sector ID: ${formData.sectorId}
-    Sector ID Type: ${typeof formData.sectorId}
-    `);
-  
     try {
-      const registerData = {
+      const success = await register({
         email: formData.email,
         password: formData.password,
         full_name: formData.fullName,
         company_name: formData.companyName,
         sector_id: formData.sectorId ? parseInt(formData.sectorId) : null,
-      };
-
-      alert(`📤 Backend'e Gönderilen Veri:
-      ${JSON.stringify(registerData, null, 2)}`);
-
-      console.log('Kayıt verisi:', registerData);
-
-      const success = await register(
-        registerData.email,
-        registerData.password,
-        registerData.full_name,
-        registerData.company_name,
-        registerData.sector_id
-      );
+        billing_address: formData.billingAddress,
+        billing_city: formData.billingCity,
+        billing_state: formData.billingState,
+        billing_country: formData.billingCountry || 'TR',
+        billing_postal_code: formData.billingPostalCode,
+        tax_id: formData.taxId,
+        tax_office: formData.taxOffice,
+        identity_number: formData.identityNumber,
+      });
 
       if (success) {
         setSuccess(true);
-        setActiveStep(2);
+        setActiveStep(3);
         setTimeout(() => {
           navigate('/login');
         }, 3000);
@@ -185,7 +214,6 @@ export default function RegisterPage() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               Hesap bilgilerinizi oluşturun
             </Typography>
-
             <TextField
               fullWidth
               label="E-posta Adresi"
@@ -207,7 +235,6 @@ export default function RegisterPage() {
               sx={{ mb: 3 }}
               placeholder="ornek@firma.com"
             />
-
             <TextField
               fullWidth
               label="Şifre"
@@ -236,7 +263,6 @@ export default function RegisterPage() {
               }}
               sx={{ mb: 3 }}
             />
-
             <TextField
               fullWidth
               label="Şifre Tekrar"
@@ -272,7 +298,6 @@ export default function RegisterPage() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               Profil bilgilerinizi tamamlayın
             </Typography>
-
             <TextField
               fullWidth
               label="Ad ve Soyad"
@@ -293,13 +318,13 @@ export default function RegisterPage() {
               sx={{ mb: 3 }}
               placeholder="Ahmet Yılmaz"
             />
-
             <TextField
               fullWidth
               label="Firma Adı"
               name="companyName"
               value={formData.companyName}
               onChange={handleInputChange}
+              required
               disabled={isLoading}
               slotProps={{
                 input: {
@@ -311,8 +336,8 @@ export default function RegisterPage() {
                 },
               }}
               sx={{ mb: 3 }}
+              placeholder="ABC Teknoloji A.Ş."
             />
-
             <FormControl fullWidth sx={{ mb: 2 }}>
               <InputLabel>Sektörünüz</InputLabel>
               <Select
@@ -320,6 +345,7 @@ export default function RegisterPage() {
                 label="Sektörünüz"
                 onChange={handleSelectChange}
                 disabled={isLoading || loadingSectors}
+                required
               >
                 <MenuItem value="">Seçiniz</MenuItem>
                 {sectors.map((s: any) => (
@@ -339,6 +365,172 @@ export default function RegisterPage() {
 
       case 2:
         return (
+          <Box>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2,
+                mb: 3,
+                bgcolor: 'info.light',
+                borderRadius: 2,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}
+            >
+              <Receipt color="info" />
+              <Typography variant="body2" color="info.dark">
+                <strong>📋 Fatura Bilgileri</strong> — Ödemeleriniz sonrası faturanız bu adrese kesilecektir.
+              </Typography>
+            </Paper>
+
+            {/* ✅ Grid kullanımı - item prop'u yok, Grid container içinde doğrudan Grid */}
+            <Grid container spacing={2}>
+              <Grid size={12}>
+                <TextField
+                  fullWidth
+                  label="Fatura Adresi"
+                  name="billingAddress"
+                  value={formData.billingAddress}
+                  onChange={handleInputChange}
+                  required
+                  disabled={isLoading}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <LocationOn color="action" />
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                  placeholder="Örnek: İstanbul, Kadıköy, Moda Cad. No:123"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Şehir"
+                  name="billingCity"
+                  value={formData.billingCity}
+                  onChange={handleInputChange}
+                  required
+                  disabled={isLoading}
+                  placeholder="İstanbul"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  label="İlçe / Semt"
+                  name="billingState"
+                  value={formData.billingState}
+                  onChange={handleInputChange}
+                  disabled={isLoading}
+                  placeholder="Kadıköy"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Posta Kodu"
+                  name="billingPostalCode"
+                  value={formData.billingPostalCode}
+                  onChange={handleInputChange}
+                  disabled={isLoading}
+                  placeholder="34700"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <FormControl fullWidth>
+                  <InputLabel>Ülke</InputLabel>
+                  <Select
+                    value={formData.billingCountry}
+                    label="Ülke"
+                    onChange={(e) => setFormData({ ...formData, billingCountry: e.target.value })}
+                    disabled={isLoading}
+                  >
+                    <MenuItem value="TR">Türkiye</MenuItem>
+                    <MenuItem value="US">Amerika Birleşik Devletleri</MenuItem>
+                    <MenuItem value="GB">İngiltere</MenuItem>
+                    <MenuItem value="DE">Almanya</MenuItem>
+                    <MenuItem value="FR">Fransa</MenuItem>
+                    <MenuItem value="IT">İtalya</MenuItem>
+                    <MenuItem value="ES">İspanya</MenuItem>
+                    <MenuItem value="NL">Hollanda</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+
+            <Divider sx={{ my: 3 }} />
+
+            <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>
+              💳 Vergi Bilgileri
+            </Typography>
+
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Vergi Numarası"
+                  name="taxId"
+                  value={formData.taxId}
+                  onChange={handleInputChange}
+                  required
+                  disabled={isLoading}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <CreditCard color="action" />
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                  placeholder="1234567890"
+                />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField
+                  fullWidth
+                  label="Vergi Dairesi"
+                  name="taxOffice"
+                  value={formData.taxOffice}
+                  onChange={handleInputChange}
+                  required
+                  disabled={isLoading}
+                  slotProps={{
+                    input: {
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <AccountBalance color="action" />
+                        </InputAdornment>
+                      ),
+                    },
+                  }}
+                  placeholder="İstanbul Vergi Dairesi"
+                />
+              </Grid>
+            </Grid>
+
+            <Box sx={{ mt: 3 }}>
+              <TextField
+                fullWidth
+                label="TC Kimlik / Vergi Kimlik No"
+                name="identityNumber"
+                value={formData.identityNumber}
+                onChange={handleInputChange}
+                disabled={isLoading}
+                helperText="Bireysel kullanıcılar için TC Kimlik No, kurumlar için vergi numarası"
+                placeholder="12345678901"
+              />
+            </Box>
+          </Box>
+        );
+
+      case 3:
+        return (
           <Box sx={{ textAlign: 'center', py: 4 }}>
             <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
             <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 2 }}>
@@ -346,6 +538,9 @@ export default function RegisterPage() {
             </Typography>
             <Typography variant="body1" color="text.secondary">
               Hesabınız başarıyla oluşturuldu.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              Fatura bilgileriniz kaydedildi.
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               Yönlendiriliyorsunuz...
@@ -369,7 +564,7 @@ export default function RegisterPage() {
         p: 2,
       }}
     >
-      <Container maxWidth="sm">
+      <Container maxWidth="md">
         <Card sx={{ borderRadius: 4, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', overflow: 'hidden' }}>
           <CardContent sx={{ p: 4 }}>
             <Box sx={{ textAlign: 'center', mb: 4 }}>
@@ -396,7 +591,7 @@ export default function RegisterPage() {
               </Typography>
             </Box>
 
-            <Stepper activeStep={activeStep} sx={{ mb: 4 }}>
+            <Stepper activeStep={activeStep} sx={{ mb: 4, overflow: 'auto' }}>
               {steps.map((label) => (
                 <Step key={label}>
                   <StepLabel>{label}</StepLabel>
@@ -428,12 +623,16 @@ export default function RegisterPage() {
                     disabled={isLoading}
                     startIcon={isLoading ? <CircularProgress size={20} color="inherit" /> : null}
                   >
-                    {isLoading ? 'Kaydediliyor...' : activeStep === 1 ? 'Kaydol' : 'Devam'}
+                    {isLoading
+                      ? 'Kaydediliyor...'
+                      : activeStep === 2
+                      ? 'Kaydol'
+                      : 'Devam'}
                   </Button>
                 </Box>
               </>
             ) : (
-              getStepContent(2)
+              getStepContent(3)
             )}
 
             {activeStep < 2 && (

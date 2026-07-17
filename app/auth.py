@@ -36,6 +36,15 @@ class RegisterRequest(BaseModel):
     full_name: str = ""
     company_name: str = ""
     sector_id: Optional[int] = None
+    # 🆕 Fatura bilgileri
+    billing_address: Optional[str] = None
+    billing_city: Optional[str] = None
+    billing_state: Optional[str] = None
+    billing_country: Optional[str] = "TR"
+    billing_postal_code: Optional[str] = None
+    tax_id: Optional[str] = None
+    tax_office: Optional[str] = None
+    identity_number: Optional[str] = None
 
 
 class LoginRequest(BaseModel):
@@ -48,7 +57,6 @@ def create_access_token(data: dict):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
 
 @auth_router.post("/register")
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
@@ -64,7 +72,16 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
         full_name=request.full_name,
         company_name=request.company_name,
         sector_id=sector_id,
-        token_balance=100
+        token_balance=100,
+        # 🆕 Fatura bilgileri
+        billing_address=request.billing_address,
+        billing_city=request.billing_city,
+        billing_state=request.billing_state,
+        billing_country=request.billing_country or "TR",
+        billing_postal_code=request.billing_postal_code,
+        tax_id=request.tax_id,
+        tax_office=request.tax_office,
+        identity_number=request.identity_number,
     )
     
     db.add(new_user)
@@ -83,10 +100,6 @@ def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
 @auth_router.post("/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
-    print("=" * 60)
-    print("🚀🚀🚀 app/auth.py LOGIN ENDPOINT ÇALIŞTI! 🚀🚀🚀")
-    print(f"📧 Email: {request.email}")
-    print("=" * 60)
     
     user = db.query(User).filter(User.email == request.email).first()
     if not user or not verify_password(request.password, user.hashed_password):
@@ -101,7 +114,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     
     return {
         "access_token": token,
-        "token_type": "Bunasilbiris",
+        "token_type": "Bearer",
         "user_id": user.id,
         "token_balance": user.token_balance,
         "full_name": user.full_name or "",
@@ -116,9 +129,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security), 
     db: Session = Depends(get_db)
 ):
-    print("=" * 60)
-    print("🚀🚀🚀 app/auth.py /ME ENDPOINT ÇALIŞTI! 🚀🚀🚀")
-    print("=" * 60)
+
     
     if not credentials:
         raise HTTPException(status_code=401, detail="Token gerekli")
@@ -140,6 +151,41 @@ def get_current_user(
 
 
 # ✅ get_current_user_optional - DÜZELTİLMİŞ
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Token varsa kullanıcıyı döndür, yoksa None döndür.
+    Upload gibi opsiyonel token gerektiren endpoint'ler için.
+    """
+    if not credentials:
+        print("⚠️ Token yok, anonim kullanıcı olarak devam")
+        return None
+    
+    token = credentials.credentials
+    print(f"🔍 Token kontrolü: {token[:20]}...")
+    
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("user_id")
+        if user_id is None:
+            print("❌ Token'da user_id yok")
+            return None
+    except JWTError as e:
+        print(f"❌ Token decode hatası: {e}")
+        return None
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        print(f"✅ Kullanıcı bulundu: {user.email} (ID: {user.id})")
+    else:
+        print(f"❌ Kullanıcı bulunamadı: ID {user_id}")
+    
+    return user
+
+# app/auth.py - En sona ekleyin
+
 async def get_current_user_optional(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
     db: Session = Depends(get_db)

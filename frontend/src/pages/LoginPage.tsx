@@ -49,9 +49,8 @@ export default function LoginPage() {
   };
 
   const handleRegister = () => {
-    alert('Kayıt sayfası yakında eklenecek. Lütfen admin ile iletişime geçin.');
+    navigate('/register');
   };
-
   return (
     <Box
       sx={{

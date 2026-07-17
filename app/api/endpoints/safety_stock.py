@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from app.analysis.safety_stock import ComprehensiveSafetyStockOptimizer
 from app.analysis.pattern import AdvancedDemandAnalyzer
 from app.auth import get_current_user
-from app.models import User, AnalysisResult, UserAnalysisResult
+from app.models import User, AnalysisResult, AnalysisBatchResult, AnalysisMaterialSummary, Notification
 from app.database import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -30,7 +30,6 @@ def calculate_safety_stock_batch(
     Token maliyeti: 4 token
     """
     try:
-        # ✅ 0. Kredi kontrolü ve harcama
         token_cost = 4
         if current_user.token_balance < token_cost:
             raise HTTPException(
@@ -38,10 +37,12 @@ def calculate_safety_stock_batch(
                 detail=f"Yetersiz kredi! Gerekli: {token_cost}, Mevcut: {current_user.token_balance}"
             )
         
-        # 1. Cache'ten verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
+        file_name = cached_data.get('file_name')
         
         materials = cached_data.get('materials', [])
         if not materials:
@@ -49,7 +50,6 @@ def calculate_safety_stock_batch(
         
         service_level = request.get('service_level', 0.95)
         
-        # 2. Analiz
         results = []
         for material in materials:
             weekly_data = material.get('historical_demand', [])
@@ -58,17 +58,12 @@ def calculate_safety_stock_batch(
             if len(weekly_data) < 4:
                 continue
             
-            # ✅ Pattern analizi
             pattern, pattern_stats = pattern_analyzer.analyze_demand_pattern(weekly_data)
-            
-            # ✅ Safety Stock hesaplama
             ss_result = optimizer.calculate_all_methods(
                 weekly_data,
                 lead_time,
                 service_level
             )
-            
-            # ✅ Pattern'e göre önerilen SS metodu
             recommended_method = get_recommended_method(pattern, pattern_stats)
             
             results.append({
@@ -91,28 +86,40 @@ def calculate_safety_stock_batch(
                 'recommended_method_label': get_method_label(recommended_method)
             })
         
-        # 3. Sonuçları kaydet
-        if results:
-            from app.models import UserAnalysisResult
-            
-            for result in results:
-                analysis_result = UserAnalysisResult(
-                    user_id=current_user.id,
-                    result_type='safety_stock_batch',
-                    material_code=result['material_code'],
-                    material_group=result.get('group', 'GENEL'),
-                    result_data=result,
-                    params={
-                        'service_level': service_level,
-                        'total_materials': len(results),
-                        'pattern_analysis': True
-                    },
-                    expires_at=datetime.utcnow() + timedelta(days=15)
-                )
-                db.add(analysis_result)
-            db.commit()
+        if not results:
+            raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
-        # 4. Öğrenme verilerini güncelle
+        # ============================================================
+        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
+        # ============================================================
+        
+        result_data = {
+            'success': True,
+            'total': len(results),
+            'results': results,
+            'service_level': service_level,
+            'pattern_analysis': True
+        }
+        
+        analysis_result = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='safety_stock_batch',
+            data=result_data,
+            params={
+                'service_level': service_level,
+                'total_materials': len(results),
+                'pattern_analysis': True
+            },
+            total_materials=len(results),
+            task_id=None,
+            status=None,
+            progress=100,
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(analysis_result)
+        
+        # Öğrenme verilerini güncelle
         if results:
             from app.api.endpoints.learning import update_learning_from_pattern
             pattern_results = [
@@ -128,7 +135,6 @@ def calculate_safety_stock_batch(
             ]
             update_learning_from_pattern(current_user.id, pattern_results, db)
         
-        # ✅ 5. Krediyi düş
         current_user.token_balance -= token_cost
         db.commit()
         
@@ -138,15 +144,16 @@ def calculate_safety_stock_batch(
             'results': results,
             'token_cost': token_cost,
             'new_balance': current_user.token_balance,
+            'result_id': analysis_result.id,
             'pattern_analysis': True
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
-
+    
 # ============================================================
 # 📌 ASYNC SAFETY STOCK (PATTERN ENTEGRE)
 # ============================================================
@@ -159,7 +166,6 @@ def start_async_safety_stock(
 ):
     """Async safety stock analizi - Pattern ile zenginleştirilmiş."""
     
-    # ✅ 0. Kredi kontrolü ve harcama
     token_cost = 6
     if current_user.token_balance < token_cost:
         raise HTTPException(
@@ -171,6 +177,7 @@ def start_async_safety_stock(
     if not cached_data:
         raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
     
+    upload_id = cached_data.get('upload_id')
     materials = cached_data.get('materials', [])
     if not materials:
         raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
@@ -178,11 +185,13 @@ def start_async_safety_stock(
     service_level = request.get('service_level', 0.95)
     task_id = str(uuid.uuid4())
     
-    # ✅ Krediyi hemen düş
     current_user.token_balance -= token_cost
     db.commit()
     
-    # ✅ Başlangıç kaydı
+    # ============================================================
+    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
+    # ============================================================
+    
     initial_data = {
         'status': 'processing',
         'message': 'Safety Stock analizi başlatıldı, işleniyor...',
@@ -197,9 +206,20 @@ def start_async_safety_stock(
     
     initial_record = AnalysisResult(
         user_id=current_user.id,
+        upload_id=upload_id,
         result_type='safety_stock_batch_async',
         data=initial_data,
-        task_id=task_id
+        params={
+            'service_level': service_level,
+            'total_materials': len(materials),
+            'pattern_analysis': True
+        },
+        total_materials=len(materials),
+        task_id=task_id,
+        status='processing',
+        progress=0,
+        message='Başlatıldı...',
+        expires_at=datetime.utcnow() + timedelta(days=15)
     )
     db.add(initial_record)
     db.commit()
@@ -208,6 +228,7 @@ def start_async_safety_stock(
         run_async_safety_stock_job,
         task_id=task_id,
         user_id=current_user.id,
+        upload_id=upload_id,
         service_level=service_level,
         db=db
     )
@@ -221,7 +242,7 @@ def start_async_safety_stock(
     }
 
 
-def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float, db: Session):
+def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, service_level: float, db: Session):
     """Async safety stock işini gerçekleştirir."""
     try:
         print(f"🔄 Async safety stock analizi başladı: Task ID {task_id}")
@@ -247,17 +268,12 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
                 if len(weekly_data) < 4:
                     continue
                 
-                # ✅ Pattern analizi
                 pattern, pattern_stats = pattern_analyzer.analyze_demand_pattern(weekly_data)
-                
-                # ✅ Safety Stock hesaplama
                 ss_result = optimizer.calculate_all_methods(
                     weekly_data,
                     lead_time,
                     service_level
                 )
-                
-                # ✅ Pattern'e göre önerilen SS metodu
                 recommended_method = get_recommended_method(pattern, pattern_stats)
                 
                 results.append({
@@ -280,7 +296,6 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
                     'recommended_method_label': get_method_label(recommended_method)
                 })
                 
-                # ✅ İlerleme güncelle
                 progress = int((idx + 1) / total * 100)
                 update_async_progress(db, task_id, progress, f'{progress}% tamamlandı', len(results))
                 
@@ -292,7 +307,10 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
         
-        # ✅ 1. AnalysisResult'u güncelle (ASYNC görevler için)
+        # ============================================================
+        # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
+        # ============================================================
+        
         result_data = {
             'success': True,
             'total': len(results),
@@ -303,35 +321,21 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
             'message': 'Safety Stock analizi tamamlandı!',
             'pattern_analysis': True,
             'completed_at': datetime.utcnow().isoformat(),
-            'token_cost': 6,  # Async maliyet
+            'token_cost': 6,
         }
         
         db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({'data': result_data})
+        ).update({
+            'data': result_data,
+            'status': 'completed',
+            'progress': 100,
+            'message': 'Tamamlandı!',
+            'total_materials': len(results),
+            'updated_at': datetime.utcnow()
+        })
         
-        # ✅ 2. UserAnalysisResult'a kaydet (Geçmiş için)
-        from app.models import UserAnalysisResult
-        
-        for result in results:
-            analysis_result = UserAnalysisResult(
-                user_id=user_id,
-                result_type='safety_stock_batch',
-                material_code=result['material_code'],
-                material_group=result.get('group', 'GENEL'),
-                result_data=result,
-                params={
-                    'service_level': service_level,
-                    'total_materials': len(results),
-                    'task_id': task_id,
-                    'pattern_analysis': True
-                },
-                expires_at=datetime.utcnow() + timedelta(days=15)
-            )
-            db.add(analysis_result)
-        db.commit()
-        
-        # 4. Öğrenme verilerini güncelle
+        # Öğrenme verilerini güncelle
         if results:
             from app.api.endpoints.learning import update_learning_from_pattern
             pattern_results = [
@@ -347,16 +351,33 @@ def run_async_safety_stock_job(task_id: str, user_id: int, service_level: float,
             ]
             update_learning_from_pattern(user_id, pattern_results, db)
         
+        db.commit()
+        
+        # Bildirim oluştur
+        try:
+            notification = Notification(
+                user_id=user_id,
+                title=f"✅ Emniyet Stoğu Analizi Tamamlandı!",
+                message=f"Safety Stock raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
+                type="success",
+                link="/tasks"
+            )
+            db.add(notification)
+            db.commit()
+        except Exception as e:
+            print(f"⚠️ Bildirim hatası: {e}")
+        
         print(f"✅ Async safety stock tamamlandı: Task ID {task_id}, {len(results)} malzeme")
         
     except Exception as e:
         print(f"❌ Async safety stock hatası: {e}")
         update_async_task_status(db, task_id, 'failed', str(e))
-
+        db.rollback()
 
 # ============================================================
-# 📌 YARDIMCI FONKSİYONLAR (aynı)
+# 📌 YARDIMCI FONKSİYONLAR
 # ============================================================
+
 def get_pattern_label(pattern: str) -> str:
     labels = {
         'DUZENLI_SABIT': 'Düzenli Sabit',

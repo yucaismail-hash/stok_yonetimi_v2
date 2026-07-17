@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from app.simulation.monte_carlo import MonteCarloInventorySimulator
 from app.auth import get_current_user
-from app.models import User, AnalysisResult, UserAnalysisResult
+from app.models import User, AnalysisResult, Notification
 from app.database import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -29,8 +29,35 @@ class SimulationConfig(BaseModel):
 
 
 # ============================================================
-# 📌 SENKRON SİMÜLASYON (ORİJİNAL - 554 SATIR)
+# 📌 YARDIMCI FONKSİYONLAR
 # ============================================================
+
+def update_async_progress(db: Session, task_id: str, progress: int, message: str, completed: int):
+    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
+    if result:
+        data = result.data if isinstance(result.data, dict) else {}
+        data['progress'] = progress
+        data['message'] = message
+        data['completed_materials'] = completed
+        result.data = data
+        db.commit()
+
+
+def update_async_task_status(db: Session, task_id: str, status: str, message: str):
+    db.query(AnalysisResult).filter(
+        AnalysisResult.task_id == task_id
+    ).update({
+        'status': status,
+        'message': message,
+        'updated_at': datetime.utcnow()
+    })
+    db.commit()
+
+
+# ============================================================
+# 📌 SENKRON SİMÜLASYON
+# ============================================================
+
 @router.post("/simulate/batch")
 def simulate_batch(
     config: SimulationConfig,
@@ -45,6 +72,8 @@ def simulate_batch(
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
         
         materials = cached_data.get('materials', [])
         if not materials:
@@ -79,7 +108,6 @@ def simulate_batch(
             current_rop = int(lead_time_demand + (avg_demand * 0.3))
             rop = current_rop
             
-            # 📌 REJİM - ZORLA AKTİF
             historical_demand_for_regime = None
             regime_forced = False
             
@@ -87,14 +115,9 @@ def simulate_batch(
                 if len(demand) >= 12:
                     historical_demand_for_regime = demand
                     regime_forced = True
-                    print(f"🔥 REJİM AKTİF: {material_code} için {len(demand)} hafta")
                 else:
-                    # Veri az olsa bile zorla dene
                     historical_demand_for_regime = demand
                     regime_forced = True
-                    print(f"⚠️ REJİM ZORLA (az veri): {material_code} için {len(demand)} hafta")
-            else:
-                print(f"ℹ️ REJİM KAPALI: {material_code}")
             
             material_suppliers = supplier_mapping.get(material_code, [])
             supplier_list = []
@@ -138,15 +161,10 @@ def simulate_batch(
                 stockout_prob = np.mean(sim_result.get('stockout_probability', [0])) if sim_result.get('stockout_probability') else 0
                 avg_stock = np.mean(sim_result.get('avg_stock', [0])) if sim_result.get('avg_stock') else 0
                 
-                # 📌 REJİM KULLANILDI MI KONTROL ET
                 regime_used = sim_result.get('regime_used', False)
-                
-                # 📌 ZORLA AKTİF ET
                 if config.use_regime and regime_forced:
                     regime_used = True
-                    print(f"✅ REJİM ZORLA AKTİF: {material_code}")
                 
-                # 📌 Risk Metrikleri
                 tail_risk = sim_result.get('tail_risk', 0)
                 if tail_risk == 0 and stockout_prob > 0:
                     tail_risk = min(1.0, stockout_prob * 2)
@@ -165,7 +183,6 @@ def simulate_batch(
                 
                 service_gap = round(95 - service_level, 1)
                 
-                # 📌 Detaylı tavsiye
                 recommendation_parts = []
                 rop_increase = 0
                 recommended_rop = current_rop
@@ -224,7 +241,9 @@ def simulate_batch(
                     'adaptive_ss_used': sim_result.get('adaptive_ss_used', False),
                     'recommendations': [recommendation],
                     'current_rop': current_rop,
-                    'recommended_rop': recommended_rop
+                    'recommended_rop': recommended_rop,
+                    'pattern': sim_result.get('pattern', 'DEGISKEN'),
+                    'cv': round(demand_std / avg_demand if avg_demand > 0 else 0, 4)
                 })
                 
                 raw_materials.append({
@@ -244,28 +263,42 @@ def simulate_batch(
                 print(f"❌ Simülasyon hatası ({material_code}): {e}")
                 continue
         
-        if results:
-            from app.models import UserAnalysisResult
-            
-            for result in results:
-                analysis_result = UserAnalysisResult(
-                    user_id=current_user.id,
-                    result_type='simulation_batch',
-                    material_code=result['material_code'],
-                    material_group=result.get('group', 'GENEL'),
-                    result_data=result,
-                    params={
-                        'n_simulations': config.n_simulations,
-                        'weeks': config.weeks,
-                        'use_regime': config.use_regime,
-                        'use_copula': config.use_copula,
-                        'use_adaptive_ss': config.use_adaptive_ss,
-                        'total_materials': len(results)
-                    },
-                    expires_at=datetime.utcnow() + timedelta(days=15)
-                )
-                db.add(analysis_result)
-            db.commit()
+        if not results:
+            raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
+        
+        # ============================================================
+        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
+        # ============================================================
+        
+        result_data = {
+            'success': True,
+            'total': len(results),
+            'results': results,
+            'config': config.dict(),
+            'raw_materials': raw_materials
+        }
+        
+        analysis_result = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='simulation_batch',
+            data=result_data,
+            params={
+                'n_simulations': config.n_simulations,
+                'weeks': config.weeks,
+                'use_regime': config.use_regime,
+                'use_copula': config.use_copula,
+                'use_adaptive_ss': config.use_adaptive_ss,
+                'total_materials': len(results)
+            },
+            total_materials=len(results),
+            task_id=None,
+            status=None,
+            progress=100,
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(analysis_result)
+        db.commit()
         
         return {
             'success': True,
@@ -273,18 +306,21 @@ def simulate_batch(
             'results': results,
             'raw_materials': raw_materials,
             'config': config.dict(),
-            'token_cost': 20
+            'token_cost': 20,
+            'result_id': analysis_result.id
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================
-# 📌 SENKRON STREAMING SİMÜLASYON (ORİJİNAL)
+# 📌 SENKRON STREAMING SİMÜLASYON
 # ============================================================
+
 @router.get("/simulate/batch-stream")
 async def simulate_batch_stream(
     n_simulations: int = 500,
@@ -366,7 +402,6 @@ async def simulate_batch_stream(
                 current_rop = int(lead_time_demand + (avg_demand * 0.3))
                 rop = current_rop
                 
-                # 📌 REJİM - ZORLA AKTİF
                 historical_demand_for_regime = None
                 regime_forced = False
                 
@@ -374,11 +409,9 @@ async def simulate_batch_stream(
                     if len(demand) >= 12:
                         historical_demand_for_regime = demand
                         regime_forced = True
-                        print(f"🔥 REJİM AKTİF: {material_code} için {len(demand)} hafta")
                     else:
                         historical_demand_for_regime = demand
                         regime_forced = True
-                        print(f"⚠️ REJİM ZORLA (az veri): {material_code} için {len(demand)} hafta")
                 
                 material_suppliers = supplier_mapping.get(material_code, [])
                 supplier_list = []
@@ -422,13 +455,10 @@ async def simulate_batch_stream(
                     stockout_prob = np.mean(sim_result.get('stockout_probability', [0])) if sim_result.get('stockout_probability') else 0
                     avg_stock = np.mean(sim_result.get('avg_stock', [0])) if sim_result.get('avg_stock') else 0
                     
-                    # 📌 REJİM KULLANILDI MI
                     regime_used = sim_result.get('regime_used', False)
                     if use_regime and regime_forced:
                         regime_used = True
-                        print(f"✅ REJİM ZORLA AKTİF: {material_code}")
                     
-                    # 📌 Risk Metrikleri
                     tail_risk = sim_result.get('tail_risk', 0)
                     if tail_risk == 0 and stockout_prob > 0:
                         tail_risk = min(1.0, stockout_prob * 2)
@@ -447,7 +477,6 @@ async def simulate_batch_stream(
                     
                     service_gap = round(95 - service_level, 1)
                     
-                    # 📌 Detaylı tavsiye
                     recommendation_parts = []
                     rop_increase = 0
                     recommended_rop = current_rop
@@ -506,7 +535,9 @@ async def simulate_batch_stream(
                         'adaptive_ss_used': sim_result.get('adaptive_ss_used', False),
                         'recommendations': [recommendation],
                         'current_rop': current_rop,
-                        'recommended_rop': recommended_rop
+                        'recommended_rop': recommended_rop,
+                        'pattern': sim_result.get('pattern', 'DEGISKEN'),
+                        'cv': round(demand_std / avg_demand if avg_demand > 0 else 0, 4)
                     })
                     
                     raw_materials.append({
@@ -530,29 +561,6 @@ async def simulate_batch_stream(
                     progress = 10 + int((idx + 1) / total * 80)
                     yield f"data: {json.dumps({'progress': progress, 'label': f'{idx+1}/{total} malzeme işleniyor...'})}\n\n"
             
-            if results:
-                from app.models import UserAnalysisResult
-                
-                for result in results:
-                    analysis_result = UserAnalysisResult(
-                        user_id=user_id,
-                        result_type='simulation_batch',
-                        material_code=result['material_code'],
-                        material_group=result.get('group', 'GENEL'),
-                        result_data=result,
-                        params={
-                            'n_simulations': n_simulations,
-                            'weeks': weeks,
-                            'use_regime': use_regime,
-                            'use_copula': use_copula,
-                            'use_adaptive_ss': use_adaptive_ss,
-                            'total_materials': len(results)
-                        },
-                        expires_at=datetime.utcnow() + timedelta(days=15)
-                    )
-                    db.add(analysis_result)
-                db.commit()
-            
             yield f"data: {json.dumps({'progress': 100, 'label': 'Tamamlandı!', 'results': results, 'total': len(results)})}\n\n"
             
         except Exception as e:
@@ -562,8 +570,9 @@ async def simulate_batch_stream(
 
 
 # ============================================================
-# 📌 ASYNC SİMÜLASYON (YENİ)
+# 📌 ASYNC SİMÜLASYON
 # ============================================================
+
 @router.post("/simulate/batch/async")
 def start_async_simulation(
     config: SimulationConfig,
@@ -577,13 +586,17 @@ def start_async_simulation(
     if not cached_data:
         raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
     
+    upload_id = cached_data.get('upload_id')
     materials = cached_data.get('materials', [])
     if not materials:
         raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
     
     task_id = str(uuid.uuid4())
     
-    # ✅ Başlangıç kaydı
+    # ============================================================
+    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
+    # ============================================================
+    
     initial_data = {
         'status': 'processing',
         'message': 'Simülasyon başlatıldı, işleniyor...',
@@ -596,9 +609,23 @@ def start_async_simulation(
     
     initial_record = AnalysisResult(
         user_id=current_user.id,
+        upload_id=upload_id,
         result_type='simulation_batch_async',
         data=initial_data,
-        task_id=task_id
+        params={
+            'n_simulations': config.n_simulations,
+            'weeks': config.weeks,
+            'use_regime': config.use_regime,
+            'use_copula': config.use_copula,
+            'use_adaptive_ss': config.use_adaptive_ss,
+            'total_materials': len(materials)
+        },
+        total_materials=len(materials),
+        task_id=task_id,
+        status='processing',
+        progress=0,
+        message='Başlatıldı...',
+        expires_at=datetime.utcnow() + timedelta(days=15)
     )
     db.add(initial_record)
     db.commit()
@@ -607,6 +634,7 @@ def start_async_simulation(
         run_async_simulation_job,
         task_id=task_id,
         user_id=current_user.id,
+        upload_id=upload_id,
         config=config,
         db=db
     )
@@ -619,7 +647,7 @@ def start_async_simulation(
     }
 
 
-def run_async_simulation_job(task_id: str, user_id: int, config: SimulationConfig, db: Session):
+def run_async_simulation_job(task_id: str, user_id: int, upload_id: str, config: SimulationConfig, db: Session):
     """Async simülasyon işini gerçekleştirir."""
     try:
         print(f"🔄 Async simülasyon başladı: Task ID {task_id}")
@@ -638,6 +666,7 @@ def run_async_simulation_job(task_id: str, user_id: int, config: SimulationConfi
         suppliers = cached_data.get('suppliers', {})
         
         results = []
+        raw_materials = []
         total = len(materials)
         
         for idx, material in enumerate(materials):
@@ -749,6 +778,7 @@ def run_async_simulation_job(task_id: str, user_id: int, config: SimulationConfi
                         recommendation_parts.append("📌 Adaptif SS aktif")
                     if tail_risk > 0.5:
                         recommendation_parts.append("⚠️ Tail Risk yüksek, ek SS önerilir")
+                        
                 elif service_level < 95:
                     gap = 95 - service_level
                     ss_increase = int((gap / 100) * avg_demand * (lead_time / 7) * 0.5)
@@ -762,6 +792,7 @@ def run_async_simulation_job(task_id: str, user_id: int, config: SimulationConfi
                     recommendation_parts.append(f"📊 SS'yi {current_ss} → {new_ss} birim artırın")
                     if tail_risk > 0.5:
                         recommendation_parts.append("⚠️ Tail Risk yüksek, ek SS önerilir")
+                        
                 else:
                     recommendation_parts.append(f"✅ Servis seviyesi %{service_level:.1f} (hedef %95, başarılı)")
                     recommendation_parts.append("💡 Mevcut politika başarılı, değişiklik gerekmiyor")
@@ -784,21 +815,39 @@ def run_async_simulation_job(task_id: str, user_id: int, config: SimulationConfi
                     'adaptive_ss_used': sim_result.get('adaptive_ss_used', False),
                     'recommendations': [recommendation],
                     'current_rop': current_rop,
-                    'recommended_rop': recommended_rop
+                    'recommended_rop': recommended_rop,
+                    'pattern': sim_result.get('pattern', 'DEGISKEN'),
+                    'cv': round(demand_std / avg_demand if avg_demand > 0 else 0, 4)
+                })
+                
+                raw_materials.append({
+                    'code': material_code,
+                    'group': group,
+                    'initial_stock': initial_stock,
+                    'lead_time_days': lead_time,
+                    'eoq': eoq,
+                    'unit_cost': unit_cost,
+                    'holding_rate': holding_rate,
+                    'shortage_cost': shortage_cost,
+                    'demand_mean': round(avg_demand, 2),
+                    'demand_std': round(demand_std, 2)
                 })
                 
                 progress = int((idx + 1) / total * 100)
                 update_async_progress(db, task_id, progress, f'{progress}% tamamlandı', len(results))
                 
             except Exception as e:
-                print(f"❌ Simülasyon hatası ({material.get('code', '')}): {e}")
+                print(f"❌ Async simülasyon malzeme hatası ({material.get('code', '')}): {e}")
                 continue
         
         if not results:
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
         
-        # ✅ 1. AnalysisResult'u güncelle (ASYNC görevler için)
+        # ============================================================
+        # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
+        # ============================================================
+        
         result_data = {
             'success': True,
             'total': len(results),
@@ -812,59 +861,34 @@ def run_async_simulation_job(task_id: str, user_id: int, config: SimulationConfi
         
         db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({'data': result_data})
+        ).update({
+            'data': result_data,
+            'status': 'completed',
+            'progress': 100,
+            'message': 'Tamamlandı!',
+            'total_materials': len(results),
+            'updated_at': datetime.utcnow()
+        })
         
-        # ✅ 2. UserAnalysisResult'a kaydet (Geçmiş için)
-        analysis_result = UserAnalysisResult(
-            user_id=user_id,
-            result_type='simulation_batch',
-            material_code='BATCH_ALL',
-            material_group='TOPLU',
-            result_data={
-                'total': len(results),
-                'results': results,
-                'config': config.dict()
-            },
-            params={
-                'n_simulations': config.n_simulations,
-                'weeks': config.weeks,
-                'use_regime': config.use_regime,
-                'use_copula': config.use_copula,
-                'use_adaptive_ss': config.use_adaptive_ss,
-                'total_materials': len(results),
-                'task_id': task_id
-            },
-            expires_at=datetime.utcnow() + timedelta(days=15)
-        )
-        db.add(analysis_result)
         db.commit()
+        
+        # Bildirim oluştur
+        try:
+            notification = Notification(
+                user_id=user_id,
+                title=f"✅ Monte Carlo Simülasyonu Tamamlandı!",
+                message=f"Simülasyon raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
+                type="success",
+                link="/tasks"
+            )
+            db.add(notification)
+            db.commit()
+        except Exception as e:
+            print(f"⚠️ Bildirim hatası: {e}")
         
         print(f"✅ Async simülasyon tamamlandı: Task ID {task_id}, {len(results)} malzeme")
         
     except Exception as e:
         print(f"❌ Async simülasyon hatası: {e}")
         update_async_task_status(db, task_id, 'failed', str(e))
-
-
-# ============================================================
-# 📌 YARDIMCI FONKSİYONLAR
-# ============================================================
-def update_async_progress(db: Session, task_id: str, progress: int, message: str, completed: int):
-    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-    if result:
-        data = result.data if isinstance(result.data, dict) else {}
-        data['progress'] = progress
-        data['message'] = message
-        data['completed_materials'] = completed
-        result.data = data
-        db.commit()
-
-
-def update_async_task_status(db: Session, task_id: str, status: str, message: str):
-    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-    if result:
-        data = result.data if isinstance(result.data, dict) else {}
-        data['status'] = status
-        data['message'] = message
-        result.data = data
-        db.commit()
+        db.rollback()

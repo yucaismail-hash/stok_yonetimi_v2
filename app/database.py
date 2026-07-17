@@ -10,15 +10,20 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./stok_db.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_engine(DATABASE_URL,
-                       pool_size=20,        # Varsayılan 5 -> 20
-    max_overflow=30,     # Varsayılan 10 -> 30
-    pool_timeout=60,     # Varsayılan 30 -> 60 saniye
-    pool_pre_ping=True,  # Bağlantıyı kontrol et
-    pool_recycle=3600    # 1 saatte bir bağlantıyı yenile
-    )
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL environment variable is required")
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_size=8,
+    max_overflow=16,
+    pool_timeout=30,
+    pool_pre_ping=True,
+    pool_recycle=1800,
+    connect_args={"connect_timeout": 10, "sslmode": "require"}
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

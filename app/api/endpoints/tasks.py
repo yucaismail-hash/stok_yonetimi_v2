@@ -4,7 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
-from app.models import User, AnalysisResult, UserAnalysisResult
+from app.models import User, AnalysisResult
 from app.auth import get_current_user
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])

@@ -1,4 +1,4 @@
-// frontend/src/pages/SafetyStockPage.tsx - TAM DOSYA (STOKONOMİ AKILLI SEÇİM EN ÜSTE ALINDI)
+// frontend/src/pages/SafetyStockPage.tsx - TAM DOSYA (DÜZELTİLMİŞ)
 
 import { useState, useEffect } from 'react';
 import {
@@ -59,6 +59,10 @@ import {
   AttachMoney,
   Star,
   Lightbulb,
+  Psychology,
+  AutoAwesome,
+  Timeline,
+  ShowChart,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
@@ -121,6 +125,25 @@ interface MethodDetail {
   isRecommended?: boolean;
   isDefault?: boolean;
 }
+
+// ✅ AI Yorumu Interface
+interface AIComment {
+  summary: string;
+  pattern: string;
+  risk: string;
+  recommendation: string;
+  confidence: string;
+}
+
+// ✅ Method Labels - ORTAK TANIM (Component DIŞINDA)
+const methodLabelsFull: Record<string, string> = {
+  classic_ss: 'Klasik SS',
+  croston_ss: 'Croston',
+  syntetos_boylan_ss: 'Syntetos-Boylan',
+  bootstrapping_ss: 'Bootstrapping',
+  ml_ss: 'ML Tabanlı',
+  hybrid_ss: 'Hibrit',
+};
 
 // ✅ Analiz Aşamaları Bileşeni (Kompakt)
 const AnalysisProgress = ({ 
@@ -272,6 +295,7 @@ export default function SafetyStockPage() {
   const [rowsPerPage, setRowsPerPage] = useState(50);
   const [materialCount, setMaterialCount] = useState(0);
   const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
+  const [aiComment, setAiComment] = useState<AIComment | null>(null);
 
   const [serviceLevel, setServiceLevel] = useState<number>(0.95);
   const [progress, setProgress] = useState(0);
@@ -513,6 +537,7 @@ export default function SafetyStockPage() {
     setProgress(0);
     setProgressLabel('Hazır');
     setAnalysisSummary(null);
+    setAiComment(null);
   };
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -552,6 +577,88 @@ export default function SafetyStockPage() {
     };
   };
 
+  // ✅ AI Yorumu oluştur
+  const generateAIComment = (summary: AnalysisSummary) => {
+    if (!summary) return null;
+
+    const mostUsedLabel = methodLabelsFull[summary.mostUsedMethod] || summary.mostUsedMethod;
+    
+    let patternText = '';
+    const patternKeys = Object.keys(summary.patternDistribution);
+    const totalPatterns = patternKeys.length;
+    if (totalPatterns > 3) {
+      patternText = `Çeşitli talep desenleri tespit edildi (${totalPatterns} farklı pattern). En yaygın pattern: ${Object.entries(summary.patternDistribution).sort((a, b) => b[1] - a[1])[0]?.[0] || 'Değişken'}.`;
+    } else if (totalPatterns > 1) {
+      patternText = `${totalPatterns} farklı talep deseni tespit edildi. Analiz çeşitliliği iyi seviyede.`;
+    } else {
+      patternText = `Tek tip talep deseni hakim. Stok yönetimi daha öngörülebilir.`;
+    }
+
+    let riskText = '';
+    const avgSS = summary.totalRecommendedSS / summary.totalMaterials;
+    if (avgSS > 100) {
+      riskText = `Ortalama emniyet stoğu yüksek (${avgSS.toFixed(0)} birim). Stok maliyetleri gözden geçirilmeli.`;
+    } else if (avgSS > 50) {
+      riskText = `Ortalama emniyet stoğu orta seviyede (${avgSS.toFixed(0)} birim). Dengeli bir yaklaşım.`;
+    } else {
+      riskText = `Ortalama emniyet stoğu düşük (${avgSS.toFixed(0)} birim). Stok riskleri değerlendirilmeli.`;
+    }
+
+    let confidenceText = '';
+    const totalPatternsCount = Object.keys(summary.patternDistribution).length;
+    if (totalPatternsCount > 2 && summary.totalMaterials > 50) {
+      confidenceText = 'Veri çeşitliliği yüksek, analiz güvenilir.';
+    } else if (totalPatternsCount > 1 && summary.totalMaterials > 20) {
+      confidenceText = 'Veri kalitesi iyi, analiz güvenilir.';
+    } else {
+      confidenceText = 'Veri miktarı sınırlı, analiz sonuçları dikkatle değerlendirilmeli.';
+    }
+
+    return {
+      summary: `${summary.totalMaterials} ürün analiz edildi. En çok tercih edilen yöntem "${mostUsedLabel}" (%${summary.mostUsedMethodPercent.toFixed(0)}).`,
+      pattern: patternText,
+      risk: riskText,
+      recommendation: `Önerilen toplam emniyet stoğu: ${summary.totalRecommendedSS.toLocaleString()} birim. Servis seviyesi: %${summary.avgServiceLevel.toFixed(0)}.`,
+      confidence: confidenceText,
+    };
+  };
+
+  // ✅ Rapor adını belirleme fonksiyonu
+  const getReportName = (items: any[]): string => {
+    if (!items || items.length === 0) return 'Emniyet Stoğu';
+    
+    const firstItem = items[0];
+    const resultType = firstItem?.result_type || firstItem?.data?.result_type || '';
+    const resultData = firstItem?.data || {};
+    
+    if (resultType === 'safety_stock_batch' || resultType === 'safety_stock_batch_async') {
+      const serviceLevel = resultData?.service_level || 0.95;
+      const method = resultData?.recommended_method || resultData?.method || 'Hibrit';
+      const methodLabel = methodLabelsFull[method] || method;
+      return `Emniyet Stoğu (%${(serviceLevel * 100).toFixed(0)}) - ${methodLabel}`;
+    }
+    
+    if (resultType === 'forecast_batch' || resultType === 'forecast_batch_async') {
+      const model = resultData?.selected_model || resultData?.model_type || 'Otomatik';
+      const horizon = resultData?.horizon || 4;
+      return `Talep Tahmini (${model}) - ${horizon} Hafta`;
+    }
+    
+    if (resultType === 'simulation_batch' || resultType === 'simulation_batch_async') {
+      return 'Monte Carlo Simülasyonu';
+    }
+    
+    if (resultType === 'backtest_batch' || resultType === 'backtest_batch_async') {
+      return 'Backtest Analizi';
+    }
+    
+    if (resultType === 'supplier_batch' || resultType === 'supplier_batch_async') {
+      return 'Tedarikçi Analizi';
+    }
+    
+    return 'Emniyet Stoğu';
+  };
+
   const startAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -582,6 +689,10 @@ export default function SafetyStockPage() {
       if (response.results) {
         const summary = generateSummary(response.results);
         setAnalysisSummary(summary);
+        if (summary) {
+          const comment = generateAIComment(summary);
+          setAiComment(comment);
+        }
       }
       
       updateStep(4, 'active', 'Veriler kontrol ediliyor...');
@@ -722,65 +833,72 @@ export default function SafetyStockPage() {
   });
 
   const fetchHistory = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get('/api/upload/results', {
-        params: { result_type: 'safety_stock_batch', limit: 100 }
-      });
-      
-      if (res.data.success) {
-        const rawResults = res.data.results || [];
-        const groupedMap = new Map();
-        
-        rawResults.forEach((item: any) => {
-          const date = item.created_at ? new Date(item.created_at) : new Date();
-          const key = date.toISOString().slice(0, 16);
-          
-          if (!groupedMap.has(key)) {
-            groupedMap.set(key, {
-              id: item.id,
-              created_at: item.created_at,
-              items: []
-            });
+      setLoading(true);
+      try {
+          const res = await api.get('/api/upload/results', {
+              params: { 
+                  result_type: 'safety_stock_batch', 
+                  limit: 10000 
+              }
+          });
+
+          if (res.data.success) {
+              const rawResults = res.data.results || [];
+              console.log(`📊 ${rawResults.length} sonuç bulundu`);
+              
+              // ✅ SADECE BATCH kayıtlarını al
+              const batchResults = rawResults.filter((item: any) => item.is_batch === true);
+              
+              console.log(`📊 ${batchResults.length} batch sonucu bulundu`);
+              
+              const historyItems = batchResults.map((item: any) => {
+                  const data = item.data || {};
+                  const totalMaterials = item.total_materials || data.total || 0;
+                  
+                  // ✅ Emniyet stoğu parametrelerini al
+                  const serviceLevel = data?.service_level || 0.95;
+                  const method = data?.recommended_method || data?.method || 'hybrid_ss';
+                  
+                  // Metod label'ları
+                  const methodLabels: Record<string, string> = {
+                      'classic_ss': 'Klasik',
+                      'croston_ss': 'Croston',
+                      'syntetos_boylan_ss': 'Syntetos-Boylan',
+                      'bootstrapping_ss': 'Bootstrapping',
+                      'ml_ss': 'ML',
+                      'hybrid_ss': 'Hibrit',
+                  };
+                  const methodLabel = methodLabels[method] || method;
+                  
+                  // ✅ Rapor adını zenginleştir
+                  const reportName = `Emniyet Stoğu (%${(serviceLevel * 100).toFixed(0)}) - ${methodLabel} - ${totalMaterials} Malzeme`;
+                  
+                  return {
+                      id: item.id,
+                      created_at: item.created_at,
+                      data: {
+                          total: totalMaterials,
+                          results: data.results || [],
+                          report_name: reportName,
+                          status: item.status || 'completed',
+                          service_level: serviceLevel,
+                          method: method,
+                      }
+                  };
+              });
+              
+              setHistoryData(historyItems);
+              setHistoryDialogOpen(true);
+              setError(null);
+          } else {
+              setError('Geçmiş sonuçlar yüklenemedi');
           }
-          groupedMap.get(key).items.push(item);
-        });
-        
-        const groupedResults = Array.from(groupedMap.values()).map(group => {
-          const allResults = group.items
-            .map((item: any) => {
-              const resultData = item.data || item.result_data || {};
-              if (resultData.results && Array.isArray(resultData.results)) {
-                return resultData.results;
-              }
-              if (resultData.material_code) {
-                return [resultData];
-              }
-              return [];
-            })
-            .flat();
-          
-          return {
-            id: group.id,
-            created_at: group.created_at,
-            data: {
-              total: allResults.length,
-              results: allResults
-            }
-          };
-        });
-        
-        setHistoryData(groupedResults);
-        setHistoryDialogOpen(true);
-        setError(null);
-      } else {
-        setError('Geçmiş sonuçlar yüklenemedi');
+      } catch (err: any) {
+          console.error('❌ Geçmiş hatası:', err);
+          setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+      } finally {
+          setLoading(false);
       }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
-    } finally {
-      setLoading(false);
-    }
   };
 
   const handleViewHistory = (item: HistoryItem) => {
@@ -794,6 +912,10 @@ export default function SafetyStockPage() {
       
       const summary = generateSummary(historyResults);
       setAnalysisSummary(summary);
+      if (summary) {
+        const comment = generateAIComment(summary);
+        setAiComment(comment);
+      }
     } else {
       setError('Bu kayıtta görüntülenecek sonuç yok');
     }
@@ -872,11 +994,41 @@ export default function SafetyStockPage() {
     setServiceLevel(newValue);
   };
 
+  // ✅ Hero Header Bileşeni
+  const HeroHeader = () => (
+    <Card sx={{ mb: 3, borderRadius: 2, bgcolor: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)', border: '1px solid #d0e0ff' }}>
+      <CardContent sx={{ py: 2.5, px: 3 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { md: 'center' }, justifyContent: 'space-between' }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <Security sx={{ fontSize: 24, color: '#1f4e79' }} />
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#1f4e79', fontSize: '1.3rem' }}>
+                Emniyet Stoğu (Safety Stock)
+              </Typography>
+              <Chip label="SS Analizi" size="small" sx={{ height: 20, fontSize: '0.55rem', bgcolor: '#1f4e79', color: 'white' }} />
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
+              6 farklı metod ve talep pattern analizi ile optimum emniyet stok seviyelerini belirler.
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1.5, mt: { xs: 1.5, md: 0 }, flexWrap: 'wrap' }}>
+            <Chip icon={<CheckCircle sx={{ fontSize: 14 }} />} label="6 metod" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+            <Chip icon={<AutoAwesome sx={{ fontSize: 14 }} />} label="Otomatik seçim" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+            <Chip icon={<Timeline sx={{ fontSize: 14 }} />} label="Pattern analizi" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+            <Chip icon={<Download sx={{ fontSize: 14 }} />} label="Excel raporu" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+
   // ✅ KPI Kartları
   const KpiCards = () => {
-    const totalPatterns = analysisSummary?.patternDistribution 
-      ? Object.keys(analysisSummary.patternDistribution).length 
+    const summary = analysisSummary;
+    const totalPatterns = summary?.patternDistribution 
+      ? Object.keys(summary.patternDistribution).length 
       : 0;
+    const methodLabel = summary ? (methodLabelsFull[summary.mostUsedMethod] || summary.mostUsedMethod) : '-';
     
     return (
       <Grid container spacing={1.5} sx={{ mb: 2 }}>
@@ -899,73 +1051,62 @@ export default function SafetyStockPage() {
           </Paper>
         </Grid>
         <Grid size={{ xs: 6, sm: 3 }}>
-          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
-            <TrendingUp sx={{ fontSize: 18, color: '#1f4e79' }} />
-            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: '#1f4e79' }}>
-              {(serviceLevel * 100).toFixed(0)}%
+          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: summary ? '#e8f5e9' : '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <AutoAwesome sx={{ fontSize: 18, color: summary ? '#2e7d32' : '#1f4e79' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: summary ? '#2e7d32' : '#1f4e79' }}>
+              {summary ? methodLabel : '-'}
             </Typography>
-            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Servis</Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>En Çok Kullanılan</Typography>
           </Paper>
         </Grid>
         <Grid size={{ xs: 6, sm: 3 }}>
-          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
-            <AttachMoney sx={{ fontSize: 18, color: '#1f4e79' }} />
-            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: '#1f4e79' }}>
-              {syncCostData?.cost || 4}
+          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: summary ? '#e8f5e9' : '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <AttachMoney sx={{ fontSize: 18, color: summary ? '#2e7d32' : '#1f4e79' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: summary ? '#2e7d32' : '#1f4e79' }}>
+              {summary ? summary.totalRecommendedSS.toLocaleString() : '-'}
             </Typography>
-            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Token</Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Önerilen Toplam SS</Typography>
           </Paper>
         </Grid>
       </Grid>
     );
   };
 
-  // ✅ Analiz Özeti Kartı
-  const AnalysisSummaryCard = () => {
-    if (!analysisSummary) return null;
-
-    const methodLabelsFull: Record<string, string> = {
-      classic_ss: 'Klasik SS',
-      croston_ss: 'Croston',
-      syntetos_boylan_ss: 'Syntetos-Boylan',
-      bootstrapping_ss: 'Bootstrapping',
-      ml_ss: 'ML Tabanlı',
-      hybrid_ss: 'Hibrit',
-    };
+  // ✅ AI Yorumu Kartı
+  const AICommentCard = () => {
+    if (!aiComment) return null;
 
     return (
-      <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#e8f5e9', border: '1px solid #a5d6a7' }}>
+      <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#f3e5f5', border: '1px solid #ce93d8' }}>
         <CardContent sx={{ py: 1.5, px: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <CheckCircle sx={{ fontSize: 18, color: '#2e7d32' }} />
-            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#2e7d32', fontSize: '0.8rem' }}>
-              Analiz Özeti
+            <Psychology sx={{ fontSize: 18, color: '#6a1b9a' }} />
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#6a1b9a', fontSize: '0.8rem' }}>
+              🤖 AI Analiz Özeti
             </Typography>
           </Box>
-          <Grid container spacing={1}>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
-                <strong>{analysisSummary.totalMaterials}</strong> ürün analiz edildi
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c' }}>
+                📊 {aiComment.summary}
               </Typography>
-              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
-                En çok kullanılan yöntem: <strong>{methodLabelsFull[analysisSummary.mostUsedMethod] || analysisSummary.mostUsedMethod}</strong>
-                <Chip 
-                  label={`%${analysisSummary.mostUsedMethodPercent.toFixed(0)}`} 
-                  size="small" 
-                  color="success" 
-                  sx={{ height: 18, fontSize: '0.5rem', ml: 0.5 }}
-                />
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c', mt: 0.5 }}>
+                📈 {aiComment.pattern}
               </Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
-                Servis seviyesi: <strong>%{analysisSummary.avgServiceLevel.toFixed(0)}</strong>
+            </Box>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c' }}>
+                ⚠️ {aiComment.risk}
               </Typography>
-              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
-                Önerilen toplam SS: <strong>{analysisSummary.totalRecommendedSS.toLocaleString()}</strong> birim
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c', mt: 0.5 }}>
+                ✅ {aiComment.confidence}
               </Typography>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#6a1b9a', display: 'block' }}>
+            💡 {aiComment.recommendation}
+          </Typography>
         </CardContent>
       </Card>
     );
@@ -992,6 +1133,9 @@ export default function SafetyStockPage() {
         </Alert>
       </Snackbar>
 
+      {/* ✅ Hero Header */}
+      <HeroHeader />
+
       {/* Alert'ler */}
       {error && (
         <Alert 
@@ -1010,6 +1154,9 @@ export default function SafetyStockPage() {
 
       {/* ✅ KPI Kartları */}
       <KpiCards />
+
+      {/* ✅ AI Yorumu (varsa) */}
+      <AICommentCard />
 
       {/* ✅ ANA GRID - 2 SÜTUN */}
       <Grid container spacing={2} sx={{ mb: 2 }}>
@@ -1250,8 +1397,43 @@ export default function SafetyStockPage() {
             </CardContent>
           </Card>
 
-          {/* ✅ Analiz Özeti */}
-          <AnalysisSummaryCard />
+          {/* ✅ Analiz Özeti (varsa) */}
+          {analysisSummary && (
+            <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#e8f5e9', border: '1px solid #a5d6a7' }}>
+              <CardContent sx={{ py: 1.5, px: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <CheckCircle sx={{ fontSize: 18, color: '#2e7d32' }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#2e7d32', fontSize: '0.8rem' }}>
+                    Analiz Özeti
+                  </Typography>
+                </Box>
+                <Grid container spacing={1}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      <strong>{analysisSummary.totalMaterials}</strong> ürün analiz edildi
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      En çok kullanılan yöntem: <strong>{methodLabelsFull[analysisSummary.mostUsedMethod] || analysisSummary.mostUsedMethod}</strong>
+                      <Chip 
+                        label={`%${analysisSummary.mostUsedMethodPercent.toFixed(0)}`} 
+                        size="small" 
+                        color="success" 
+                        sx={{ height: 18, fontSize: '0.5rem', ml: 0.5 }}
+                      />
+                    </Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      Servis seviyesi: <strong>%{analysisSummary.avgServiceLevel.toFixed(0)}</strong>
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      Önerilen toplam SS: <strong>{analysisSummary.totalRecommendedSS.toLocaleString()}</strong> birim
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          )}
         </Grid>
       </Grid>
 
@@ -1484,7 +1666,7 @@ export default function SafetyStockPage() {
       )}
 
       {/* ✅ Geçmiş Dialog */}
-      <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
         <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1.5 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.95rem' }}>
@@ -1509,31 +1691,77 @@ export default function SafetyStockPage() {
               <Table size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#f8faff' }}>
-                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>Tarih</TableCell>
-                    <TableCell align="right" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>Malzeme</TableCell>
-                    <TableCell align="right" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>İşlem</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      📅 Tarih
+                    </TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      📄 Rapor Adı
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      📦 Malzeme Sayısı
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      ⏳ Durum
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      🔍 İşlem
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {historyData.map((item) => (
-                    <TableRow key={item.id} hover>
-                      <TableCell sx={{ fontSize: '0.7rem' }}>
-                        {new Date(item.created_at).toLocaleString('tr-TR')}
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontSize: '0.7rem' }}>{item.data?.total || 0}</TableCell>
-                      <TableCell align="right">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() => handleViewHistory(item)}
-                          startIcon={<Visibility sx={{ fontSize: 14 }} />}
-                          sx={{ fontSize: '0.6rem', textTransform: 'none' }}
-                        >
-                          Görüntüle
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {historyData.map((item) => {
+                    const itemDate = new Date(item.created_at);
+                    const dateStr = itemDate.toLocaleDateString('tr-TR');
+                    const timeStr = itemDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                    const status = item.data?.status || 'completed';
+                    const statusConfig = {
+                      completed: { label: '✅ Tamamlandı', color: 'success' },
+                      processing: { label: '🔄 İşleniyor', color: 'warning' },
+                      pending: { label: '⏳ Bekliyor', color: 'info' },
+                      failed: { label: '❌ Başarısız', color: 'error' },
+                    };
+                    const statusInfo = statusConfig[status as keyof typeof statusConfig] || statusConfig.completed;
+                    
+                    return (
+                      <TableRow key={item.id} hover>
+                        <TableCell sx={{ fontSize: '0.7rem' }}>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
+                              {dateStr}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#9e9e9e' }}>
+                              {timeStr}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
+                          {item.data?.report_name || 'Emniyet Stoğu Analizi'}
+                        </TableCell>
+                        <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                          {item.data?.total || 0}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            label={statusInfo.label}
+                            size="small"
+                            color={statusInfo.color as any}
+                            sx={{ height: 20, fontSize: '0.55rem' }}
+                          />
+                        </TableCell>
+                        <TableCell align="right">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleViewHistory(item)}
+                            startIcon={<Visibility sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.6rem', textTransform: 'none' }}
+                          >
+                            Görüntüle
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TableContainer>

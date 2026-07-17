@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import uuid
-import os  # ✅ EKLENDİ
-import requests  # ✅ EKLENDİ
+import os
+import requests
 from app.database import get_db
-from app.models import User, UploadedData, AnalysisResult, UserAnalysisResult
+from app.models import User, UploadedData, AnalysisResult, Notification
 from app.analysis.forecast import DemandForecaster
 from app.analysis.pattern import AdvancedDemandAnalyzer
 from app.auth import get_current_user
@@ -16,7 +16,7 @@ import numpy as np
 
 router = APIRouter()
 
-# ✅ Pattern analizci ile forecast'u zenginleştir
+# Pattern analizci ile forecast'u zenginleştir
 pattern_analyzer = AdvancedDemandAnalyzer()
 forecaster = DemandForecaster(seasonal_periods=52)
 forecaster.set_pattern_analyzer(pattern_analyzer)
@@ -26,6 +26,66 @@ class ForecastRequest(BaseModel):
     horizon: int = 13
     model_type: str = "auto"
 
+
+# ============================================================
+# 📌 YARDIMCI FONKSİYONLAR
+# ============================================================
+
+def get_pattern_label(pattern: str) -> str:
+    labels = {
+        'DUZENLI_SABIT': 'Düzenli Sabit',
+        'DUZENLI_ARTS': 'Düzenli Artan',
+        'DUZENLI_AZALIS': 'Düzenli Azalan',
+        'DEGISKEN': 'Değişken',
+        'YUKSEK_DEGISKEN': 'Yüksek Değişken',
+        'ASIRI_DEGISKEN': 'Aşırı Değişken',
+        'SIFIR_TALEP': 'Sıfır Talep',
+        'ARALIKLI_DUSUK': 'Aralıklı Düşük',
+        'ARALIKLI_YUKSEK': 'Aralıklı Yüksek',
+    }
+    return labels.get(pattern, pattern)
+
+
+def get_pattern_color(pattern: str) -> str:
+    colors = {
+        'DUZENLI_SABIT': 'success',
+        'DUZENLI_ARTS': 'info',
+        'DUZENLI_AZALIS': 'warning',
+        'DEGISKEN': 'primary',
+        'YUKSEK_DEGISKEN': 'secondary',
+        'ASIRI_DEGISKEN': 'error',
+        'SIFIR_TALEP': 'error',
+        'ARALIKLI_DUSUK': 'info',
+        'ARALIKLI_YUKSEK': 'warning',
+    }
+    return colors.get(pattern, 'default')
+
+
+def update_async_progress(db: Session, task_id: str, progress: int, message: str, completed: int):
+    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
+    if result:
+        data = result.data if isinstance(result.data, dict) else {}
+        data['progress'] = progress
+        data['message'] = message
+        data['completed_materials'] = completed
+        result.data = data
+        db.commit()
+
+
+def update_async_task_status(db: Session, task_id: str, status: str, message: str):
+    db.query(AnalysisResult).filter(
+        AnalysisResult.task_id == task_id
+    ).update({
+        'status': status,
+        'message': message,
+        'updated_at': datetime.utcnow()
+    })
+    db.commit()
+
+
+# ============================================================
+# 📌 SENKRON FORECAST
+# ============================================================
 
 @router.post("/forecast/batch")
 def batch_forecast(
@@ -41,6 +101,9 @@ def batch_forecast(
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
+        file_name = cached_data.get('file_name')
         
         materials = cached_data.get('materials', [])
         if not materials:
@@ -137,7 +200,12 @@ def batch_forecast(
                     'model_comparison': model_comparison,
                     'model_params': model_params,
                     'outlier_info': outlier_info,
-                    'historical_data': historical
+                    'historical_data': historical,
+                    'pattern': pattern,
+                    'pattern_label': get_pattern_label(pattern),
+                    'pattern_color': get_pattern_color(pattern),
+                    'cv': round(pattern_stats.get('cv', 0), 4),
+                    'zero_ratio': round(pattern_stats.get('zero_ratio', 0), 4)
                 })
                 
             except Exception as e:
@@ -147,9 +215,12 @@ def batch_forecast(
         if not results:
             raise HTTPException(status_code=400, detail="Hiçbir malzeme için tahmin yapılamadı!")
         
-        from app.models import UserAnalysisResult
+        # ============================================================
+        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
+        # ============================================================
         
         result_data = {
+            'success': True,
             'total': len(results),
             'results': results,
             'horizon': request.horizon,
@@ -157,22 +228,41 @@ def batch_forecast(
             'pattern_analysis': True
         }
         
-        for result in results:
-            analysis_result = UserAnalysisResult(
-                user_id=current_user.id,
-                result_type='forecast_batch',
-                material_code=result['material_code'],
-                material_group=result.get('group', 'GENEL'),
-                result_data=result_data,
-                params={
-                    'horizon': request.horizon,
-                    'model_type': request.model_type,
-                    'total_materials': len(results),
-                    'pattern_analysis': True
-                },
-                expires_at=datetime.utcnow() + timedelta(days=15)
-            )
-            db.add(analysis_result)
+        analysis_result = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='forecast_batch',
+            data=result_data,
+            params={
+                'horizon': request.horizon,
+                'model_type': request.model_type,
+                'total_materials': len(results),
+                'pattern_analysis': True
+            },
+            total_materials=len(results),
+            task_id=None,
+            status=None,
+            progress=100,
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(analysis_result)
+        
+        # Öğrenme verilerini güncelle
+        if results:
+            from app.api.endpoints.learning import update_learning_from_pattern
+            pattern_results = [
+                {
+                    'material_code': r.get('material_code'),
+                    'group': r.get('group'),
+                    'pattern': r.get('pattern'),
+                    'cv': r.get('cv'),
+                    'zero_ratio': r.get('zero_ratio'),
+                    'trend': r.get('trend_direction'),
+                }
+                for r in results
+            ]
+            update_learning_from_pattern(current_user.id, pattern_results, db)
+        
         db.commit()
         
         return {
@@ -180,14 +270,20 @@ def batch_forecast(
             'total': len(results),
             'results': results,
             'token_cost': 8,
+            'result_id': analysis_result.id,
             'pattern_analysis': True
         }
         
     except HTTPException:
         raise
     except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
+
+# ============================================================
+# 📌 ASYNC FORECAST
+# ============================================================
 
 @router.post("/forecast/batch/async")
 def start_async_forecast(
@@ -202,11 +298,16 @@ def start_async_forecast(
     if not cached_data:
         raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
     
+    upload_id = cached_data.get('upload_id')
     materials = cached_data.get('materials', [])
     if not materials:
         raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
     
     task_id = str(uuid.uuid4())
+    
+    # ============================================================
+    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
+    # ============================================================
     
     initial_data = {
         'status': 'processing',
@@ -222,9 +323,21 @@ def start_async_forecast(
     
     initial_record = AnalysisResult(
         user_id=current_user.id,
+        upload_id=upload_id,
         result_type='forecast_batch_async',
         data=initial_data,
-        task_id=task_id
+        params={
+            'horizon': request.horizon,
+            'model_type': request.model_type,
+            'total_materials': len(materials),
+            'pattern_analysis': True
+        },
+        total_materials=len(materials),
+        task_id=task_id,
+        status='processing',
+        progress=0,
+        message='Başlatıldı...',
+        expires_at=datetime.utcnow() + timedelta(days=15)
     )
     db.add(initial_record)
     db.commit()
@@ -233,6 +346,7 @@ def start_async_forecast(
         run_async_forecast_job,
         task_id=task_id,
         user_id=current_user.id,
+        upload_id=upload_id,
         request=request,
         db=db
     )
@@ -245,7 +359,11 @@ def start_async_forecast(
     }
 
 
-def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest, db: Session):
+# ============================================================
+# 📌 ASYNC FORECAST JOB
+# ============================================================
+
+def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: ForecastRequest, db: Session):
     """Async forecast işini gerçekleştirir."""
     try:
         print(f"🔄 Async forecast başladı: Task ID {task_id}")
@@ -279,6 +397,7 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
                     model_type=request.model_type
                 )
                 
+                # Model karşılaştırması
                 model_comparison = {}
                 for model_name in ['holt_winters', 'arima', 'simple']:
                     try:
@@ -302,6 +421,7 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
                 trend_percent = ((historical[-1] - historical[0]) / historical[0] * 100) if historical[0] > 0 else 0
                 trend_direction = 'Artış' if trend_percent > 0 else 'Azalış'
                 
+                # ✅ Pattern bilgilerini model_params'e ekle
                 model_params = {}
                 if forecast_result.get('model_used') == 'holt_winters':
                     model_params = {
@@ -323,6 +443,7 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
                 if 'selection_info' in forecast_result:
                     model_params.update(forecast_result['selection_info'])
                 
+                # ✅ Pattern bilgilerini ekle
                 model_params['pattern'] = pattern
                 model_params['pattern_label'] = get_pattern_label(pattern)
                 model_params['pattern_color'] = get_pattern_color(pattern)
@@ -350,7 +471,12 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
                     'model_comparison': model_comparison,
                     'model_params': model_params,
                     'outlier_info': outlier_info,
-                    'historical_data': historical
+                    'historical_data': historical,
+                    'pattern': pattern,
+                    'pattern_label': get_pattern_label(pattern),
+                    'pattern_color': get_pattern_color(pattern),
+                    'cv': round(pattern_stats.get('cv', 0), 4),
+                    'zero_ratio': round(pattern_stats.get('zero_ratio', 0), 4)
                 })
                 
                 progress = int((idx + 1) / total * 100)
@@ -363,6 +489,10 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
         if not results:
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
+        
+        # ============================================================
+        # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
+        # ============================================================
         
         result_data = {
             'success': True,
@@ -379,118 +509,53 @@ def run_async_forecast_job(task_id: str, user_id: int, request: ForecastRequest,
         
         db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({'data': result_data})
+        ).update({
+            'data': result_data,
+            'status': 'completed',
+            'progress': 100,
+            'message': 'Tamamlandı!',
+            'total_materials': len(results),
+            'updated_at': datetime.utcnow()
+        })
         
-        from app.models import UserAnalysisResult
+        # Öğrenme verilerini güncelle
+        if results:
+            from app.api.endpoints.learning import update_learning_from_pattern
+            pattern_results = [
+                {
+                    'material_code': r.get('material_code'),
+                    'group': r.get('group'),
+                    'pattern': r.get('pattern'),
+                    'cv': r.get('cv'),
+                    'zero_ratio': r.get('zero_ratio'),
+                    'trend': r.get('trend_direction'),
+                }
+                for r in results
+            ]
+            update_learning_from_pattern(user_id, pattern_results, db)
         
-        for result in results:
-            analysis_result = UserAnalysisResult(
-                user_id=user_id,
-                result_type='forecast_batch',
-                material_code=result['material_code'],
-                material_group=result.get('group', 'GENEL'),
-                result_data={
-                    'total': len(results),
-                    'results': results,
-                    'horizon': request.horizon,
-                    'model_type': request.model_type,
-                    'pattern_analysis': True
-                },
-                params={
-                    'horizon': request.horizon,
-                    'model_type': request.model_type,
-                    'total_materials': len(results),
-                    'task_id': task_id,
-                    'pattern_analysis': True
-                },
-                expires_at=datetime.utcnow() + timedelta(days=15)
-            )
-            db.add(analysis_result)
         db.commit()
         
-        print(f"✅ Async forecast tamamlandı: Task ID {task_id}, {len(results)} malzeme")
-
-        # ✅ BİLDİRİM OLUŞTUR - DOĞRUDAN (API çağrısı yok)
+        # ============================================================
+        # 📌 BİLDİRİM OLUŞTUR
+        # ============================================================
+        
         try:
-            from app.models import Notification
-            
-            task_names = {
-                'forecast_batch_async': 'Talep Tahmini',
-                'backtest_batch_async': 'Backtest',
-                'simulation_batch_async': 'Monte Carlo Simülasyonu',
-                'supplier_batch_async': 'Tedarikçi Analizi',
-                'safety_stock_batch_async': 'Emniyet Stoğu',
-            }
-            task_name = task_names.get('forecast_batch_async', 'Analiz')
-            
             notification = Notification(
                 user_id=user_id,
-                title=f"✅ {task_name} Tamamlandı!",
-                message=f"{task_name} raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
+                title=f"✅ Talep Tahmini Tamamlandı!",
+                message=f"Forecast raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
                 type="success",
                 link="/tasks"
             )
             db.add(notification)
             db.commit()
-            print(f"✅ Bildirim kaydedildi: User {user_id}, Task {task_id}")
-            
         except Exception as e:
-            print(f"⚠️ Bildirim kaydetme hatası (User {user_id}): {e}")
+            print(f"⚠️ Bildirim hatası: {e}")
+        
+        print(f"✅ Async forecast tamamlandı: Task ID {task_id}, {len(results)} malzeme")
         
     except Exception as e:
         print(f"❌ Async forecast hatası (Task {task_id}): {e}")
         update_async_task_status(db, task_id, 'failed', str(e))
-
-
-# ============================================================
-# 📌 YARDIMCI FONKSİYONLAR
-# ============================================================
-def get_pattern_label(pattern: str) -> str:
-    labels = {
-        'DUZENLI_SABIT': 'Düzenli Sabit',
-        'DUZENLI_ARTS': 'Düzenli Artan',
-        'DUZENLI_AZALIS': 'Düzenli Azalan',
-        'DEGISKEN': 'Değişken',
-        'YUKSEK_DEGISKEN': 'Yüksek Değişken',
-        'ASIRI_DEGISKEN': 'Aşırı Değişken',
-        'SIFIR_TALEP': 'Sıfır Talep',
-        'ARALIKLI_DUSUK': 'Aralıklı Düşük',
-        'ARALIKLI_YUKSEK': 'Aralıklı Yüksek',
-    }
-    return labels.get(pattern, pattern)
-
-
-def get_pattern_color(pattern: str) -> str:
-    colors = {
-        'DUZENLI_SABIT': 'success',
-        'DUZENLI_ARTS': 'info',
-        'DUZENLI_AZALIS': 'warning',
-        'DEGISKEN': 'primary',
-        'YUKSEK_DEGISKEN': 'secondary',
-        'ASIRI_DEGISKEN': 'error',
-        'SIFIR_TALEP': 'error',
-        'ARALIKLI_DUSUK': 'info',
-        'ARALIKLI_YUKSEK': 'warning',
-    }
-    return colors.get(pattern, 'default')
-
-
-def update_async_progress(db: Session, task_id: str, progress: int, message: str, completed: int):
-    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-    if result:
-        data = result.data if isinstance(result.data, dict) else {}
-        data['progress'] = progress
-        data['message'] = message
-        data['completed_materials'] = completed
-        result.data = data
-        db.commit()
-
-
-def update_async_task_status(db: Session, task_id: str, status: str, message: str):
-    result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-    if result:
-        data = result.data if isinstance(result.data, dict) else {}
-        data['status'] = status
-        data['message'] = message
-        result.data = data
-        db.commit()
+        db.rollback()

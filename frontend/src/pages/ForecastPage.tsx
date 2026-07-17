@@ -1,3 +1,5 @@
+// frontend/src/pages/ForecastPage.tsx - TAM DOSYA (SON HALİ)
+
 import { useState, useEffect, useRef } from 'react';
 import {
   Box,
@@ -32,6 +34,14 @@ import {
   Slider,
   LinearProgress,
   Snackbar,
+  Stepper,
+  Step,
+  StepLabel,
+  Avatar,
+  alpha,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
 } from '@mui/material';
 import {
   ShowChart,
@@ -43,6 +53,24 @@ import {
   Info,
   TrendingUp,
   TrendingDown,
+  CheckCircle,
+  Error,
+  Pending,
+  PlayArrow,
+  Analytics,
+  Timeline,
+  AutoAwesome,
+  CloudDone,
+  CloudOff,
+  Inventory,
+  AttachMoney,
+  Lightbulb,
+  Star,
+  TrendingUp as TrendingUpIcon,
+  Speed,
+  CalendarToday,
+  Assessment,
+  Psychology,
 } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
@@ -88,10 +116,182 @@ interface HistoryItem {
   data: any;
 }
 
+// ✅ Analiz Aşamaları Interface
+interface AnalysisStep {
+  label: string;
+  description: string;
+  status: 'pending' | 'active' | 'completed' | 'error';
+  timestamp?: string;
+}
+
+// ✅ Analiz Özeti Interface
+interface AnalysisSummary {
+  totalMaterials: number;
+  mostUsedModel: string;
+  mostUsedModelPercent: number;
+  avgRMSE: number;
+  trendUpCount: number;
+  trendDownCount: number;
+  modelDistribution: Record<string, number>;
+  bestMaterial: string;
+  worstMaterial: string;
+  bestRMSE: number;
+  worstRMSE: number;
+  seasonalityLevel: string;
+}
+
+// ✅ AI Yorumu Interface
+interface AIComment {
+  summary: string;
+  trend: string;
+  seasonality: string;
+  confidence: string;
+  recommendation: string;
+}
+
+// ✅ Analiz Aşamaları Bileşeni
+const AnalysisProgress = ({ 
+  steps, 
+  activeStep, 
+  isComplete,
+  compact = false,
+}: { 
+  steps: AnalysisStep[]; 
+  activeStep: number; 
+  isComplete: boolean;
+  compact?: boolean;
+}) => {
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Stepper 
+        activeStep={activeStep} 
+        orientation="vertical" 
+        sx={{ 
+          '& .MuiStepConnector-line': { display: 'none' },
+          '& .MuiStep-root': { 
+            padding: compact ? '2px 0' : '4px 0',
+          },
+        }}
+      >
+        {steps.map((step, index) => {
+          const isActive = index === activeStep;
+          const isCompleted = index < activeStep || (isComplete && index === activeStep);
+          const isError = step.status === 'error';
+
+          const getStepIcon = () => {
+            if (isError) return <Error color="error" fontSize="small" />;
+            if (isCompleted) return <CheckCircle color="success" fontSize="small" />;
+            if (isActive) return <CircularProgress size={14} />;
+            return <Pending color="disabled" fontSize="small" />;
+          };
+
+          return (
+            <Step key={index} completed={isCompleted}>
+              <StepLabel
+                icon={getStepIcon()}
+                sx={{
+                  '& .MuiStepLabel-label': {
+                    color: isActive ? '#1f4e79' : isCompleted ? '#2e7d32' : '#9e9e9e',
+                    fontWeight: isActive ? 600 : 400,
+                    fontSize: compact ? '0.7rem' : '0.75rem',
+                  },
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <Typography variant="body2" sx={{ fontWeight: isActive ? 600 : 400, fontSize: compact ? '0.7rem' : '0.75rem' }}>
+                    {step.label}
+                  </Typography>
+                  {step.timestamp && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1, fontSize: '0.55rem' }}>
+                      {step.timestamp}
+                    </Typography>
+                  )}
+                </Box>
+                {!compact && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, fontSize: '0.6rem' }}>
+                    {step.description}
+                  </Typography>
+                )}
+              </StepLabel>
+            </Step>
+          );
+        })}
+      </Stepper>
+    </Box>
+  );
+};
+
+// ✅ Model Detayları
+interface ModelDetail {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  short: string;
+  tooltip: {
+    title: string;
+    when: string;
+    example: string;
+    advantage: string;
+  };
+  isRecommended?: boolean;
+}
+
+const modelDetails: ModelDetail[] = [
+  {
+    key: 'holt_winters',
+    label: 'Holt-Winters',
+    icon: <Timeline fontSize="small" />,
+    short: 'Mevsimsel talep',
+    tooltip: {
+      title: 'Holt-Winters Yöntemi',
+      when: 'Mevsimsel desenlere sahip ürünler (52+ hafta veri).',
+      example: 'Mevsimlik ürünler, tatil dönemi satışları, yılbaşı ürünleri.',
+      advantage: 'Mevsimsel dalgalanmaları yakalar, trend ve mevsimselliği birlikte modeller.',
+    },
+  },
+  {
+    key: 'arima',
+    label: 'ARIMA',
+    icon: <Analytics fontSize="small" />,
+    short: 'Otoregresif',
+    tooltip: {
+      title: 'ARIMA Yöntemi',
+      when: 'Trend ve otokorelasyon gösteren ürünler (26+ hafta veri).',
+      example: 'Büyüyen ürünler, düzenli satış trendi olan ürünler.',
+      advantage: 'Geçmiş değerlerle geleceği tahmin eder, istatistiksel olarak güçlüdür.',
+    },
+  },
+  {
+    key: 'simple',
+    label: 'Basit MA',
+    icon: <ShowChart fontSize="small" />,
+    short: 'Hızlı tahmin',
+    tooltip: {
+      title: 'Basit Hareketli Ortalama',
+      when: 'Az veri veya hızlı tahmin ihtiyacı (4+ hafta veri).',
+      example: 'Yeni ürünler, az geçmişi olan ürünler, hızlı analiz.',
+      advantage: 'Basit ve hızlı, az veri ile çalışabilir.',
+    },
+  },
+  {
+    key: 'auto',
+    label: 'Otomatik',
+    icon: <AutoAwesome fontSize="small" />,
+    short: '⭐ Varsayılan Öneri',
+    tooltip: {
+      title: 'Otomatik Model Seçimi',
+      when: 'Tüm ürünler için uygun, en çok önerilen yöntem.',
+      example: 'Tüm ürün grupları için ideal başlangıç noktası.',
+      advantage: '4 modeli de değerlendirir, talep yapısına en uygun olanı seçer.',
+    },
+    isRecommended: true,
+  },
+];
+
 export default function ForecastPage() {
   const { user, fetchUser } = useAuth();
   const [hasUploadedData, setHasUploadedData] = useState(false);
-  const [isCheckingData, setIsCheckingData] = useState(true); // ✅ YENİ: Veri kontrol durumu
+  const [isCheckingData, setIsCheckingData] = useState(true);
   const [results, setResults] = useState<ForecastResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -104,27 +304,50 @@ export default function ForecastPage() {
   const [horizon, setHorizon] = useState(4);
   const [showComparison, setShowComparison] = useState(false);
   const [selectedMaterial, setSelectedMaterial] = useState<ForecastResult | null>(null);
+  const [materialCount, setMaterialCount] = useState(0);
+  const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
+  const [aiComment, setAiComment] = useState<AIComment | null>(null);
+  const [weekCount, setWeekCount] = useState(0);
+  const [lastUploadDate, setLastUploadDate] = useState<string | null>(null);
 
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
   
-  // Snackbar için
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' | 'info' }>({
     open: false,
     message: '',
     severity: 'info',
   });
   
-  // 📌 interval ID'sini saklamak için ref
   const intervalIdRef = useRef<number | null>(null);
-  
   const queryClient = useQueryClient();
-  
-  // ✅ Kredi maliyetini veritabanından çek
-  const { data: costData } = useQuery({
-    queryKey: ['forecast-cost'],
+
+  // ✅ Normal Analiz Aşamaları State'leri
+  const [steps, setSteps] = useState<AnalysisStep[]>([
+    { label: 'Veri okunuyor...', description: 'Excel dosyası kontrol ediliyor', status: 'pending' },
+    { label: 'Talep geçmişi hazırlanıyor...', description: 'Malzeme verileri işleniyor', status: 'pending' },
+    { label: 'Pattern analizi yapılıyor...', description: 'Talep desenleri belirleniyor', status: 'pending' },
+    { label: 'Tahmin modelleri çalıştırılıyor...', description: '4 model ile tahmin yapılıyor', status: 'pending' },
+    { label: 'Sonuçlar doğrulanıyor...', description: 'Veriler kontrol ediliyor', status: 'pending' },
+    { label: 'Rapor oluşturuluyor...', description: 'Excel dosyası hazırlanıyor', status: 'pending' },
+  ]);
+  const [activeStep, setActiveStep] = useState(-1);
+  const [isAnalysisComplete, setIsAnalysisComplete] = useState(false);
+
+  // ✅ Async Analiz Aşamaları State'leri
+  const [asyncSteps, setAsyncSteps] = useState<AnalysisStep[]>([
+    { label: 'Analiz Ediliyor...', description: 'Veriler işleniyor', status: 'pending' },
+    { label: 'Görev Oluşturuluyor...', description: 'Arka plan işlemi başlatılıyor', status: 'pending' },
+    { label: 'Görevlere Eklendi ✓', description: 'İlerlemeyi ASYNC Görevler sayfasından takip edin', status: 'pending' },
+  ]);
+  const [asyncActiveStep, setAsyncActiveStep] = useState(-1);
+  const [isAsyncComplete, setIsAsyncComplete] = useState(false);
+
+  // ✅ Kredi maliyeti - Senkron
+  const { data: syncCostData } = useQuery({
+    queryKey: ['forecast-sync-cost'],
     queryFn: async () => {
       try {
         const res = await api.get('/api/cost', {
@@ -135,7 +358,7 @@ export default function ForecastPage() {
         });
         return res.data;
       } catch (error) {
-        console.error('❌ Kredi cost hatası:', error);
+        console.error('❌ Senkron kredi cost hatası:', error);
         return { cost: 5 };
       }
     },
@@ -143,10 +366,29 @@ export default function ForecastPage() {
     staleTime: 60000,
   });
 
-  // ✅ Sadece bir kere kontrol et
+  // ✅ Kredi maliyeti - Async
+  const { data: asyncCostData } = useQuery({
+    queryKey: ['forecast-async-cost'],
+    queryFn: async () => {
+      try {
+        const res = await api.get('/api/cost', {
+          params: {
+            endpoint: '/api/forecast/batch/async',
+            method: 'POST'
+          }
+        });
+        return res.data;
+      } catch (error) {
+        console.error('❌ Async kredi cost hatası:', error);
+        return { cost: 8 };
+      }
+    },
+    initialData: { cost: 8 },
+    staleTime: 60000,
+  });
+
   useEffect(() => {
     checkUploadedData();
-    
     return () => {
       if (intervalIdRef.current) {
         clearInterval(intervalIdRef.current);
@@ -156,14 +398,15 @@ export default function ForecastPage() {
   }, []);
 
   const checkUploadedData = async () => {
-    setIsCheckingData(true); // ✅ Kontrol başladı
+    setIsCheckingData(true);
     try {
       const res = await api.get('/api/upload/status');
       console.log('📦 Upload status:', res.data);
       const hasData = res.data.has_data === true;
       setHasUploadedData(hasData);
-      
-      // ✅ Veri yoksa kontrol bitti
+      setMaterialCount(res.data.materials_count || 0);
+      setWeekCount(res.data.week_count || 0);
+      setLastUploadDate(res.data.last_upload_date || null);
       if (!hasData) {
         console.log('❌ Veri bulunamadı, kontrol tamamlandı.');
         setError('Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard\'dan dosya yükleyin.');
@@ -173,22 +416,294 @@ export default function ForecastPage() {
       setHasUploadedData(false);
       setError('Veri kontrolü sırasında hata oluştu.');
     } finally {
-      setIsCheckingData(false); // ✅ Kontrol bitti
+      setIsCheckingData(false);
     }
   };
 
-  // 📌 Normal Forecast Mutation
+  // ✅ Adım güncelleme fonksiyonu
+  const updateStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
+    setSteps(prev => prev.map((step, i) => {
+      if (i === index) {
+        return {
+          ...step,
+          status,
+          description: description || step.description,
+          timestamp: status === 'completed' || status === 'active' ? new Date().toLocaleTimeString() : undefined,
+        };
+      }
+      return step;
+    }));
+    setActiveStep(index);
+  };
+
+  // ✅ Async Adım güncelleme
+  const updateAsyncStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
+    setAsyncSteps(prev => prev.map((step, i) => {
+      if (i === index) {
+        return {
+          ...step,
+          status,
+          description: description || step.description,
+          timestamp: status === 'completed' || status === 'active' ? new Date().toLocaleTimeString() : undefined,
+        };
+      }
+      return step;
+    }));
+    setAsyncActiveStep(index);
+  };
+
+  // ✅ Aşamaları sıfırla
+  const resetSteps = () => {
+    setSteps(prev => prev.map(step => ({
+      ...step,
+      status: 'pending',
+      timestamp: undefined,
+    })));
+    setActiveStep(-1);
+    setIsAnalysisComplete(false);
+  };
+
+  // ✅ Async aşamaları sıfırla
+  const resetAsyncSteps = () => {
+    setAsyncSteps(prev => prev.map(step => ({
+      ...step,
+      status: 'pending',
+      timestamp: undefined,
+    })));
+    setAsyncActiveStep(-1);
+    setIsAsyncComplete(false);
+  };
+
+  // ✅ Tüm aşamaları temizle
+  const clearAllSteps = () => {
+    resetSteps();
+    resetAsyncSteps();
+    setProgress(0);
+    setProgressLabel('Hazır');
+    setAnalysisSummary(null);
+    setAiComment(null);
+  };
+
+  // ✅ Sleep helper
+  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // ✅ Analiz Özeti oluştur
+  const generateSummary = (resultsData: ForecastResult[]) => {
+    if (!resultsData || resultsData.length === 0) return null;
+
+    const modelCount: Record<string, number> = {};
+    resultsData.forEach(r => {
+      const model = r.selected_model || 'auto';
+      modelCount[model] = (modelCount[model] || 0) + 1;
+    });
+    const sortedModels = Object.entries(modelCount).sort((a, b) => b[1] - a[1]);
+    const mostUsed = sortedModels[0] || ['auto', 0];
+    const mostUsedPercent = resultsData.length > 0 ? (mostUsed[1] / resultsData.length) * 100 : 0;
+
+    let rmseSum = 0, rmseCount = 0;
+    let trendUp = 0, trendDown = 0;
+    let bestRMSE = Infinity, worstRMSE = -Infinity;
+    let bestMaterial = '', worstMaterial = '';
+
+    resultsData.forEach(r => {
+      if (r.model_rmse) { 
+        rmseSum += r.model_rmse; 
+        rmseCount++;
+        if (r.model_rmse < bestRMSE) { bestRMSE = r.model_rmse; bestMaterial = r.material_code; }
+        if (r.model_rmse > worstRMSE) { worstRMSE = r.model_rmse; worstMaterial = r.material_code; }
+      }
+      if (r.trend_direction === 'Artış') trendUp++;
+      else if (r.trend_direction === 'Azalış') trendDown++;
+    });
+
+    let seasonalityLevel = 'Düşük';
+    if (resultsData.filter(r => r.selected_model === 'holt_winters').length > resultsData.length * 0.3) {
+      seasonalityLevel = 'Yüksek';
+    } else if (resultsData.filter(r => r.selected_model === 'holt_winters').length > resultsData.length * 0.15) {
+      seasonalityLevel = 'Orta';
+    }
+
+    return {
+      totalMaterials: resultsData.length,
+      mostUsedModel: mostUsed[0],
+      mostUsedModelPercent: mostUsedPercent,
+      avgRMSE: rmseCount > 0 ? rmseSum / rmseCount : 0,
+      trendUpCount: trendUp,
+      trendDownCount: trendDown,
+      modelDistribution: modelCount,
+      bestMaterial: bestMaterial || '-',
+      worstMaterial: worstMaterial || '-',
+      bestRMSE: bestRMSE !== Infinity ? bestRMSE : 0,
+      worstRMSE: worstRMSE !== -Infinity ? worstRMSE : 0,
+      seasonalityLevel: seasonalityLevel,
+    };
+  };
+
+  // ✅ AI Yorumu oluştur
+  const generateAIComment = (summary: AnalysisSummary) => {
+    if (!summary) return null;
+
+    let trendText = '';
+    const trendRatio = summary.trendUpCount / (summary.trendUpCount + summary.trendDownCount || 1);
+    if (trendRatio > 0.6) {
+      trendText = `Önümüzdeki dönemde talepte güçlü artış beklenmektedir. ${summary.trendUpCount} üründe yükseliş, ${summary.trendDownCount} üründe düşüş öngörülüyor.`;
+    } else if (trendRatio > 0.4) {
+      trendText = `Talep trendi dengeli seyretmektedir. ${summary.trendUpCount} üründe artış, ${summary.trendDownCount} üründe azalış bekleniyor.`;
+    } else {
+      trendText = `Önümüzdeki dönemde talepte düşüş eğilimi görülmektedir. ${summary.trendDownCount} üründe azalış, ${summary.trendUpCount} üründe artış öngörülüyor.`;
+    }
+
+    let seasonalityText = '';
+    if (summary.seasonalityLevel === 'Yüksek') {
+      seasonalityText = 'Mevsimsel etkiler belirgin seviyededir. Holt-Winters modeli sık tercih edilmiştir.';
+    } else if (summary.seasonalityLevel === 'Orta') {
+      seasonalityText = 'Orta düzeyde mevsimsel etkiler tespit edilmiştir.';
+    } else {
+      seasonalityText = 'Mevsimsel etkiler düşük seviyededir. Basit modeller yeterli olabilir.';
+    }
+
+    let confidenceText = '';
+    const avgRMSE = summary.avgRMSE;
+    if (avgRMSE < 20) {
+      confidenceText = 'Tahmin güvenilirliği yüksektir. Stok planlaması için güvenle kullanılabilir.';
+    } else if (avgRMSE < 30) {
+      confidenceText = 'Tahmin güvenilirliği iyi seviyededir. Düzenli takip önerilir.';
+    } else {
+      confidenceText = 'Tahmin güvenilirliği orta seviyededir. Veri kalitesinin iyileştirilmesi önerilir.';
+    }
+
+    return {
+      summary: `${summary.totalMaterials} ürün analiz edildi. En çok tercih edilen model "${modelLabels[summary.mostUsedModel] || summary.mostUsedModel}" (%${summary.mostUsedModelPercent.toFixed(0)}).`,
+      trend: trendText,
+      seasonality: seasonalityText,
+      confidence: confidenceText,
+      recommendation: `En iyi tahmin: ${summary.bestMaterial} (RMSE: ${summary.bestRMSE.toFixed(2)}), En yüksek hata: ${summary.worstMaterial} (RMSE: ${summary.worstRMSE.toFixed(2)}).`,
+    };
+  };
+
+  // ✅ Normal Analiz Başlat
+  const startAnalysis = async () => {
+    clearAllSteps();
+    setIsProcessing(true);
+    setProgress(0);
+    setError(null);
+    
+    try {
+      updateStep(0, 'active', 'Excel dosyası kontrol ediliyor...');
+      await sleep(600);
+      updateStep(0, 'completed', 'Veri başarıyla okundu');
+      setProgress(15);
+      
+      updateStep(1, 'active', 'Malzeme verileri işleniyor...');
+      await sleep(800);
+      updateStep(1, 'completed', 'Malzeme verileri hazırlandı');
+      setProgress(30);
+      
+      updateStep(2, 'active', 'Pattern analizi yapılıyor...');
+      await sleep(1000);
+      updateStep(2, 'completed', 'Pattern analizi tamamlandı');
+      setProgress(50);
+      
+      updateStep(3, 'active', '4 model ile tahmin yapılıyor...');
+      const response = await forecastMutation.mutateAsync();
+      updateStep(3, 'completed', `${response.total || response.results?.length || 0} malzeme tahmin edildi`);
+      setProgress(75);
+      
+      if (response.results) {
+        const summary = generateSummary(response.results);
+        setAnalysisSummary(summary);
+        if (summary) {
+          const comment = generateAIComment(summary);
+          setAiComment(comment);
+        }
+      }
+      
+      updateStep(4, 'active', 'Veriler kontrol ediliyor...');
+      await sleep(500);
+      updateStep(4, 'completed', 'Tüm sonuçlar doğrulandı');
+      setProgress(90);
+      
+      updateStep(5, 'active', 'Excel dosyası hazırlanıyor...');
+      await sleep(600);
+      updateStep(5, 'completed', 'Rapor hazır');
+      
+      setIsAnalysisComplete(true);
+      setProgress(100);
+      setProgressLabel('Tamamlandı!');
+      
+    } catch (err: any) {
+      console.error('❌ Analiz hatası:', err);
+      const errorIndex = steps.findIndex(s => s.status === 'active');
+      if (errorIndex !== -1) {
+        updateStep(errorIndex, 'error', err.response?.data?.detail || 'Hata oluştu!');
+      } else {
+        setSteps(prev => prev.map((step, i) => {
+          if (i === 0) {
+            return { ...step, status: 'error', description: err.message || 'Hata oluştu!' };
+          }
+          return step;
+        }));
+        setActiveStep(0);
+      }
+      setError(err.response?.data?.detail || err.message || 'Analiz sırasında hata oluştu');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // ✅ Async Analiz Başlat
+  const startAsyncAnalysis = async () => {
+    clearAllSteps();
+    setIsProcessing(true);
+    setError(null);
+    
+    try {
+      updateAsyncStep(0, 'active', 'Veriler işleniyor...');
+      await sleep(1000);
+      updateAsyncStep(0, 'completed', 'Analiz başlatıldı');
+      
+      updateAsyncStep(1, 'active', 'Arka plan işlemi başlatılıyor...');
+      
+      const response = await asyncForecastMutation.mutateAsync();
+      
+      updateAsyncStep(1, 'completed', `İşlem ID: #${response.task_id.slice(0,8)}`);
+      
+      updateAsyncStep(2, 'active', 'Görevlere ekleniyor...');
+      await sleep(600);
+      updateAsyncStep(2, 'completed', '✅ Görevlere Eklendi');
+      
+      setIsAsyncComplete(true);
+      
+    } catch (err: any) {
+      console.error('❌ Async analiz hatası:', err);
+      const errorIndex = asyncSteps.findIndex(s => s.status === 'active');
+      if (errorIndex !== -1) {
+        updateAsyncStep(errorIndex, 'error', err.response?.data?.detail || 'Hata oluştu!');
+      } else {
+        setAsyncSteps(prev => prev.map((step, i) => {
+          if (i === 0) {
+            return { ...step, status: 'error', description: err.message || 'Hata oluştu!' };
+          }
+          return step;
+        }));
+        setAsyncActiveStep(0);
+      }
+      setError(err.response?.data?.detail || err.message || 'Async analiz başlatılamadı');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 📌 SENKRON Forecast
   const forecastMutation = useMutation({
     mutationFn: async () => {
       setProgress(0);
       setProgressLabel('Analiz başlatılıyor...');
       setIsProcessing(true);
-
       const res = await api.post('/api/forecast/batch', {
         horizon: horizon,
         model_type: selectedModel,
       });
-
       setProgress(100);
       setProgressLabel('Tamamlandı!');
       return res.data;
@@ -219,80 +734,12 @@ export default function ForecastPage() {
     },
   });
 
-  // 📌 Async İlerleme Kontrol Fonksiyonu
-  const checkAsyncProgress = async (taskId: string) => {
-    if (!taskId) return;
-    
-    try {
-      const res = await api.get(`/api/forecast/async/status/${taskId}`);
-      const status = res.data;
-      
-      console.log(`📊 Async durum: ${status.status}, İlerleme: ${status.progress}%`);
-      
-      setProgress(status.progress || 50);
-      setProgressLabel(status.message || 'İşleniyor...');
-      
-      if (status.status === 'completed') {
-        if (intervalIdRef.current) {
-          clearInterval(intervalIdRef.current);
-          intervalIdRef.current = null;
-        }
-        
-        setIsProcessing(false);
-        setActiveAsyncTask(null);
-        setProgress(100);
-        setProgressLabel('Tamamlandı!');
-        
-        try {
-          const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
-          if (resultsRes.data.success) {
-            setResults(resultsRes.data.results || []);
-            setPage(0);
-            const count = resultsRes.data.total || resultsRes.data.results?.length || 0;
-            setSuccess(`${count} malzeme başarıyla analiz edildi.`);
-            setTimeout(() => setSuccess(null), 5000);
-            await fetchUser();
-          }
-        } catch (err) {
-          console.error('❌ Sonuç getirme hatası:', err);
-          setError('Sonuçlar alınamadı');
-        }
-        return;
-      }
-      
-      if (status.status === 'failed' || status.status === 'error') {
-        if (intervalIdRef.current) {
-          clearInterval(intervalIdRef.current);
-          intervalIdRef.current = null;
-        }
-        
-        setIsProcessing(false);
-        setActiveAsyncTask(null);
-        setProgress(0);
-        setProgressLabel('Hata!');
-        setError(status.message || 'Async analiz başarısız oldu');
-        return;
-      }
-      
-    } catch (error) {
-      console.error('Async durum kontrol hatası:', error);
-      if (intervalIdRef.current) {
-        clearInterval(intervalIdRef.current);
-        intervalIdRef.current = null;
-      }
-      setIsProcessing(false);
-      setActiveAsyncTask(null);
-      setError('Async durum kontrolü başarısız');
-    }
-  };
-
-  // 📌 Async Batch Forecast Mutation
+  // 📌 ASYNC Forecast
   const asyncForecastMutation = useMutation({
     mutationFn: async () => {
       setProgress(5);
       setProgressLabel('Async analiz başlatılıyor...');
       setIsProcessing(true);
-
       const res = await api.post('/api/forecast/batch/async', {
         horizon: horizon,
         model_type: selectedModel,
@@ -301,15 +748,12 @@ export default function ForecastPage() {
     },
     onSuccess: (data) => {
       setActiveAsyncTask(data.task_id);
-      
-      // ✅ Snackbar mesajı göster
       setSnackbar({
         open: true,
         message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
 📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
         severity: 'success',
       });
-      
       setProgress(10);
       setProgressLabel('İşlem kuyruğa alındı.');
       
@@ -346,71 +790,167 @@ export default function ForecastPage() {
     },
   });
 
-  const fetchHistory = async () => {
-    setLoading(true);
+  // 📌 Async İlerleme Kontrol
+  const checkAsyncProgress = async (taskId: string) => {
+    if (!taskId) return;
     try {
-      const res = await api.get('/api/upload/results', {
-        params: { 
-          result_type: 'forecast_batch',
-          limit: 100
-        },
-      });
-
-      if (res.data.success) {
-        const rawResults = res.data.results || [];
-        console.log(`📊 ${rawResults.length} sonuç bulundu`);
+      const res = await api.get(`/api/forecast/async/status/${taskId}`);
+      const status = res.data;
+      setProgress(status.progress || 50);
+      setProgressLabel(status.message || 'İşleniyor...');
+      
+      if (status.status === 'completed') {
+        if (intervalIdRef.current) {
+          clearInterval(intervalIdRef.current);
+          intervalIdRef.current = null;
+        }
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(100);
+        setProgressLabel('Tamamlandı!');
         
-        const groupedMap = new Map();
-        
-        rawResults.forEach((item: any) => {
-          const date = item.created_at ? new Date(item.created_at) : new Date();
-          const key = date.toISOString().slice(0, 16);
-
-          if (!groupedMap.has(key)) {
-            groupedMap.set(key, {
-              id: item.id,
-              created_at: item.created_at,
-              items: [],
-            });
+        try {
+          const resultsRes = await api.get(`/api/forecast/async/result/${taskId}`);
+          if (resultsRes.data.success) {
+            setResults(resultsRes.data.results || []);
+            setPage(0);
+            const count = resultsRes.data.total || resultsRes.data.results?.length || 0;
+            setSuccess(`${count} malzeme başarıyla analiz edildi.`);
+            setTimeout(() => setSuccess(null), 5000);
+            await fetchUser();
           }
-          groupedMap.get(key).items.push(item);
-        });
-
-        const groupedResults = Array.from(groupedMap.values()).map((group) => {
-          const allResults = group.items
-            .map((item: any) => {
-              const resultData = item.data || {};
-              if (resultData.results && Array.isArray(resultData.results)) {
-                return resultData.results;
-              }
-              if (resultData.material_code) {
-                return [resultData];
-              }
-              return [];
-            })
-            .flat();
-
-          return {
-            id: group.id,
-            created_at: group.created_at,
-            data: {
-              total: allResults.length,
-              results: allResults,
-            },
-          };
-        });
-
-        setHistoryData(groupedResults);
-        setHistoryDialogOpen(true);
-        setError(null);
-      } else {
-        setError('Geçmiş sonuçlar yüklenemedi');
+        } catch (err) {
+          console.error('❌ Sonuç getirme hatası:', err);
+          setError('Sonuçlar alınamadı');
+        }
+        return;
       }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
-    } finally {
-      setLoading(false);
+      
+      if (status.status === 'failed' || status.status === 'error') {
+        if (intervalIdRef.current) {
+          clearInterval(intervalIdRef.current);
+          intervalIdRef.current = null;
+        }
+        setIsProcessing(false);
+        setActiveAsyncTask(null);
+        setProgress(0);
+        setProgressLabel('Hata!');
+        setError(status.message || 'Async analiz başarısız oldu');
+        return;
+      }
+    } catch (error) {
+      console.error('Async durum kontrol hatası:', error);
+      if (intervalIdRef.current) {
+        clearInterval(intervalIdRef.current);
+        intervalIdRef.current = null;
+      }
+      setIsProcessing(false);
+      setActiveAsyncTask(null);
+      setError('Async durum kontrolü başarısız');
     }
+  };
+
+  const fetchHistory = async () => {
+      setLoading(true);
+      try {
+          const res = await api.get('/api/upload/results', {
+              params: { 
+                  result_type: 'forecast_batch', 
+                  limit: 10000 
+              }
+          });
+
+          if (res.data.success) {
+              const rawResults = res.data.results || [];
+              console.log(`📊 ${rawResults.length} sonuç bulundu`);
+              
+              // ✅ SADECE BATCH kayıtlarını al
+              const batchResults = rawResults.filter((item: any) => item.is_batch === true);
+              
+              console.log(`📊 ${batchResults.length} batch sonucu bulundu`);
+              
+              const historyItems = batchResults.map((item: any) => {
+                  const data = item.data || {};
+                  const totalMaterials = item.total_materials || data.total || 0;
+                  
+                  // ✅ Model ve horizon bilgilerini al
+                  const model = data?.selected_model || data?.model_type || 'Otomatik';
+                  const horizon = data?.horizon || 4;
+                  
+                  // Model label'ları
+                  const modelLabels: Record<string, string> = {
+                      'holt_winters': 'Holt-Winters',
+                      'arima': 'ARIMA',
+                      'simple': 'Basit MA',
+                      'auto': 'Otomatik',
+                  };
+                  const modelLabel = modelLabels[model] || model;
+                  
+                  // ✅ Rapor adını zenginleştir
+                  const reportName = `Talep Tahmini (${modelLabel}) - ${horizon} Hafta (${totalMaterials} Malzeme)`;
+                  
+                  return {
+                      id: item.id,
+                      created_at: item.created_at,
+                      data: {
+                          total: totalMaterials,
+                          results: data.results || [],
+                          report_name: reportName,
+                          status: item.status || 'completed',
+                          model: model,
+                          horizon: horizon,
+                      }
+                  };
+              });
+              
+              setHistoryData(historyItems);
+              setHistoryDialogOpen(true);
+              setError(null);
+          } else {
+              setError('Geçmiş sonuçlar yüklenemedi');
+          }
+      } catch (err: any) {
+          console.error('❌ Geçmiş hatası:', err);
+          setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  // ✅ Rapor adını belirleme fonksiyonu
+  const getReportName = (items: any[]): string => {
+    if (!items || items.length === 0) return 'Talep Tahmini';
+    
+    const firstItem = items[0];
+    const resultType = firstItem?.result_type || firstItem?.data?.result_type || '';
+    const resultData = firstItem?.data || {};
+    
+    // ✅ result_type'a göre rapor adı
+    if (resultType === 'forecast_batch' || resultType === 'forecast_batch_async') {
+      const model = resultData?.selected_model || resultData?.model_type || 'Otomatik';
+      const horizon = resultData?.horizon || 4;
+      return `Talep Tahmini (${modelLabels[model] || model}) - ${horizon} Hafta`;
+    }
+    
+    if (resultType === 'safety_stock_batch' || resultType === 'safety_stock_batch_async') {
+      const serviceLevel = resultData?.service_level || 0.95;
+      return `Emniyet Stoğu (%${(serviceLevel * 100).toFixed(0)})`;
+    }
+    
+    if (resultType === 'simulation_batch' || resultType === 'simulation_batch_async') {
+      return 'Monte Carlo Simülasyonu';
+    }
+    
+    if (resultType === 'backtest_batch' || resultType === 'backtest_batch_async') {
+      return 'Backtest Analizi';
+    }
+    
+    if (resultType === 'supplier_batch' || resultType === 'supplier_batch_async') {
+      return 'Tedarikçi Analizi';
+    }
+    
+    // ✅ Varsayılan
+    return 'Talep Tahmini';
   };
 
   const handleViewHistory = (item: HistoryItem) => {
@@ -484,12 +1024,11 @@ export default function ForecastPage() {
     }
   };
 
+  // ✅ 3 Kategori - Yeşil, Turuncu, Kırmızı
   const getMapeStatus = (mape: number) => {
-    if (mape < 20) return { color: 'success', label: '✅ Mükemmel', description: 'Stok yönetimi için ideal' };
-    if (mape < 30) return { color: 'info', label: '📈 İyi', description: 'Kabul edilebilir' };
-    if (mape < 50) return { color: 'warning', label: '⚠️ Orta', description: 'İyileştirilmeli' };
-    if (mape < 100) return { color: 'error', label: '🔴 Zayıf', description: 'Tahmin modeli gözden geçirilmeli' };
-    return { color: 'error', label: '🚨 Çok Zayıf', description: 'Veri kalitesi veya model seçimi hatalı' };
+    if (mape < 30) return { color: '#2e7d32', label: '✅ İyi', bgColor: '#e8f5e9', borderColor: '#a5d6a7' };
+    if (mape < 50) return { color: '#ed6c02', label: '⚠️ Orta', bgColor: '#fff3e0', borderColor: '#ffcc80' };
+    return { color: '#d32f2f', label: '❌ Zayıf', bgColor: '#ffebee', borderColor: '#ef9a9a' };
   };
 
   const handleCompare = (result: ForecastResult) => {
@@ -502,9 +1041,7 @@ export default function ForecastPage() {
     const forecast = result.forecast || [];
     const lower_80 = result.lower_80 || [];
     const upper_80 = result.upper_80 || [];
-
     const data: any[] = [];
-
     historical.forEach((val, idx) => {
       data.push({
         week: idx + 1,
@@ -514,7 +1051,6 @@ export default function ForecastPage() {
         upper_80: null,
       });
     });
-
     forecast.forEach((val, idx) => {
       const weekIndex = historical.length + idx + 1;
       data.push({
@@ -525,13 +1061,11 @@ export default function ForecastPage() {
         upper_80: upper_80[idx] || null,
       });
     });
-
     return data;
   };
 
   const ForecastChart = ({ result }: { result: ForecastResult }) => {
     const data: any[] = prepareChartData(result);
-
     return (
       <Box sx={{ width: '100%', height: 300, mt: 2 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
@@ -544,43 +1078,17 @@ export default function ForecastPage() {
             <YAxis label={{ value: 'Talep', angle: -90, position: 'insideLeft' }} />
             <RechartsTooltip />
             <Legend />
-
-            <Area
-              type="monotone"
-              dataKey="upper_80"
-              stroke="none"
-              fill="#8884d8"
-              fillOpacity={0.2}
-              name="%80 Güven Aralığı"
-            />
+            <Area type="monotone" dataKey="upper_80" stroke="none" fill="#8884d8" fillOpacity={0.2} name="%80 Güven Aralığı" />
             <Area type="monotone" dataKey="lower_80" stroke="none" fill="#8884d8" fillOpacity={0.2} />
-
-            <Line
-              type="monotone"
-              dataKey="historical"
-              stroke="#1976d2"
-              strokeWidth={2}
-              dot={{ r: 3 }}
-              name="Geçmiş Talep"
-              connectNulls={false}
-            />
-
-            <Line
-              type="monotone"
-              dataKey="forecast"
-              stroke="#ed6c02"
-              strokeWidth={2}
-              strokeDasharray="5 5"
-              dot={{ r: 4 }}
-              name="Tahmin"
-            />
+            <Line type="monotone" dataKey="historical" stroke="#1976d2" strokeWidth={2} dot={{ r: 3 }} name="Geçmiş Talep" connectNulls={false} />
+            <Line type="monotone" dataKey="forecast" stroke="#ed6c02" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 4 }} name="Tahmin" />
           </ComposedChart>
         </ResponsiveContainer>
       </Box>
     );
   };
 
-  // 📌 ModelParams Bileşeni
+  // ✅ ModelParams Bileşeni
   const ModelParams = ({ result }: { result: ForecastResult }) => {
     const params = result.model_params;
     if (!params || Object.keys(params).length === 0) {
@@ -590,11 +1098,8 @@ export default function ForecastPage() {
         </Typography>
       );
     }
-    
-    let paramText = '';
     let paramDetails: { key: string; value: any }[] = [];
 
-    // ✅ Pattern bilgilerini ekle
     if (params.pattern) {
       paramDetails.push({
         key: '📊 Talep Patterni',
@@ -607,7 +1112,6 @@ export default function ForecastPage() {
           />
         )
       });
-      
       if (params.cv !== undefined) {
         paramDetails.push({ key: 'Değişkenlik (CV)', value: params.cv });
       }
@@ -616,9 +1120,7 @@ export default function ForecastPage() {
       }
     }
 
-    // Model bazında parametreler
     if (result.selected_model === 'holt_winters') {
-      paramText = `Mevsimsellik: ${params.seasonal_periods || '52'} hafta`;
       paramDetails.push(
         { key: 'Mevsimsellik Periyodu', value: `${params.seasonal_periods || '52'} hafta` },
         { key: 'Trend', value: params.trend || 'Toplanabilir (add)' },
@@ -629,7 +1131,6 @@ export default function ForecastPage() {
       }
     } else if (result.selected_model === 'arima') {
       const order = params.order || '(1,1,1)';
-      paramText = `Order: ${order}`;
       paramDetails.push(
         { key: 'ARIMA Order (p,d,q)', value: order },
         { key: 'Mevsimsellik', value: params.seasonal_order ? `${params.seasonal_order}` : 'Yok' }
@@ -638,13 +1139,11 @@ export default function ForecastPage() {
         paramDetails.push({ key: 'Trend', value: params.trend ? 'Evet' : 'Hayır' });
       }
     } else if (result.selected_model === 'simple') {
-      paramText = `Pencere: ${params.window || 4} hafta`;
       paramDetails.push(
         { key: 'Hareketli Ortalama Penceresi', value: `${params.window || 4} hafta` },
         { key: 'Ağırlıklandırma', value: params.weighted ? 'Evet (Ağırlıklı)' : 'Hayır (Eşit)' }
       );
     } else if (result.selected_model === 'auto') {
-      paramText = `Seçim Yöntemi: ${params.selection_method || 'MAPE'}`;
       paramDetails.push(
         { key: 'Seçim Kriteri', value: params.selection_method || 'MAPE' },
         { key: 'Test Edilen Model Sayısı', value: params.models_tested || 0 },
@@ -655,7 +1154,6 @@ export default function ForecastPage() {
       }
     }
 
-    // Seçim bilgisi
     if (params.selection_reason) {
       paramDetails.push({ key: 'Seçim Nedeni', value: params.selection_reason });
     }
@@ -680,12 +1178,131 @@ export default function ForecastPage() {
           </Table>
         ) : (
           <Typography variant="caption" color="text.secondary">
-            {paramText || 'Parametre bilgisi bulunamadı.'}
+            Parametre bilgisi bulunamadı.
           </Typography>
         )}
       </Box>
     );
   };
+
+  // ✅ Hero Header Bileşeni
+  const HeroHeader = () => (
+    <Card sx={{ mb: 3, borderRadius: 2, bgcolor: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)', border: '1px solid #d0e0ff' }}>
+      <CardContent sx={{ py: 2.5, px: 3 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: { md: 'center' }, justifyContent: 'space-between' }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+              <ShowChart sx={{ fontSize: 24, color: '#1f4e79' }} />
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#1f4e79', fontSize: '1.3rem' }}>
+                Talep Tahmini
+              </Typography>
+              <Chip label="Forecast" size="small" sx={{ height: 20, fontSize: '0.55rem', bgcolor: '#1f4e79', color: 'white' }} />
+            </Box>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
+              Geçmiş satış verilerinizi analiz ederek önümüzdeki haftalar için talep tahmini üretir.
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1.5, mt: { xs: 1.5, md: 0 }, flexWrap: 'wrap' }}>
+            <Chip icon={<CheckCircle sx={{ fontSize: 14 }} />} label="4 model" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+            <Chip icon={<AutoAwesome sx={{ fontSize: 14 }} />} label="Otomatik seçim" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+            <Chip icon={<TrendingUpIcon sx={{ fontSize: 14 }} />} label="Güven aralıkları" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+            <Chip icon={<Download sx={{ fontSize: 14 }} />} label="Excel raporu" size="small" variant="outlined" sx={{ height: 24, fontSize: '0.6rem' }} />
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+
+  // ✅ KPI Kartları
+  const KpiCards = () => {
+    const summary = analysisSummary;
+    const modelLabel = summary ? (modelLabels[summary.mostUsedModel] || summary.mostUsedModel) : '-';
+    
+    return (
+      <Grid container spacing={1.5} sx={{ mb: 2 }}>
+        <Grid size={{ xs: 6, sm: 3 }}>
+          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <Inventory sx={{ fontSize: 18, color: '#1f4e79' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: '#1f4e79' }}>
+              {results.length || materialCount || 0}
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Malzeme</Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 6, sm: 3 }}>
+          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <CalendarToday sx={{ fontSize: 18, color: '#1f4e79' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: '#1f4e79' }}>
+              {horizon} Hafta
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Tahmin Ufku</Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 6, sm: 3 }}>
+          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: summary ? '#e8f5e9' : '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <AutoAwesome sx={{ fontSize: 18, color: summary ? '#2e7d32' : '#1f4e79' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: summary ? '#2e7d32' : '#1f4e79' }}>
+              {summary ? modelLabel : '-'}
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>En Başarılı Model</Typography>
+          </Paper>
+        </Grid>
+        <Grid size={{ xs: 6, sm: 3 }}>
+          <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: summary ? '#e8f5e9' : '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <Assessment sx={{ fontSize: 18, color: summary ? '#2e7d32' : '#1f4e79' }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: summary ? '#2e7d32' : '#1f4e79' }}>
+              {summary ? summary.avgRMSE.toFixed(2) : '-'}
+            </Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Ortalama RMSE</Typography>
+          </Paper>
+        </Grid>
+      </Grid>
+    );
+  };
+
+  // ✅ AI Yorumu Kartı
+  const AICommentCard = () => {
+    if (!aiComment) return null;
+
+    return (
+      <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#f3e5f5', border: '1px solid #ce93d8' }}>
+        <CardContent sx={{ py: 1.5, px: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Psychology sx={{ fontSize: 18, color: '#6a1b9a' }} />
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#6a1b9a', fontSize: '0.8rem' }}>
+              🤖 AI Analiz Özeti
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5 }}>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c' }}>
+                📊 {aiComment.summary}
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c', mt: 0.5 }}>
+                📈 {aiComment.trend}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c' }}>
+                📅 {aiComment.seasonality}
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#4a148c', mt: 0.5 }}>
+                ✅ {aiComment.confidence}
+              </Typography>
+            </Box>
+          </Box>
+          <Divider sx={{ my: 1 }} />
+          <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#6a1b9a', display: 'block' }}>
+            💡 {aiComment.recommendation}
+          </Typography>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // ✅ Hangi aşamaların gösterileceğini belirle
+  const isNormalAnalysisActive = activeStep >= 0 && !isAsyncComplete && !activeAsyncTask;
+  const isAsyncAnalysisActive = asyncActiveStep >= 0 || isAsyncComplete;
 
   return (
     <Box>
@@ -705,104 +1322,300 @@ export default function ForecastPage() {
         </Alert>
       </Snackbar>
 
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Box>
-          <Typography variant="h4" sx={{ fontWeight: 'bold' }}>
-            📈 Talep Tahmini (Forecast)
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            4 farklı model ile talep tahmini yapar. Pattern analizi ile zenginleştirilmiştir.
-            <Chip 
-              label={`${costData?.cost || 5} Kerdi`} 
-              size="small" 
-              color="warning" 
-              sx={{ ml: 1 }} 
-            />
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button variant="outlined" startIcon={<History />} onClick={fetchHistory} disabled={loading}>
-            {loading ? 'Yükleniyor...' : 'Geçmiş'}
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={forecastMutation.isPending ? <CircularProgress size={20} /> : <Send />}
-            onClick={() => forecastMutation.mutate()}
-            disabled={forecastMutation.isPending || !hasUploadedData}
-          >
-            {forecastMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
-          </Button>
-          <Button
-            variant="contained"
-            color="secondary"
-            startIcon={asyncForecastMutation.isPending ? <CircularProgress size={20} /> : <Send />}
-            onClick={() => asyncForecastMutation.mutate()}
-            disabled={asyncForecastMutation.isPending || !hasUploadedData || isProcessing}
-          >
-            {asyncForecastMutation.isPending ? 'Başlatılıyor...' : 'ASYNC Analiz Et'}
-          </Button>
-        </Box>
-      </Box>
+      {/* ✅ Hero Header */}
+      <HeroHeader />
 
+      {/* Alert'ler */}
       {error && (
         <Alert 
           severity={error.includes('Excel') ? 'warning' : 'error'} 
-          sx={{ mb: 3 }} 
+          sx={{ mb: 2, fontSize: '0.8rem' }} 
           onClose={() => setError(null)}
         >
           {error}
         </Alert>
       )}
-      {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
-      
-      {/* ✅ Veri kontrol durumu - Sadece gerçekten kontrol ediliyorsa göster */}
-      {isCheckingData && (
-        <Alert 
-          severity="info" 
-          sx={{ mb: 3 }}
-          icon={<CircularProgress size={20} />}
-        >
-          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-            🔍 Veri kontrolü yapılıyor...
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            Lütfen birkaç saniye bekleyin. Excel dosyası tespit edildiğinde analiz yapabilirsiniz.
-          </Typography>
+      {success && (
+        <Alert severity="success" sx={{ mb: 2, fontSize: '0.8rem' }} onClose={() => setSuccess(null)}>
+          {success}
         </Alert>
       )}
 
-      {/* ✅ Veri varsa göster */}
-      {!isCheckingData && hasUploadedData && results.length === 0 && !error && (
-        <Alert severity="success" sx={{ mb: 3 }}>
-          <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-            ✅ Veri tespit edildi! Analiz yapabilirsiniz.
-          </Typography>
-        </Alert>
-      )}
+      {/* ✅ KPI Kartları */}
+      <KpiCards />
 
-      {/* 📌 Parametre Kartı */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Grid container spacing={3} sx={{ alignItems: 'center' }}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <FormControl fullWidth>
-                <InputLabel>Model Seçimi</InputLabel>
-                <Select
-                  value={selectedModel}
-                  label="Model Seçimi"
-                  onChange={(e) => setSelectedModel(e.target.value)}
+      {/* ✅ AI Yorumu (varsa) */}
+      <AICommentCard />
+
+      {/* ✅ ANA GRID - 2 SÜTUN */}
+      <Grid container spacing={2} sx={{ mb: 2 }}>
+        {/* ✅ SOL SÜTUN - İşlem Akışı ve Veri Durumu */}
+        <Grid size={{ xs: 12, md: 5 }}>
+          {/* 📦 Veri Durumu Kartı - Zenginleştirilmiş */}
+          <Card sx={{ mb: 2, borderRadius: 2, border: '1px solid #e8f0fe' }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                {isCheckingData ? (
+                  <CircularProgress size={18} />
+                ) : hasUploadedData ? (
+                  <CloudDone sx={{ fontSize: 20, color: '#2e7d32' }} />
+                ) : (
+                  <CloudOff sx={{ fontSize: 20, color: '#d32f2f' }} />
+                )}
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+                  Veri Durumu
+                </Typography>
+                <Chip
+                  label={isCheckingData ? 'Kontrol ediliyor...' : hasUploadedData ? '✅ Yüklü' : '❌ Yüklenmemiş'}
+                  size="small"
+                  color={hasUploadedData ? 'success' : 'error'}
+                  sx={{ height: 20, fontSize: '0.55rem' }}
+                />
+              </Box>
+              {hasUploadedData ? (
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#374151' }}>
+                    <strong>{materialCount}</strong> Malzeme
+                  </Typography>
+                  <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#374151' }}>
+                    <strong>{weekCount}</strong> Hafta Veri
+                  </Typography>
+                  {lastUploadDate && (
+                    <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#6b7280', gridColumn: 'span 2' }}>
+                      📅 Son yükleme: {new Date(lastUploadDate).toLocaleDateString('tr-TR')}
+                    </Typography>
+                  )}
+                </Box>
+              ) : (
+                !isCheckingData && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.7rem' }}>
+                    Lütfen Dashboard'dan Excel yükleyin
+                  </Typography>
+                )
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 📋 İşlem Akışı Kartı */}
+          <Card sx={{ borderRadius: 2, border: '1px solid #e8f0fe', minHeight: 200 }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                <PlayArrow sx={{ fontSize: 18, color: '#1f4e79' }} />
+                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+                  İşlem Akışı
+                </Typography>
+                {isProcessing && (
+                  <Chip
+                    label={activeAsyncTask ? 'Async' : 'Normal'}
+                    size="small"
+                    color={activeAsyncTask ? 'secondary' : 'primary'}
+                    sx={{ height: 18, fontSize: '0.5rem' }}
+                  />
+                )}
+              </Box>
+
+              {isNormalAnalysisActive && (
+                <>
+                  <AnalysisProgress 
+                    steps={steps} 
+                    activeStep={activeStep} 
+                    isComplete={isAnalysisComplete}
+                    compact={true}
+                  />
+                  <LinearProgress
+                    variant="determinate"
+                    value={progress || activeStep * 17 + 10}
+                    sx={{ mt: 1, height: 3, borderRadius: 2, bgcolor: '#e8f0fe' }}
+                  />
+                </>
+              )}
+
+              {isAsyncAnalysisActive && (
+                <AnalysisProgress 
+                  steps={asyncSteps} 
+                  activeStep={asyncActiveStep} 
+                  isComplete={isAsyncComplete}
+                  compact={true}
+                />
+              )}
+
+              {!isNormalAnalysisActive && !isAsyncAnalysisActive && !isProcessing && (
+                <Box sx={{ textAlign: 'center', py: 2 }}>
+                  <ShowChart sx={{ fontSize: 28, color: '#b0b0b0', mb: 0.5 }} />
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem', display: 'block' }}>
+                    Henüz analiz yapılmadı.
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                    Tahmin üretmek için <strong>"Analiz Et"</strong> veya <strong>"Arka Planda Çalıştır"</strong> butonunu kullanın.
+                  </Typography>
+                </Box>
+              )}
+
+              {!isProcessing && (isAnalysisComplete || isAsyncComplete) && (
+                <Box sx={{ textAlign: 'center', py: 1 }}>
+                  <Chip
+                    icon={<CheckCircle sx={{ fontSize: 14 }} />}
+                    label="✅ Analiz tamamlandı"
+                    color="success"
+                    size="small"
+                    sx={{ height: 24, fontSize: '0.65rem' }}
+                  />
+                  {activeAsyncTask && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.6rem' }}>
+                      İlerlemeyi ASYNC Görevler sayfasından takip edin
+                    </Typography>
+                  )}
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* ✅ SAĞ SÜTUN - Butonlar, Model Seçimi, Ufuk */}
+        <Grid size={{ xs: 12, md: 7 }}>
+          {/* ✅ Butonlar */}
+          <Card sx={{ mb: 2, borderRadius: 2, border: '1px solid #e8f0fe' }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', gap: 1 }}>
+                <Button
+                  variant="contained"
+                  size="medium"
+                  startIcon={forecastMutation.isPending ? <CircularProgress size={18} /> : <Send sx={{ fontSize: 18 }} />}
+                  onClick={startAnalysis}
+                  disabled={forecastMutation.isPending || !hasUploadedData || isProcessing}
+                  sx={{
+                    fontSize: '0.75rem',
+                    textTransform: 'none',
+                    bgcolor: '#1f4e79',
+                    '&:hover': { bgcolor: '#1a3d5c' },
+                    py: 0.75,
+                    px: 2.5,
+                    borderRadius: 2,
+                    flex: 1,
+                    minWidth: 120,
+                  }}
                 >
-                  <MenuItem value="auto">🔄 Otomatik Seçim (Önerilen)</MenuItem>
-                  <MenuItem value="holt_winters">📊 Holt-Winters (Mevsimsel)</MenuItem>
-                  <MenuItem value="arima">📈 ARIMA (Otoregresif)</MenuItem>
-                  <MenuItem value="simple">📉 Basit (MA+Trend)</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="body2" gutterBottom>
-                Tahmin Ufku: {horizon} Hafta
+                  {forecastMutation.isPending ? 'Analiz Ediliyor...' : `Analiz Et (${syncCostData?.cost || 5} Kredi)`}
+                </Button>
+
+                <Button
+                  variant="contained"
+                  size="medium"
+                  color="secondary"
+                  startIcon={asyncForecastMutation.isPending ? <CircularProgress size={18} /> : <Send sx={{ fontSize: 18 }} />}
+                  onClick={startAsyncAnalysis}
+                  disabled={asyncForecastMutation.isPending || !hasUploadedData || isProcessing}
+                  sx={{
+                    fontSize: '0.75rem',
+                    textTransform: 'none',
+                    py: 0.75,
+                    px: 2.5,
+                    borderRadius: 2,
+                    flex: 1,
+                    minWidth: 120,
+                  }}
+                >
+                  {asyncForecastMutation.isPending ? 'Başlatılıyor...' : `Arka Planda Çalıştır (${asyncCostData?.cost || 8} Kredi)`}
+                </Button>
+
+                <Button
+                  variant="outlined"
+                  size="medium"
+                  startIcon={<History sx={{ fontSize: 18 }} />}
+                  onClick={fetchHistory}
+                  disabled={loading}
+                  sx={{
+                    fontSize: '0.75rem',
+                    textTransform: 'none',
+                    py: 0.75,
+                    px: 2.5,
+                    borderRadius: 2,
+                    borderColor: '#d0d0d0',
+                    flex: 0.5,
+                    minWidth: 80,
+                  }}
+                >
+                  {loading ? 'Yükleniyor...' : 'Geçmiş'}
+                </Button>
+              </Stack>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Model Seçimi - Radio Card */}
+          <Card sx={{ mb: 2, borderRadius: 2, border: '1px solid #e8f0fe' }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.7rem', mb: 1, display: 'block' }}>
+                Model Seçimi
               </Typography>
+              <RadioGroup
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                sx={{ display: 'flex', flexDirection: 'row', flexWrap: 'wrap', gap: 1 }}
+              >
+                <FormControlLabel
+                  value="auto"
+                  control={<Radio size="small" sx={{ color: '#1f4e79' }} />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <AutoAwesome sx={{ fontSize: 14, color: '#ed6c02' }} />
+                      <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: selectedModel === 'auto' ? 600 : 400 }}>
+                        Otomatik ⭐
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ m: 0 }}
+                />
+                <FormControlLabel
+                  value="holt_winters"
+                  control={<Radio size="small" sx={{ color: '#1f4e79' }} />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Timeline sx={{ fontSize: 14, color: '#9c27b0' }} />
+                      <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: selectedModel === 'holt_winters' ? 600 : 400 }}>
+                        Holt-Winters
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ m: 0 }}
+                />
+                <FormControlLabel
+                  value="arima"
+                  control={<Radio size="small" sx={{ color: '#1f4e79' }} />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Analytics sx={{ fontSize: 14, color: '#1976d2' }} />
+                      <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: selectedModel === 'arima' ? 600 : 400 }}>
+                        ARIMA
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ m: 0 }}
+                />
+                <FormControlLabel
+                  value="simple"
+                  control={<Radio size="small" sx={{ color: '#1f4e79' }} />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <ShowChart sx={{ fontSize: 14, color: '#2e7d32' }} />
+                      <Typography variant="caption" sx={{ fontSize: '0.7rem', fontWeight: selectedModel === 'simple' ? 600 : 400 }}>
+                        Basit MA
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ m: 0 }}
+                />
+              </RadioGroup>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Tahmin Ufku - Slider */}
+          <Card sx={{ mb: 2, borderRadius: 2, border: '1px solid #e8f0fe' }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                <Typography variant="caption" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.7rem' }}>
+                  Tahmin Ufku: {horizon} Hafta
+                </Typography>
+              </Box>
               <Slider
                 value={horizon}
                 onChange={(_, val) => setHorizon(val as number)}
@@ -816,140 +1629,350 @@ export default function ForecastPage() {
                   { value: 52, label: '52' },
                 ]}
                 valueLabelDisplay="auto"
+                size="small"
+                sx={{ color: '#1f4e79' }}
               />
-            </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Typography variant="caption" color="text.secondary">
-                {selectedModel === 'auto' && 'Veriye göre en uygun modeli otomatik seçer.'}
-                {selectedModel === 'holt_winters' && 'Mevsimsel desenler için, 52+ hafta veri önerilir.'}
-                {selectedModel === 'arima' && 'Trend ve otokorelasyon için, 26+ hafta veri önerilir.'}
-                {selectedModel === 'simple' && 'Hızlı ve basit, az veri için idealdir.'}
-              </Typography>
-            </Grid>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
+                <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#9e9e9e' }}>
+                  Kısa
+                </Typography>
+                <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#6b7280' }}>
+                  Orta
+                </Typography>
+                <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#2e7d32' }}>
+                  Uzun
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Analiz Özeti (varsa) */}
+          {analysisSummary && (
+            <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#e8f5e9', border: '1px solid #a5d6a7' }}>
+              <CardContent sx={{ py: 1.5, px: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <CheckCircle sx={{ fontSize: 18, color: '#2e7d32' }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#2e7d32', fontSize: '0.8rem' }}>
+                    Analiz Özeti
+                  </Typography>
+                </Box>
+                <Grid container spacing={1}>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      <strong>{analysisSummary.totalMaterials}</strong> ürün analiz edildi
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      En çok kullanılan model: <strong>{modelLabels[analysisSummary.mostUsedModel] || analysisSummary.mostUsedModel}</strong>
+                      <Chip 
+                        label={`%${analysisSummary.mostUsedModelPercent.toFixed(0)}`} 
+                        size="small" 
+                        color="success" 
+                        sx={{ height: 18, fontSize: '0.5rem', ml: 0.5 }}
+                      />
+                    </Typography>
+                  </Grid>
+                  <Grid size={{ xs: 12, sm: 6 }}>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      Ortalama RMSE: <strong>{analysisSummary.avgRMSE.toFixed(2)}</strong>
+                    </Typography>
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#1f4e79' }}>
+                      Trend: <strong>{analysisSummary.trendUpCount} Artış</strong> / <strong>{analysisSummary.trendDownCount} Azalış</strong>
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          )}
+        </Grid>
+      </Grid>
+
+      {/* ✅ 4 MODEL - Zenginleştirilmiş */}
+      <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#fafcff', border: '1px solid #e8f0fe' }}>
+        <CardContent sx={{ py: 1.5, px: 2 }}>
+          {/* ✅ Bilgi Kutusu */}
+          <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#f0f7ff', border: '1px solid #d0e0ff' }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
+                <Lightbulb sx={{ fontSize: 20, color: '#1f4e79', mt: 0.25 }} />
+                <Box>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+                    Stokonomi Akıllı Seçim
+                  </Typography>
+                  <Typography variant="body2" sx={{ fontSize: '0.75rem', color: '#374151', mt: 0.25 }}>
+                    Stokonomi, her malzeme için bu modellerin <strong>tamamını</strong> değerlendirir 
+                    ve talep yapısına en uygun tahmin modelini <strong>otomatik olarak önerir</strong>.
+                  </Typography>
+                </Box>
+              </Box>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Model Kartları */}
+          <Grid container spacing={1.5}>
+            {modelDetails.map((model) => (
+              <Grid size={{ xs: 6, sm: 3 }} key={model.key}>
+                <Tooltip
+                  title={
+                    <Box sx={{ p: 1.5, maxWidth: 280 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1f4e79', fontSize: '0.85rem', mb: 0.5 }}>
+                        {model.tooltip.title}
+                      </Typography>
+                      <Divider sx={{ mb: 1 }} />
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#1f4e79', fontWeight: 600, minWidth: 14 }}>📌</Typography>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#9e9e9e', display: 'block', fontWeight: 500 }}>Ne zaman kullanılır?</Typography>
+                          <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#374151' }}>{model.tooltip.when}</Typography>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5, mb: 0.75 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#1f4e79', fontWeight: 600, minWidth: 14 }}>🏭</Typography>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#9e9e9e', display: 'block', fontWeight: 500 }}>Örnek ürünler</Typography>
+                          <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#374151' }}>{model.tooltip.example}</Typography>
+                        </Box>
+                      </Box>
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+                        <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#1f4e79', fontWeight: 600, minWidth: 14 }}>✅</Typography>
+                        <Box>
+                          <Typography variant="caption" sx={{ fontSize: '0.65rem', color: '#9e9e9e', display: 'block', fontWeight: 500 }}>Avantajı</Typography>
+                          <Typography variant="caption" sx={{ fontSize: '0.7rem', color: '#374151' }}>{model.tooltip.advantage}</Typography>
+                        </Box>
+                      </Box>
+                    </Box>
+                  }
+                  arrow
+                  placement="top"
+                  enterDelay={200}
+                  leaveDelay={100}
+                  slotProps={{
+                    tooltip: {
+                      sx: {
+                        bgcolor: 'white',
+                        boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+                        border: '1px solid #e8f0fe',
+                        borderRadius: 2,
+                        p: 0,
+                        maxWidth: 300,
+                        zIndex: 1300,
+                      },
+                    },
+                    popper: {
+                      sx: {
+                        zIndex: 1300,
+                      },
+                    },
+                  }}
+                >
+                  <Paper
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
+                      bgcolor: model.isRecommended ? alpha('#1f4e79', 0.06) : 'white',
+                      border: model.isRecommended ? '2px solid #1f4e79' : '1px solid #e8f0fe',
+                      borderRadius: 2,
+                      cursor: 'default',
+                      transition: 'all 0.2s',
+                      position: 'relative',
+                      '&:hover': {
+                        transform: 'translateY(-2px)',
+                        boxShadow: 2,
+                        borderColor: model.isRecommended ? '#1f4e79' : '#b0b0b0',
+                      },
+                    }}
+                  >
+                    {model.isRecommended && (
+                      <Chip
+                        label="⭐ Varsayılan Öneri"
+                        size="small"
+                        color="primary"
+                        sx={{
+                          position: 'absolute',
+                          top: -8,
+                          right: -8,
+                          height: 18,
+                          fontSize: '0.5rem',
+                          fontWeight: 600,
+                          boxShadow: '0 2px 8px rgba(31,78,121,0.2)',
+                        }}
+                      />
+                    )}
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
+                      {model.icon}
+                      <Typography variant="caption" sx={{ fontWeight: model.isRecommended ? 700 : 500, fontSize: '0.65rem' }}>
+                        {model.label}
+                      </Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: model.isRecommended ? '#1f4e79' : '#6b7280', display: 'block', mt: 0.25, fontWeight: model.isRecommended ? 500 : 400 }}>
+                      {model.short}
+                    </Typography>
+                    {model.isRecommended && (
+                      <Box
+                        sx={{
+                          mt: 0.5,
+                          height: 2,
+                          bgcolor: '#1f4e79',
+                          borderRadius: 1,
+                          width: '60%',
+                          mx: 'auto',
+                        }}
+                      />
+                    )}
+                  </Paper>
+                </Tooltip>
+              </Grid>
+            ))}
           </Grid>
+
+          {/* ✅ Güven mesajı */}
+          <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center' }}>
+            <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#6b7280', textAlign: 'center' }}>
+              💡 Bu analizde 4 model paralel çalıştırılır. En düşük hata oranına sahip model otomatik seçilir.
+            </Typography>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* Model Bilgilendirme Kartı */}
-      <Card sx={{ mb: 3, bgcolor: 'info.light' }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-            <Info color="info" />
-            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>📊 Tahmin Modelleri</Typography>
-          </Box>
-          <Grid container spacing={2}>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Chip label="Holt-Winters" size="small" sx={{ bgcolor: '#9c27b0', color: 'white' }} />
-              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>Mevsimsel talep için</Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Chip label="ARIMA" size="small" sx={{ bgcolor: '#1976d2', color: 'white' }} />
-              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>Otoregresif, 26+ hafta</Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Chip label="Basit MA" size="small" sx={{ bgcolor: '#2e7d32', color: 'white' }} />
-              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>Hızlı, son 4 hafta</Typography>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6, md: 3 }}>
-              <Chip label="Otomatik" size="small" sx={{ bgcolor: '#ed6c02', color: 'white' }} />
-              <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>En uygun modeli seçer</Typography>
-            </Grid>
-          </Grid>
-        </CardContent>
-      </Card>
-
-      {isProcessing && (
-        <Box sx={{ textAlign: 'center', py: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'center' }}>
-            <CircularProgress variant="determinate" value={progress} size={40} />
-            <Typography variant="body2" color="text.secondary">{progressLabel}</Typography>
-            {activeAsyncTask && (
-              <Typography variant="caption" color="text.secondary">
-                (ID: {activeAsyncTask.slice(0,8)})
+      {/* ✅ Sonuçlar */}
+      {results.length > 0 ? (
+        <Card sx={{ borderRadius: 2 }}>
+          <CardContent sx={{ py: 1.5, px: 2 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+                📊 Sonuçlar ({results.length} malzeme)
               </Typography>
-            )}
-          </Box>
-          <LinearProgress
-            variant="determinate"
-            value={progress}
-            sx={{ mt: 1, maxWidth: 400, mx: 'auto', height: 6, borderRadius: 3 }}
-          />
-        </Box>
-      )}
-
-      {results.length > 0 && (
-        <Card>
-          <CardContent>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>Sonuçlar ({results.length} malzeme)</Typography>
-              <Button variant="contained" startIcon={<Download />} onClick={handleExport} size="small">
-                Excel'e Aktar
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<Download sx={{ fontSize: 16 }} />}
+                onClick={handleExport}
+                sx={{ fontSize: '0.65rem', textTransform: 'none' }}
+              >
+                Excel
               </Button>
             </Box>
 
-            <TableContainer component={Paper} variant="outlined">
+            <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1.5 }}>
               <Table size="small">
                 <TableHead>
-                  <TableRow sx={{ bgcolor: 'primary.main' }}>
-                    <TableCell sx={{ color: 'white' }}>Malzeme Kodu</TableCell>
-                    <TableCell sx={{ color: 'white' }}>Grup</TableCell>
-                    <TableCell sx={{ color: 'white' }}>Seçilen Model</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Outlier</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Trend</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">H1</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">H{Math.min(horizon, 4)}</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Karşılaştır</TableCell>
+                  <TableRow sx={{ bgcolor: '#f0f7ff' }}>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>Malzeme</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>Grup</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>Model</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Outlier</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Trend</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">RMSE</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Başarı</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">H1</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">H{Math.min(horizon, 4)}</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">İncele</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {paginatedResults.map((result, idx) => (
-                    <TableRow key={idx} hover>
-                      <TableCell>{result.material_code}</TableCell>
-                      <TableCell>{result.group}</TableCell>
-                      <TableCell>
-                        <Tooltip title={`RMSE: ${result.model_rmse?.toFixed(2) || '-'}`} arrow>
-                          <Chip
-                            label={result.best_model_label}
-                            size="small"
-                            sx={{
-                              bgcolor: modelColors[result.selected_model] || '#1976d2',
-                              color: 'white',
-                              fontWeight: 'bold',
-                            }}
-                          />
-                        </Tooltip>
-                      </TableCell>
-                      <TableCell align="center">
-                        {result.outlier_info?.has_outliers ? (
-                          <Tooltip title={`${result.outlier_info.outlier_count} aykırı değer var`} arrow>
-                            <Chip label="⚠️" size="small" color="warning" />
+                  {paginatedResults.map((result, idx) => {
+                    const status = getMapeStatus(result.model_rmse || 999);
+                    // ✅ Model Chip rengi - Emniyet Stoğu ile aynı mantık
+                    const modelColor = modelColors[result.selected_model] || '#1976d2';
+                    
+                    return (
+                      <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#f8faff' } }}>
+                        <TableCell sx={{ fontSize: '0.7rem' }}>{result.material_code}</TableCell>
+                        <TableCell sx={{ fontSize: '0.7rem' }}>{result.group}</TableCell>
+                        <TableCell>
+                          <Tooltip title={`RMSE: ${result.model_rmse?.toFixed(2) || '-'}`} arrow>
+                            <Chip
+                              label={result.best_model_label}
+                              size="small"
+                              sx={{
+                                bgcolor: modelColor,
+                                color: 'white',
+                                fontWeight: 'bold',
+                                height: 20,
+                                fontSize: '0.55rem',
+                              }}
+                            />
                           </Tooltip>
-                        ) : (
-                          <Chip label="✅" size="small" color="success" />
-                        )}
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          icon={result.trend_direction === 'Artış' ? <TrendingUp /> : <TrendingDown />}
-                          label={`${result.trend_percent > 0 ? '+' : ''}${result.trend_percent}%`}
-                          size="small"
-                          color={result.trend_direction === 'Artış' ? 'error' : 'success'}
-                          variant="outlined"
-                        />
-                      </TableCell>
-                      <TableCell align="center" sx={{ fontWeight: 'bold' }}>
-                        {result.forecast[0]?.toFixed(0) || '-'}
-                      </TableCell>
-                      <TableCell align="center" sx={{ fontWeight: 'bold' }}>
-                        {result.forecast[Math.min(horizon, 4) - 1]?.toFixed(0) || '-'}
-                      </TableCell>
-                      <TableCell align="center">
-                        <Button size="small" variant="outlined" onClick={() => handleCompare(result)}>
-                          Karşılaştır
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                        </TableCell>
+                        <TableCell align="center">
+                          {result.outlier_info?.has_outliers ? (
+                            <Tooltip title={`${result.outlier_info.outlier_count} aykırı değer var`} arrow>
+                              <Chip 
+                                label="⚠️" 
+                                size="small" 
+                                sx={{ 
+                                  height: 20, 
+                                  fontSize: '0.5rem',
+                                  bgcolor: '#fff3e0',
+                                  color: '#ed6c02',
+                                  border: '1px solid #ffcc80',
+                                  fontWeight: 600,
+                                }} 
+                              />
+                            </Tooltip>
+                          ) : (
+                            <Chip 
+                              label="✅" 
+                              size="small" 
+                              sx={{ 
+                                height: 20, 
+                                fontSize: '0.5rem',
+                                bgcolor: '#e8f5e9',
+                                color: '#2e7d32',
+                                border: '1px solid #a5d6a7',
+                                fontWeight: 600,
+                              }} 
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            icon={result.trend_direction === 'Artış' ? <TrendingUp sx={{ fontSize: 14 }} /> : <TrendingDown sx={{ fontSize: 14 }} />}
+                            label={`${result.trend_percent > 0 ? '+' : ''}${result.trend_percent}%`}
+                            size="small"
+                            color={result.trend_direction === 'Artış' ? 'error' : 'success'}
+                            variant="outlined"
+                            sx={{ height: 18, fontSize: '0.5rem' }}
+                          />
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
+                          {result.model_rmse?.toFixed(2) || '-'}
+                        </TableCell>
+                        {/* ✅ Başarı Alanı - 3 Kategori: Yeşil, Turuncu, Kırmızı */}
+                        <TableCell align="center">
+                          <Tooltip title={status.label} arrow>
+                            <Chip
+                              label={status.label}
+                              size="small"
+                              sx={{
+                                height: 20,
+                                fontSize: '0.55rem',
+                                fontWeight: 600,
+                                bgcolor: status.bgColor,
+                                color: status.color,
+                                border: `1px solid ${status.borderColor}`,
+                              }}
+                            />
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}>
+                          {result.forecast[0]?.toFixed(0) || '-'}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}>
+                          {result.forecast[Math.min(horizon, 4) - 1]?.toFixed(0) || '-'}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => handleCompare(result)}
+                            sx={{ fontSize: '0.55rem', textTransform: 'none' }}
+                          >
+                            İncele
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
               <TablePagination
@@ -960,135 +1983,111 @@ export default function ForecastPage() {
                 page={page}
                 onPageChange={handleChangePage}
                 onRowsPerPageChange={handleChangeRowsPerPage}
-                labelRowsPerPage="Sayfa başına satır:"
-                labelDisplayedRows={({ from, to, count }) => `${from}-${to} / ${count}`}
+                labelRowsPerPage="Satır:"
+                sx={{
+                  '& .MuiTablePagination-select': { fontSize: '0.7rem' },
+                  '& .MuiTablePagination-displayedRows': { fontSize: '0.7rem' },
+                }}
               />
             </TableContainer>
-
-            {/* Özet */}
-            <Box sx={{ mt: 3 }}>
-              <Grid container spacing={2}>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'success.light' }}>
-                    <Typography variant="caption" color="text.secondary">En Çok Seçilen</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                      {(() => {
-                        const counts: Record<string, number> = {};
-                        results.forEach((r) => {
-                          const model = r.selected_model || 'unknown';
-                          counts[model] = (counts[model] || 0) + 1;
-                        });
-                        const entries = Object.entries(counts);
-                        if (entries.length === 0) return '-';
-                        const sorted = entries.sort((a, b) => b[1] - a[1]);
-                        return modelLabels[sorted[0][0]] || sorted[0][0];
-                      })()}
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'info.light' }}>
-                    <Typography variant="caption" color="text.secondary">Ortalama RMSE</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                      {(results.reduce((acc, r) => acc + (r.model_rmse || 0), 0) / results.length).toFixed(2)}
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'warning.light' }}>
-                    <Typography variant="caption" color="text.secondary">Artış Trendi</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                      {results.filter((r) => r.trend_direction === 'Artış').length}
-                    </Typography>
-                  </Paper>
-                </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Paper sx={{ p: 2, textAlign: 'center', bgcolor: 'primary.light' }}>
-                    <Typography variant="caption" color="text.secondary">Azalış Trendi</Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                      {results.filter((r) => r.trend_direction === 'Azalış').length}
-                    </Typography>
-                  </Paper>
-                </Grid>
-              </Grid>
-            </Box>
           </CardContent>
         </Card>
+      ) : (
+        !isProcessing && !activeAsyncTask && !error && hasUploadedData && !isCheckingData && (
+          <Card sx={{ borderRadius: 2, border: '1px dashed #e0e0e0', bgcolor: '#fafcff' }}>
+            <CardContent sx={{ textAlign: 'center', py: 3 }}>
+              <ShowChart sx={{ fontSize: 40, color: '#b0b0b0', mb: 1 }} />
+              <Typography variant="body1" color="text.secondary" sx={{ fontSize: '0.85rem', fontWeight: 500 }}>
+                Henüz analiz yapılmadı
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                "Analiz Et" veya "Arka Planda Çalıştır" butonuna tıklayın
+              </Typography>
+            </CardContent>
+          </Card>
+        )
       )}
 
       {/* 📊 Model Karşılaştırma Dialog */}
       <Dialog open={showComparison} onClose={() => setShowComparison(false)} maxWidth="md" fullWidth>
-        <DialogTitle>
+        <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1.5 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">📊 Model Karşılaştırması</Typography>
-            <IconButton onClick={() => setShowComparison(false)}>
-              <Close />
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.95rem' }}>
+              📊 Model Karşılaştırması
+            </Typography>
+            <IconButton onClick={() => setShowComparison(false)} size="small">
+              <Close fontSize="small" />
             </IconButton>
           </Box>
         </DialogTitle>
         <DialogContent dividers>
           {selectedMaterial && (
             <Box>
-              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1, fontSize: '0.8rem' }}>
                 Malzeme: {selectedMaterial.material_code} - {selectedMaterial.group}
               </Typography>
 
               {selectedMaterial.outlier_info?.has_outliers && (
-                <Alert severity="warning" sx={{ mb: 2 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                    ⚠️ Veride {selectedMaterial.outlier_info.outlier_count} aykırı değer tespit edildi!
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                <Alert severity="warning" sx={{ mb: 2, fontSize: '0.75rem' }}>
+                  ⚠️ Veride {selectedMaterial.outlier_info.outlier_count} aykırı değer tespit edildi!
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, fontSize: '0.65rem' }}>
                     {selectedMaterial.outlier_info.outliers.map((o: any) => `Hafta ${o.week}: ${o.value}`).join(' | ')}
                   </Typography>
                 </Alert>
               )}
 
-              <Card sx={{ mb: 2, bgcolor: 'grey.50' }}>
-                <CardContent>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                    <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                      Model Başarısı (MAPE):
+              <Card sx={{ mb: 2, bgcolor: '#f5f5f5' }}>
+                <CardContent sx={{ py: 1, px: 1.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 'bold', fontSize: '0.75rem' }}>
+                      Model Başarısı (RMSE):
                     </Typography>
                     <Chip
                       label={getMapeStatus(selectedMaterial.model_rmse || 999).label}
-                      color={getMapeStatus(selectedMaterial.model_rmse || 999).color as any}
+                      sx={{
+                        height: 20,
+                        fontSize: '0.55rem',
+                        fontWeight: 600,
+                        bgcolor: getMapeStatus(selectedMaterial.model_rmse || 999).bgColor,
+                        color: getMapeStatus(selectedMaterial.model_rmse || 999).color,
+                        border: `1px solid ${getMapeStatus(selectedMaterial.model_rmse || 999).borderColor}`,
+                      }}
                     />
-                    <Typography variant="body2" color="text.secondary">
-                      {getMapeStatus(selectedMaterial.model_rmse || 999).description}
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {getMapeStatus(selectedMaterial.model_rmse || 999).label}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Değer: {selectedMaterial.model_rmse?.toFixed(1) || '?'}%
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                      Değer: {selectedMaterial.model_rmse?.toFixed(1) || '?'}
                     </Typography>
                   </Box>
                 </CardContent>
               </Card>
 
-              <TableContainer component={Paper} variant="outlined">
+              <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 1.5 }}>
                 <Table size="small">
                   <TableHead>
-                    <TableRow sx={{ bgcolor: 'primary.main' }}>
-                      <TableCell sx={{ color: 'white' }}>Model</TableCell>
-                      <TableCell sx={{ color: 'white' }} align="right">RMSE (MAPE)</TableCell>
-                      <TableCell sx={{ color: 'white' }} align="center">1.Hafta</TableCell>
-                      <TableCell sx={{ color: 'white' }} align="center">Son Hafta</TableCell>
+                    <TableRow sx={{ bgcolor: '#f0f7ff' }}>
+                      <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>Model</TableCell>
+                      <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">RMSE</TableCell>
+                      <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">1.Hafta</TableCell>
+                      <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Son Hafta</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {Object.entries(selectedMaterial.model_comparison || {}).map(([modelName, data]: [string, any]) => (
                       <TableRow
                         key={modelName}
-                        sx={{ bgcolor: modelName === selectedMaterial.selected_model ? 'success.light' : 'inherit' }}
+                        sx={{ bgcolor: modelName === selectedMaterial.selected_model ? alpha('#1f4e79', 0.08) : 'inherit' }}
                       >
                         <TableCell>
                           {modelLabels[modelName] || modelName}
                           {modelName === selectedMaterial.selected_model && (
-                            <Chip label="Seçili" size="small" color="success" sx={{ ml: 1 }} />
+                            <Chip label="✅ Seçili" size="small" color="success" sx={{ height: 16, fontSize: '0.5rem', ml: 0.5 }} />
                           )}
                         </TableCell>
-                        <TableCell align="right">{data.rmse?.toFixed(2) || '-'}</TableCell>
-                        <TableCell align="center">{data.forecast?.[0]?.toFixed(0) || '-'}</TableCell>
-                        <TableCell align="center">{data.forecast?.[data.forecast.length - 1]?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="right" sx={{ fontSize: '0.7rem' }}>{data.rmse?.toFixed(2) || '-'}</TableCell>
+                        <TableCell align="center" sx={{ fontSize: '0.7rem' }}>{data.forecast?.[0]?.toFixed(0) || '-'}</TableCell>
+                        <TableCell align="center" sx={{ fontSize: '0.7rem' }}>{data.forecast?.[data.forecast.length - 1]?.toFixed(0) || '-'}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -1098,82 +2097,117 @@ export default function ForecastPage() {
               <ModelParams result={selectedMaterial} />
               <ForecastChart result={selectedMaterial} />
 
-              <Box sx={{ mt: 2, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
-                <Typography variant="body2" color="info.dark">
+              <Box sx={{ mt: 2, p: 1.5, bgcolor: '#e3f2fd', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ fontSize: '0.7rem', color: '#0d47a1' }}>
                   <strong>📌 Seçim Nedeni:</strong> {selectedMaterial.selection_reason}
                 </Typography>
               </Box>
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowComparison(false)}>Kapat</Button>
+        <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1.5 }}>
+          <Button onClick={() => setShowComparison(false)} size="small" sx={{ fontSize: '0.7rem', textTransform: 'none' }}>
+            Kapat
+          </Button>
         </DialogActions>
       </Dialog>
 
-      {!forecastMutation.isPending && results.length === 0 && !error && hasUploadedData && !isCheckingData && (
-        <Card>
-          <CardContent sx={{ textAlign: 'center', py: 6 }}>
-            <ShowChart sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-            <Typography variant="h6" color="text.secondary">Henüz analiz yapılmadı</Typography>
-            <Typography variant="body2" color="text.secondary">"Analiz Et" butonuna tıklayarak tahmin analizini başlatın.</Typography>
-          </CardContent>
-        </Card>
-      )}
-
       {/* Geçmiş Dialog */}
+      {/* Geçmiş Dialog - DÜZENLENMİŞ */}
       <Dialog
         open={historyDialogOpen}
         onClose={() => setHistoryDialogOpen(false)}
         maxWidth="lg"
         fullWidth
       >
-        <DialogTitle>
+        <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1.5 }}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">📋 Geçmiş Analiz Sonuçları</Typography>
-            <IconButton onClick={() => setHistoryDialogOpen(false)}>
-              <Close />
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.95rem' }}>
+              📜 Geçmiş Analizler
+            </Typography>
+            <IconButton onClick={() => setHistoryDialogOpen(false)} size="small">
+              <Close fontSize="small" />
             </IconButton>
           </Box>
         </DialogTitle>
-        <DialogContent dividers>
-          {historyData.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-              Henüz geçmiş analiz kaydı yok.
+        <DialogContent sx={{ py: 2 }}>
+          {loading ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <CircularProgress size={32} />
+            </Box>
+          ) : historyData.length === 0 ? (
+            <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4, fontSize: '0.8rem' }}>
+              Henüz geçmiş analiz bulunmuyor.
             </Typography>
           ) : (
             <TableContainer>
               <Table size="small">
                 <TableHead>
-                  <TableRow sx={{ bgcolor: 'primary.main' }}>
-                    <TableCell sx={{ color: 'white' }}>Tarih</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Malzeme Sayısı</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">Durum</TableCell>
-                    <TableCell sx={{ color: 'white' }} align="center">İşlem</TableCell>
+                  <TableRow sx={{ bgcolor: '#f8faff' }}>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      📅 Tarih
+                    </TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      📄 Rapor Adı
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      📦 Malzeme Sayısı
+                    </TableCell>
+                    <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      ⏳ Durum
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }}>
+                      🔍 İşlem
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {historyData.map((item) => {
-                    const total = item.data?.total || 0;
-                    const date = item.created_at ? new Date(item.created_at) : new Date();
+                    const itemDate = new Date(item.created_at);
+                    const dateStr = itemDate.toLocaleDateString('tr-TR');
+                    const timeStr = itemDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
+                    const status = item.data?.status || 'completed';
+                    const statusConfig = {
+                      completed: { label: '✅ Tamamlandı', color: 'success' },
+                      processing: { label: '🔄 İşleniyor', color: 'warning' },
+                      pending: { label: '⏳ Bekliyor', color: 'info' },
+                      failed: { label: '❌ Başarısız', color: 'error' },
+                    };
+                    const statusInfo = statusConfig[status as keyof typeof statusConfig] || statusConfig.completed;
+                    
                     return (
-                      <TableRow key={item.id}>
-                        <TableCell>
-                          {date.toLocaleDateString('tr-TR')}{' '}
-                          {date.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                      <TableRow key={item.id} hover>
+                        <TableCell sx={{ fontSize: '0.7rem' }}>
+                          <Box>
+                            <Typography variant="body2" sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
+                              {dateStr}
+                            </Typography>
+                            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#9e9e9e' }}>
+                              {timeStr}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
+                          {item.data?.report_name || 'Talep Tahmini Analizi'}
+                        </TableCell>
+                        <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
+                          {item.data?.total || 0}
                         </TableCell>
                         <TableCell align="center">
-                          <Chip label={`${total}`} size="small" color="primary" />
+                          <Chip
+                            label={statusInfo.label}
+                            size="small"
+                            color={statusInfo.color as any}
+                            sx={{ height: 20, fontSize: '0.55rem' }}
+                          />
                         </TableCell>
-                        <TableCell align="center">
-                          <Chip label="Başarılı" size="small" color="success" />
-                        </TableCell>
-                        <TableCell align="center">
+                        <TableCell align="right">
                           <Button
                             size="small"
                             variant="outlined"
-                            startIcon={<Visibility />}
                             onClick={() => handleViewHistory(item)}
+                            startIcon={<Visibility sx={{ fontSize: 14 }} />}
+                            sx={{ fontSize: '0.6rem', textTransform: 'none' }}
                           >
                             Görüntüle
                           </Button>
@@ -1186,8 +2220,10 @@ export default function ForecastPage() {
             </TableContainer>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setHistoryDialogOpen(false)}>Kapat</Button>
+        <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1.5 }}>
+          <Button onClick={() => setHistoryDialogOpen(false)} size="small" sx={{ fontSize: '0.7rem', textTransform: 'none' }}>
+            Kapat
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
