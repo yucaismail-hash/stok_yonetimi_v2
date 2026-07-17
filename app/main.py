@@ -260,5 +260,5 @@ if __name__ == "__main__":
         port=8000,
         reload=True,
         timeout_keep_alive=120,
-        timeout_graceful_shutdown=30
+        timeout_graceful_shutdown=60
     )
