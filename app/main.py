@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import engine, Base, init_db
 from app.api.endpoints import notifications, tasks, upload, forecast, simulate, report, pattern, safety_stock, backtest, supplier, learning, export, payment, profile, sectors, cost
-from app.api.endpoints import polar
+from app.api.endpoints import polar, dashboard  
 from app.auth import auth_router
 from app.admin import router as admin_router
 from app.models import User, TokenCost, TokenHistory
@@ -213,6 +213,7 @@ app.include_router(cost.router, prefix="/api", tags=["cost"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(polar.router, prefix="/api", tags=["polar"])
+app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
 
 
 # ============================================

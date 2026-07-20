@@ -1,4 +1,4 @@
-// frontend/src/pages/DashboardPage.tsx - DÜZELTİLMİŞ
+// frontend/src/pages/DashboardPage.tsx - TAM GÜNCEL DOSYA (AI Özeti Yenile Butonu KALDIRILDI)
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -27,6 +27,7 @@ import {
   IconButton,
   Stack,
   Skeleton,
+  Snackbar,
 } from '@mui/material';
 import {
   Assessment,
@@ -69,6 +70,7 @@ interface Activity {
   time: string;
   status: 'success' | 'warning' | 'error' | 'info';
   details?: string;
+  raw?: any;
 }
 
 // ✅ Task Interface
@@ -318,7 +320,7 @@ const AIExecutiveSummary = ({
   );
 };
 
-// 💳 Kredi Satın Alma Dialog (aynı, değişmedi)
+// 💳 Kredi Satın Alma Dialog
 const CreditPurchaseDialog = ({
   open,
   onClose,
@@ -755,6 +757,10 @@ export default function DashboardPage() {
     completedTasks: 0,
   });
 
+  // ✅ AI durumu için polling
+  const [hasPendingAnalysis, setHasPendingAnalysis] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState<number | null>(null);
+
   // ✅ Tüm verileri yükle
   const loadAllData = useCallback(async () => {
     if (dataLoaded) return;
@@ -762,7 +768,7 @@ export default function DashboardPage() {
     try {
       await Promise.all([
         fetchCosts(),
-        fetchAIRecommendation(),
+        fetchAIExecutiveSummary(),
         fetchTasks(),
         fetchActivities(),
         fetchStats(),
@@ -812,222 +818,116 @@ export default function DashboardPage() {
     }
   };
 
-  // ✅ AI Önerisini getir - GERÇEK VERİLERLE (DÜZELTİLDİ)
-  // ✅ fetchAIRecommendation - MOCK VERİ İLE (GERÇEK VERİ GELENE KADAR)
-  const fetchAIRecommendation = useCallback(async () => {
+  // ✅ AI Executive Summary - Dashboard'dan al
+  const fetchAIExecutiveSummary = useCallback(async () => {
     setAiLoading(true);
     try {
-      // 📌 1. Önce gerçek veriyi dene
-      const res = await api.get('/api/upload/results', {
-        params: { limit: 50 }
-      });
-
-      console.log('🔍 AI Özet - API yanıtı:', res.data);
-
-      let allResults = res.data.results || [];
-      if (allResults.length === 0 && Array.isArray(res.data)) {
-        allResults = res.data;
-      }
-
-      console.log('🔍 AI Özet - allResults:', allResults);
-      console.log('🔍 AI Özet - allResults length:', allResults.length);
-
-      // 📌 2. EĞER GERÇEK VERİ YOKSA, MOCK VERİ KULLAN
-      if (!allResults || allResults.length === 0) {
-        console.log('🔍 AI Özet - Gerçek veri yok, MOCK veri kullanılıyor...');
+      const res = await api.get('/api/dashboard/ai-summary');
+      console.log('🔍 AI Dashboard Özeti:', res.data);
+      
+      if (res.data.has_data && res.data.summary) {
+        const summary = res.data.summary;
         
-        // ✅ MOCK VERİ - ÖRNEK ANALİZ SONUÇLARI
-        const mockResults = [
-          {
-            result_type: 'forecast_batch',
-            created_at: new Date().toISOString(),
-            result_data: {
-              total: 42,
-              results: [
-                { material_code: 'A001', trend_direction: 'Artış' },
-                { material_code: 'A002', trend_direction: 'Artış' },
-                { material_code: 'A003', trend_direction: 'Azalış' },
-              ]
-            }
-          },
-          {
-            result_type: 'safety_stock_batch',
-            created_at: new Date(Date.now() - 3600000).toISOString(),
-            result_data: {
-              total: 27,
-              results: [
-                { material_code: 'B001', recommended_method: 'hybrid_ss', hybrid_ss: 120 },
-                { material_code: 'B002', recommended_method: 'classic_ss', hybrid_ss: 30 },
-                { material_code: 'B003', recommended_method: 'hybrid_ss', hybrid_ss: 200 },
-              ]
-            }
-          },
-          {
-            result_type: 'backtest_batch',
-            created_at: new Date(Date.now() - 7200000).toISOString(),
-            result_data: {
-              total: 15,
-              results: [
-                { material_code: 'C001', best_strategy: 'ai', service_level: 0.92 },
-                { material_code: 'C002', best_strategy: 'hybrid', service_level: 0.88 },
-              ]
-            }
-          },
-          {
-            result_type: 'simulation_batch',
-            created_at: new Date(Date.now() - 10800000).toISOString(),
-            result_data: {
-              total: 31,
-              results: [
-                { material_code: 'D001', tail_risk: 0.6 },
-                { material_code: 'D002', tail_risk: 0.3 },
-              ]
-            }
-          },
-          {
-            result_type: 'supplier_batch',
-            created_at: new Date(Date.now() - 14400000).toISOString(),
-            result_data: {
-              suppliers: [
-                { supplier_id: 'S001', risk_level: 'DÜŞÜK' },
-                { supplier_id: 'S002', risk_level: 'YÜKSEK' },
-                { supplier_id: 'S003', risk_level: 'ORTA' },
-              ],
-              total: 3
-            }
+        // Dashboard'dan gelen özeti kullan
+        let summaryText = summary.manager_summary || summary.summary || 'Analizleriniz başarıyla tamamlandı.';
+        
+        // Eğer özet çok uzunsa kısalt
+        if (summaryText.length > 200) {
+          summaryText = summaryText.substring(0, 197) + '...';
+        }
+        
+        // Detayları hazırla
+        const details = summary.recommended_actions || [];
+        if (summary.critical_materials && summary.critical_materials.length > 0) {
+          details.push(`⚠️ Kritik ürünler: ${summary.critical_materials.join(', ')}`);
+        }
+        
+        // İstatistikleri ekle
+        if (summary.statistics) {
+          const stats = summary.statistics;
+          if (stats.total_analyses) {
+            details.push(`📊 ${stats.total_analyses} analiz tamamlandı`);
           }
-        ];
-
-        allResults = mockResults;
-        console.log('🔍 AI Özet - MOCK allResults:', allResults);
-      }
-
-      // 📌 3. En son analiz tarihini bul
-      const sorted = [...allResults].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-      const latest = sorted[0];
-      const lastDate = new Date(latest.created_at);
-      const today = new Date();
-      const isToday = lastDate.toDateString() === today.toDateString();
-      const dateStr = isToday ? 'Bugün' : lastDate.toLocaleDateString('tr-TR') + ' ' + lastDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-
-      // 📌 4. Analiz özetini çıkar
-      let totalMaterials = 0;
-      const summaryItems: string[] = [];
-      let criticalStock = 0;
-      let supplierRisk = 0;
-
-      allResults.forEach((item: any) => {
-        const resultType = item.result_type || '';
-        const data = item.result_data || item.data || {};
-
-        let results = data.results || [];
-        let total = data.total || 0;
-
-        // Supplier için özel durum
-        if (resultType.includes('supplier')) {
-          const suppliers = data.suppliers || results || [];
-          if (suppliers.length > 0) {
-            total = suppliers.length;
-            suppliers.forEach((r: any) => {
-              if (r.risk_level === 'YÜKSEK') supplierRisk++;
-            });
+          if (stats.total_materials) {
+            details.push(`📦 ${stats.total_materials} ürün analiz edildi`);
           }
         }
-
-        if (results.length > 0) {
-          total = results.length;
-        }
-
-        if (total === 0) return;
-
-        if (resultType.includes('forecast')) {
-          totalMaterials += total;
-          summaryItems.push(`📈 ${total} malzeme için talep tahmini yapıldı.`);
-        } else if (resultType.includes('safety_stock')) {
-          totalMaterials += total;
-          // Kritik stok kontrolü
-          if (results.length > 0) {
-            results.forEach((r: any) => {
-              if (r.recommended_method && r.hybrid_ss > 50) criticalStock++;
-            });
-          }
-          summaryItems.push(`🛡️ ${total} malzeme için emniyet stoğu önerisi oluşturuldu.`);
-        } else if (resultType.includes('backtest')) {
-          totalMaterials += total;
-          let bestStrategyCount: Record<string, number> = {};
-          if (results.length > 0) {
-            results.forEach((r: any) => {
-              const strat = r.best_strategy || 'hybrid';
-              bestStrategyCount[strat] = (bestStrategyCount[strat] || 0) + 1;
-            });
-          }
-          const topStrategy = Object.entries(bestStrategyCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'hybrid';
-          summaryItems.push(`🎒 ${total} malzeme backtest edildi. En iyi strateji: '${topStrategy}'.`);
-        } else if (resultType.includes('simulation')) {
-          totalMaterials += total;
-          let highRisk = 0;
-          if (results.length > 0) {
-            results.forEach((r: any) => {
-              if (r.tail_risk > 0.5) highRisk++;
-            });
-          }
-          summaryItems.push(`🎲 ${total} malzeme simüle edildi. ${highRisk} malzemede yüksek tail risk tespit edildi.`);
-        } else if (resultType.includes('supplier')) {
-          totalMaterials += total;
-          summaryItems.push(`🏭 ${total} tedarikçi analiz edildi. ${supplierRisk} tedarikçi yüksek riskli.`);
-        }
-      });
-
-      // 📌 5. Özet metni oluştur
-      let summaryText = '';
-      if (totalMaterials > 0) {
-        summaryText = `📊 ${totalMaterials} ürün analiz edildi.`;
+        
+        setAiRecommendation({
+          has_recommendation: true,
+          summary: summaryText,
+          details: details.length > 0 ? details : undefined,
+          last_analysis_date: res.data.last_analysis_date ? new Date(res.data.last_analysis_date).toLocaleDateString('tr-TR') : 'Bugün',
+          confidence: 0.85,
+          action: "Detaylı Raporları Gör",
+          action_path: "/tasks"
+        });
       } else {
-        summaryText = "📊 Henüz analiz sonucu bulunamadı.";
+        setAiRecommendation({
+          has_recommendation: false,
+          summary: "Henüz AI özeti oluşturulmamış. Analiz yaptıkça burada özetler görünecek.",
+          last_analysis_date: null,
+          confidence: 0,
+        });
       }
-      if (criticalStock > 0) {
-        summaryText += ` ⚠️ ${criticalStock} ürün kritik stok seviyesinde.`;
-      }
-      if (supplierRisk > 0) {
-        summaryText += ` 🚚 ${supplierRisk} tedarikçi teslimat riski taşıyor.`;
-      }
-
-      console.log('🔍 AI Özet - summaryText:', summaryText);
-      console.log('🔍 AI Özet - summaryItems:', summaryItems);
-
-      setAiRecommendation({
-        has_recommendation: true,
-        summary: summaryText,
-        details: summaryItems.length > 0 ? summaryItems : undefined,
-        last_analysis_date: dateStr,
-        confidence: 0.85,
-        action: "Detaylı Raporları Gör",
-        action_path: "/tasks"
-      });
-
-      setAiLoading(false);
-
     } catch (error) {
       console.error('❌ AI özet hatası:', error);
-      // Hata durumunda da MOCK veri göster
       setAiRecommendation({
-        has_recommendation: true,
-        summary: "📊 115 ürün analiz edildi. ⚠️ 3 ürün kritik stok seviyesinde. 🚚 1 tedarikçi teslimat riski taşıyor.",
-        details: [
-          "📈 42 malzeme için talep tahmini yapıldı.",
-          "🛡️ 27 malzeme için emniyet stoğu önerisi oluşturuldu.",
-          "🎒 15 malzeme backtest edildi. En iyi strateji: 'hybrid'.",
-          "🎲 31 malzeme simüle edildi. 1 malzemede yüksek tail risk tespit edildi.",
-          "🏭 3 tedarikçi analiz edildi. 1 tedarikçi yüksek riskli."
-        ],
-        last_analysis_date: 'Bugün',
-        confidence: 0.85,
-        action: "Detaylı Raporları Gör",
-        action_path: "/tasks"
+        has_recommendation: false,
+        summary: "AI özeti alınamadı. Lütfen daha sonra tekrar deneyin.",
+        last_analysis_date: null,
+        confidence: 0,
       });
+    } finally {
       setAiLoading(false);
     }
   }, []);
+
+  // ✅ AI durumu kontrolü (polling)
+  const checkAIStatus = useCallback(async () => {
+    try {
+      const res = await api.get('/api/dashboard/ai-summary/status');
+      if (res.data.is_completed) {
+        // Tamamlandı, özeti yenile
+        setHasPendingAnalysis(false);
+        await fetchAIExecutiveSummary();
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          setPollingInterval(null);
+        }
+      } else if (res.data.ai_status === 'failed') {
+        setHasPendingAnalysis(false);
+        if (pollingInterval) {
+          clearInterval(pollingInterval);
+          setPollingInterval(null);
+        }
+      }
+    } catch (error) {
+      console.error('❌ AI durum kontrol hatası:', error);
+    }
+  }, [fetchAIExecutiveSummary, pollingInterval]);
+
+  // ✅ AI durumunu kontrol et (polling)
+  useEffect(() => {
+    let intervalId: number | null = null;
+    if (hasPendingAnalysis) {
+      intervalId = setInterval(checkAIStatus, 5000);
+      setPollingInterval(intervalId);
+      setTimeout(() => {
+        if (intervalId) {
+          clearInterval(intervalId);
+          setPollingInterval(null);
+          setHasPendingAnalysis(false);
+        }
+      }, 120000); // 2 dakika timeout
+    }
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        setPollingInterval(null);
+      }
+    };
+  }, [hasPendingAnalysis]);
 
   // ✅ Görevleri getir
   const fetchTasks = async () => {
@@ -1078,229 +978,67 @@ export default function DashboardPage() {
   };
 
   // ✅ Aktiviteleri getir
-// ✅ fetchActivities - ZATEN ÇALIŞIYOR (aynı kalacak)
-const fetchActivities = async () => {
-  try {
-    const res = await api.get('/api/upload/results', {
-      params: { limit: 100 },
-    });
+  const fetchActivities = async () => {
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { limit: 100 },
+      });
 
-    const results = res.data.results || [];
-    const activityList: Activity[] = results.map((item: any, index: number) => {
-      const typeMap: Record<string, string> = {
-        'forecast_batch': 'Talep Tahmini',
-        'forecast_batch_async': 'Talep Tahmini',
-        'safety_stock_batch': 'Emniyet Stoğu',
-        'safety_stock_batch_async': 'Emniyet Stoğu',
-        'simulation_batch': 'Monte Carlo Simülasyonu',
-        'simulation_batch_async': 'Monte Carlo Simülasyonu',
-        'backtest_batch': 'Backtest',
-        'backtest_batch_async': 'Backtest',
-        'supplier_batch': 'Tedarikçi Analizi',
-        'supplier_batch_async': 'Tedarikçi Analizi',
-      };
-      const type = typeMap[item.result_type] || item.result_type || 'Analiz';
+      const results = res.data.results || [];
+      const activityList: Activity[] = results.map((item: any, index: number) => {
+        const typeMap: Record<string, string> = {
+          'forecast_batch': 'Talep Tahmini',
+          'forecast_batch_async': 'Talep Tahmini',
+          'safety_stock_batch': 'Emniyet Stoğu',
+          'safety_stock_batch_async': 'Emniyet Stoğu',
+          'simulation_batch': 'Monte Carlo Simülasyonu',
+          'simulation_batch_async': 'Monte Carlo Simülasyonu',
+          'backtest_batch': 'Backtest',
+          'backtest_batch_async': 'Backtest',
+          'supplier_batch': 'Tedarikçi Analizi',
+          'supplier_batch_async': 'Tedarikçi Analizi',
+        };
+        const type = typeMap[item.result_type] || item.result_type || 'Analiz';
 
-      let totalMaterials = 0;
-      if (item.result_data?.total) {
-        totalMaterials = item.result_data.total;
-      } else if (item.result_data?.results && Array.isArray(item.result_data.results)) {
-        totalMaterials = item.result_data.results.length;
-      } else if (item.results && Array.isArray(item.results)) {
-        totalMaterials = item.results.length;
-      } else if (item.total) {
-        totalMaterials = item.total;
-      }
-
-      const materialText = totalMaterials > 0 ? `${totalMaterials} malzeme` : '';
-      let message = `${type} tamamlandı`;
-      if (materialText) {
-        message = `${type} - ${materialText}`;
-      }
-
-      return {
-        id: index,
-        type: item.result_type || 'analysis',
-        message: message,
-        time: new Date(item.created_at).toLocaleString('tr-TR'),
-        status: 'success' as const,
-        details: item.result_type || 'Analiz',
-        // ✅ Özet için raw veriyi de saklayalım
-        raw: item,
-      };
-    });
-
-    activityList.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
-    setAllActivities(activityList);
-    setActivities(activityList.slice(0, 5));
-
-    // ✅ Aktiviteler yüklendikten sonra AI özetini oluştur
-    generateAIRecommendationFromActivities(activityList);
-
-  } catch (error) {
-    console.error('❌ Aktivite hatası:', error);
-    setAllActivities([]);
-    setActivities([]);
-  }
-};
-
-  // ✅ YENİ FONKSİYON: Aktivite listesinden AI özeti oluştur
-  const generateAIRecommendationFromActivities = (activityList: Activity[]) => {
-    // AI özeti için kullanılacak verileri topla
-    let totalMaterials = 0;
-    let criticalStock = 0;
-    let supplierRisk = 0;
-    const summaryItems: string[] = [];
-
-    // Her aktivitenin raw verisinden bilgileri çıkar
-    activityList.forEach((activity: any) => {
-      const item = activity.raw;
-      if (!item) return;
-
-      const resultType = item.result_type || '';
-
-      // Toplam malzeme sayısını al
-      let matCount = 0;
-      if (item.result_data?.total) {
-        matCount = item.result_data.total;
-      } else if (item.result_data?.results && Array.isArray(item.result_data.results)) {
-        matCount = item.result_data.results.length;
-      } else if (item.results && Array.isArray(item.results)) {
-        matCount = item.results.length;
-      } else if (item.total) {
-        matCount = item.total;
-      }
-      if (matCount > 0) {
-        totalMaterials += matCount;
-      }
-
-      // Tür bazında detaylı bilgiler
-      if (resultType.includes('forecast')) {
-        const results = item.result_data?.results || item.results || [];
-        let trendUp = 0, trendDown = 0;
-        if (Array.isArray(results)) {
-          results.forEach((r: any) => {
-            if (r.trend_direction === 'Artış') trendUp++;
-            else if (r.trend_direction === 'Azalış') trendDown++;
-          });
+        let totalMaterials = 0;
+        if (item.result_data?.total) {
+          totalMaterials = item.result_data.total;
+        } else if (item.result_data?.results && Array.isArray(item.result_data.results)) {
+          totalMaterials = item.result_data.results.length;
+        } else if (item.results && Array.isArray(item.results)) {
+          totalMaterials = item.results.length;
+        } else if (item.total) {
+          totalMaterials = item.total;
         }
-        const trendText = trendUp > trendDown ? 'ağırlıklı artış' : 'ağırlıklı azalış';
-        summaryItems.push(`📈 ${matCount} malzeme için talep tahmini yapıldı (${trendText} yönlü).`);
-      }
 
-      if (resultType.includes('safety_stock')) {
-        const results = item.result_data?.results || item.results || [];
-        let cvSum = 0, cvCount = 0;
-        if (Array.isArray(results)) {
-          results.forEach((r: any) => {
-            if (r.cv) { cvSum += r.cv; cvCount++; }
-            if (r.recommended_method && r.hybrid_ss > 50) criticalStock++;
-          });
+        const materialText = totalMaterials > 0 ? `${totalMaterials} malzeme` : '';
+        let message = `${type} tamamlandı`;
+        if (materialText) {
+          message = `${type} - ${materialText}`;
         }
-        const avgCv = cvCount > 0 ? (cvSum / cvCount) : 0;
-        summaryItems.push(`🛡️ ${matCount} malzeme için emniyet stoğu önerisi oluşturuldu (ortalama CV: ${avgCv.toFixed(2)}).`);
-      }
 
-      if (resultType.includes('backtest')) {
-        const results = item.result_data?.results || item.results || [];
-        const bestStrategyCount: Record<string, number> = {};
-        let serviceSum = 0, serviceCount = 0;
-        if (Array.isArray(results)) {
-          results.forEach((r: any) => {
-            const strat = r.best_strategy || 'hybrid';
-            bestStrategyCount[strat] = (bestStrategyCount[strat] || 0) + 1;
-            if (r.service_level) { serviceSum += r.service_level; serviceCount++; }
-          });
-        }
-        const topStrategy = Object.entries(bestStrategyCount).sort((a, b) => b[1] - a[1])[0]?.[0] || 'hybrid';
-        const avgService = serviceCount > 0 ? (serviceSum / serviceCount * 100) : 0;
-        summaryItems.push(`🎒 ${matCount} malzeme backtest edildi. En iyi strateji: '${topStrategy}', ortalama servis: %${avgService.toFixed(1)}.`);
-      }
+        return {
+          id: index,
+          type: item.result_type || 'analysis',
+          message: message,
+          time: new Date(item.created_at).toLocaleString('tr-TR'),
+          status: 'success' as const,
+          details: item.result_type || 'Analiz',
+          raw: item,
+        };
+      });
 
-      if (resultType.includes('simulation')) {
-        const results = item.result_data?.results || item.results || [];
-        let highRisk = 0;
-        if (Array.isArray(results)) {
-          results.forEach((r: any) => {
-            if (r.tail_risk > 0.5) highRisk++;
-          });
-        }
-        summaryItems.push(`🎲 ${matCount} malzeme simüle edildi. ${highRisk} malzemede yüksek tail risk tespit edildi.`);
-      }
+      activityList.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
 
-      if (resultType.includes('supplier')) {
-        const results = item.result_data?.suppliers || item.suppliers || [];
-        let riskCount = 0;
-        if (Array.isArray(results)) {
-          results.forEach((r: any) => {
-            if (r.risk_level === 'YÜKSEK') riskCount++;
-          });
-        }
-        supplierRisk = riskCount;
-        summaryItems.push(`🏭 ${matCount} tedarikçi analiz edildi. ${riskCount} tedarikçi yüksek riskli.`);
-      }
-    });
+      setAllActivities(activityList);
+      setActivities(activityList.slice(0, 5));
 
-    // Maliyet azaltma potansiyeli (simülasyon gap)
-    let costReductionPotential = 0;
-    activityList.forEach((activity: any) => {
-      const item = activity.raw;
-      if (!item) return;
-      if (item.result_type?.includes('simulation')) {
-        const results = item.result_data?.results || item.results || [];
-        let gapSum = 0, gapCount = 0;
-        if (Array.isArray(results)) {
-          results.forEach((r: any) => {
-            if (r.service_gap) { gapSum += r.service_gap; gapCount++; }
-          });
-        }
-        if (gapCount > 0) {
-          const avgGap = gapSum / gapCount;
-          costReductionPotential = Math.min(15, avgGap * 0.5);
-        }
-      }
-    });
-
-    // Özet metni
-    let summaryText = '';
-    if (totalMaterials > 0) {
-      summaryText = `📊 ${totalMaterials} ürün analiz edildi.`;
-    } else {
-      summaryText = "📊 Henüz analiz sonucu bulunamadı.";
+    } catch (error) {
+      console.error('❌ Aktivite hatası:', error);
+      setAllActivities([]);
+      setActivities([]);
     }
-    if (criticalStock > 0) {
-      summaryText += ` ⚠️ ${criticalStock} ürün kritik stok seviyesinde.`;
-    }
-    if (costReductionPotential > 0) {
-      summaryText += ` 💰 Tahmini stok maliyeti %${costReductionPotential.toFixed(0)} azaltılabilir.`;
-    }
-    if (supplierRisk > 0) {
-      summaryText += ` 🚚 ${supplierRisk} tedarikçi teslimat riski taşıyor.`;
-    }
-
-    // En son analiz tarihi
-    const latestActivity = activityList.length > 0 ? activityList[0] : null;
-    const lastDate = latestActivity ? new Date(latestActivity.time) : null;
-    const today = new Date();
-    const isToday = lastDate ? lastDate.toDateString() === today.toDateString() : false;
-    const dateStr = lastDate ? (isToday ? 'Bugün' : lastDate.toLocaleDateString('tr-TR') + ' ' + lastDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })) : null;
-
-    setAiRecommendation({
-      has_recommendation: true,
-      summary: summaryText || "Analizleriniz başarıyla tamamlandı. Detaylar için raporları inceleyin.",
-      details: summaryItems.length > 0 ? summaryItems : undefined,
-      last_analysis_date: dateStr,
-      confidence: 0.85,
-      action: "Detaylı Raporları Gör",
-      action_path: "/tasks"
-    });
-
-    setAiLoading(false);
   };
-
-  // ✅ fetchAIRecommendation artık sadece loading durumunu yönetiyor (veya tamamen kaldır)
-  // Onun yerine fetchActivities içinde generateAIRecommendationFromActivities çağrılacak.
 
   // ✅ Verileri yenile
   const refreshData = useCallback(async () => {
@@ -1309,7 +1047,7 @@ const fetchActivities = async () => {
       await Promise.all([
         fetchStats(),
         fetchTasks(),
-        fetchAIRecommendation(),
+        fetchAIExecutiveSummary(),
         fetchActivities(),
       ]);
     } catch (error) {
@@ -1372,6 +1110,8 @@ const fetchActivities = async () => {
       if (response.data.success) {
         setUploadSuccess(true);
         setLastUploadedFile(selectedFile.name);
+        // AI özeti yenilemek için hasPendingAnalysis true yap
+        setHasPendingAnalysis(true);
         await fetchUser();
         setTimeout(() => setUploadSuccess(false), 5000);
       } else {
@@ -1796,7 +1536,6 @@ const fetchActivities = async () => {
                 <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
                   📋 Son Analizler
                 </Typography>
-                {/* Tümünü Gör butonu KALDIRILDI */}
               </Box>
               <Divider sx={{ mb: 1 }} />
 

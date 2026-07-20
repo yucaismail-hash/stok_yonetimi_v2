@@ -16,7 +16,13 @@ from app.database import get_db
 from sqlalchemy.orm import Session
 from app.api.endpoints.upload import get_user_upload_data
 import uuid
+from app.analysis.trend_summary_engine import TrendSummaryEngine
+from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
+from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
+import logging
 
+logger = logging.getLogger(__name__)
+ai_engine = AISummaryEngine()
 router = APIRouter()
 
 supplier_analyzer = SupplierPerformanceAnalyzer()
@@ -37,6 +43,28 @@ def update_async_task_status(db: Session, task_id: str, status: str, message: st
     })
     db.commit()
 
+# 🆕 AI ÖZETİ ARKA PLANDA OLUŞTUR (Aynı fonksiyon)
+def generate_ai_summary_background(result_id: int, result_type: str, user_id: int):
+    """Arka planda AI özeti oluşturur"""
+    try:
+        from app.database import SessionLocal
+        db2 = SessionLocal()
+        try:
+            result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
+            if result and result.ai_summary is None:
+                logger.info(f"🔄 AI özeti oluşturuluyor: {result_type} (ID: {result_id})")
+                summary = ai_engine.build_summary(result_type, result.data)
+                result.ai_summary = summary
+                result.ai_status = "completed"
+                result.ai_version = ai_engine.ai_version
+                result.ai_created_at = datetime.utcnow()
+                result.ai_prompt_version = ai_engine.prompt_version
+                db2.commit()
+                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id})")
+        finally:
+            db2.close()
+    except Exception as e:
+        logger.error(f"❌ AI özeti oluşturma hatası: {e}")
 
 # ============================================================
 # 📌 SENKRON TEDARİKÇİ ANALİZİ
@@ -44,6 +72,7 @@ def update_async_task_status(db: Session, task_id: str, status: str, message: st
 
 @router.post("/supplier/batch")
 def analyze_suppliers_batch(
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -179,6 +208,23 @@ def analyze_suppliers_batch(
         )
         db.add(analysis_result)
         db.commit()
+        db.refresh(analysis_result)
+        
+        # ✅ AI Özetini arka planda oluştur
+        background_tasks.add_task(
+            generate_ai_summary_background,
+            analysis_result.id,
+            'supplier_batch',
+            current_user.id,
+            current_user.billing_country or 'TR'
+        )
+
+        # ✅ Trend Summary'yi arka planda yenile
+        background_tasks.add_task(
+            refresh_trend_summary,
+            current_user.id,
+            current_user.billing_country or 'TR'
+        )
         
         return {
             'success': True,
@@ -187,7 +233,8 @@ def analyze_suppliers_batch(
             'recommendations': recommendations,
             'has_suppliers': True,
             'token_cost': 5,
-            'result_id': analysis_result.id
+            'result_id': analysis_result.id,
+            'ai_status': 'pending'  # ✅ EKLE
         }
         
     except HTTPException:
@@ -466,9 +513,161 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
         except Exception as e:
             print(f"⚠️ Bildirim hatası: {e}")
         
+        # ============================================================
+        # 📌 AI SUMMARY + TREND + EXECUTIVE (Hepsi Arka Planda)
+        # ============================================================
+
+        try:
+            # 1. Kullanıcı bilgilerini al
+            user = db.query(User).filter(User.id == user_id).first()
+            country = user.billing_country if user else 'TR'
+            language = get_language_from_country(country)
+            
+            # 2. AI Summary oluştur
+            engine = AISummaryEngine(language=language)
+            summary = engine.build_summary(result_type, result_data)
+            
+            # 3. AnalysisResult'u güncelle
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'ai_summary': summary,
+                'ai_status': 'completed',
+                'ai_version': engine.ai_version,
+                'ai_created_at': datetime.utcnow(),
+                'ai_prompt_version': engine.prompt_version,
+                'data': result_data,
+                'status': 'completed',
+                'progress': 100,
+                'message': 'Tamamlandı!',
+                'total_materials': len(results),
+                'updated_at': datetime.utcnow()
+            })
+            db.commit()
+            logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
+            
+            # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
+            refresh_trend_summary(user_id, country)
+            logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Async AI/Trend hatası: {e}")
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'ai_status': 'failed',
+                'ai_created_at': datetime.utcnow(),
+            })
+            db.commit()
+        
         print(f"✅ Async tedarikçi analizi tamamlandı: Task ID {task_id}, {len(supplier_results)} tedarikçi")
         
     except Exception as e:
         print(f"❌ Async tedarikçi analizi hatası: {e}")
         update_async_task_status(db, task_id, 'failed', str(e))
         db.rollback()
+
+        print(f"✅ Async tedarikçi analizi tamamlandı: Task ID {task_id}, {len(supplier_results)} tedarikçi")
+        
+    except Exception as e:
+        print(f"❌ Async tedarikçi analizi hatası: {e}")
+        update_async_task_status(db, task_id, 'failed', str(e))
+        db.rollback()
+
+# app/api/endpoints/supplier.py - DOSYA SONUNA EKLE
+
+def generate_ai_summary_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
+    """Arka planda AI özeti oluşturur"""
+    try:
+        from app.database import SessionLocal
+        from app.models import User
+        
+        db2 = SessionLocal()
+        try:
+            user = db2.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
+            if result and result.ai_summary is None:
+                logger.info(f"🔄 AI özeti oluşturuluyor: {result_type} (ID: {result_id})")
+                
+                user_country = user.billing_country or country or "TR"
+                language = get_language_from_country(user_country)
+                
+                engine = AISummaryEngine(language=language)
+                summary = engine.build_summary(result_type, result.data)
+                
+                result.ai_summary = summary
+                result.ai_status = "completed"
+                result.ai_version = engine.ai_version
+                result.ai_created_at = datetime.utcnow()
+                result.ai_prompt_version = engine.prompt_version
+                db2.commit()
+                
+                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id}, Dil: {language})")
+        finally:
+            db2.close()
+    except Exception as e:
+        logger.error(f"❌ AI özeti oluşturma hatası: {e}")
+        import traceback
+        traceback.print_exc()
+
+# safety_stock.py - DOSYA SONUNA EKLE
+
+# ============================================================
+# 📌 TREND SUMMARY YENİLEME FONKSİYONU
+# ============================================================
+
+def refresh_trend_summary(user_id: int, country: str = "TR"):
+    """Trend Summary'yi yenile"""
+    try:
+        from app.database import SessionLocal
+        from app.models import User
+        
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            language = get_language_from_country(country)
+            trend_engine = TrendSummaryEngine(language=language)
+            exec_engine = ExecutiveSummaryEngine(language=language)
+            
+            # Son analizleri al
+            recent_analyses = trend_engine.get_recent_analyses(db, user_id)
+            if not recent_analyses:
+                logger.info(f"ℹ️ Trend için yeterli analiz yok: {user_id}")
+                return
+            
+            # Trend Summary oluştur
+            trend_summary = trend_engine.build_trend_summary(recent_analyses)
+            
+            # Executive Summary oluştur
+            executive_summary = exec_engine.build_executive_summary(
+                trend_summary=trend_summary,
+                previous_executive=user.executive_summary
+            )
+            
+            # Kaydet
+            user.trend_summary = trend_summary
+            user.trend_updated_at = datetime.utcnow()
+            user.executive_summary = executive_summary
+            user.executive_updated_at = datetime.utcnow()
+            db.commit()
+            
+            logger.info(f"✅ Trend & Executive Summary yenilendi: User {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Trend yenileme hatası (User {user_id}): {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
+

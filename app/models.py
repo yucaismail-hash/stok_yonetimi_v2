@@ -18,14 +18,20 @@ class User(Base):
     polar_customer_id = Column(String, nullable=True, index=True)
     
     # 🆕 FATURA BİLGİLERİ
-    billing_address = Column(String, nullable=True)  # Adres
-    billing_city = Column(String, nullable=True)     # Şehir
-    billing_state = Column(String, nullable=True)    # İl/İlçe
-    billing_country = Column(String, nullable=True, default="TR")  # Ülke
-    billing_postal_code = Column(String, nullable=True)  # Posta kodu
-    tax_id = Column(String, nullable=True)           # Vergi Numarası
-    tax_office = Column(String, nullable=True)       # Vergi Dairesi
-    identity_number = Column(String, nullable=True)  # TC Kimlik No / Vergi No
+    billing_address = Column(String, nullable=True)
+    billing_city = Column(String, nullable=True)
+    billing_state = Column(String, nullable=True)
+    billing_country = Column(String, nullable=True, default="TR")
+    billing_postal_code = Column(String, nullable=True)
+    tax_id = Column(String, nullable=True)
+    tax_office = Column(String, nullable=True)
+    identity_number = Column(String, nullable=True)
+        
+    # 🆕🆕 TREND & EXECUTIVE SUMMARY (YENİ)
+    trend_summary = Column(JSONB, nullable=True)           # Trend Summary
+    trend_updated_at = Column(DateTime, nullable=True)     # Trend güncellenme zamanı
+    executive_summary = Column(JSONB, nullable=True)       # Executive Summary
+    executive_updated_at = Column(DateTime, nullable=True) # Executive güncellenme zamanı
 
 
 class Sector(Base):
@@ -116,6 +122,13 @@ class AnalysisResult(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
+    
+    # 🆕 AI ALANLARI
+    ai_summary = Column(JSONB, nullable=True)          # AI özeti (tüm ürünleri kapsayan)
+    ai_status = Column(String, nullable=True)          # 'pending', 'completed', 'failed'
+    ai_version = Column(String, nullable=True)         # AI model sürümü (ör. 'gemini-1.5-flash')
+    ai_created_at = Column(DateTime, nullable=True)    # Oluşturulma zamanı
+    ai_prompt_version = Column(String, nullable=True)  # Prompt sürümü (versiyon yönetimi için)
     
     # ✅ İlişki
     user = relationship("User")

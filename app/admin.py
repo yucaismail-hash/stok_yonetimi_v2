@@ -250,6 +250,9 @@ async def init_default_token_costs(
         "/api/upload",
         "/api/upload/status",
         "/api/cost",
+        "/api/dashboard/ai-summary",  # ✅ YENİ
+        "/api/dashboard/ai-summary/status",  # ✅ YENİ
+        "/api/dashboard/ai-summary/refresh",  # 
         "/api/forecast/async/status/{task_id}",
         "/api/forecast/async/result/{task_id}",
     ]
