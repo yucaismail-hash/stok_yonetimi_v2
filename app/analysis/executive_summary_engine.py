@@ -22,6 +22,7 @@ class ExecutiveSummaryEngine:
     def __init__(self, language: str = "English"):
         self.language = language
         self.ai_engine = AISummaryEngine(language=language)
+        self.llm_service = self.ai_engine.llm_service  # ✅ DOĞRU
     
     def build_executive_summary(
         self,
@@ -78,7 +79,11 @@ class ExecutiveSummaryEngine:
         prompt = self._build_executive_prompt(trend, previous)
         
         try:
-            response = self.ai_engine.llm.generate(prompt, temperature=0.2, max_tokens=600)
+            response = self.llm_service.generate_json(
+                prompt,
+                temperature=0.2,
+                max_tokens=600
+            )
             result = self._parse_executive_response(response)
             
             result["_meta"] = {
@@ -87,7 +92,7 @@ class ExecutiveSummaryEngine:
                 "trend_id": trend.get("_meta", {}).get("created_at"),
                 "previous_id": previous.get("_meta", {}).get("created_at")
             }
-            return result
+            return result 
             
         except Exception as e:
             logger.error(f"Executive summary oluşturma hatası: {e}")
@@ -135,18 +140,30 @@ Answer these questions:
 IMPORTANT: Return ONLY valid JSON.
 """
     
+    # app/analysis/executive_summary_engine.py - _parse_executive_response metodunu güncelle
+
     def _parse_executive_response(self, response: str) -> Dict[str, Any]:
         """Executive yanıtını parse eder"""
         try:
-            response = response.strip()
-            if response.startswith("```json"):
-                response = response[7:]
-            if response.startswith("```"):
-                response = response[3:]
-            if response.endswith("```"):
-                response = response[:-3]
-            response = response.strip()
-            return json.loads(response)
+            # ✅ EĞER response zaten dict ise direkt döndür
+            if isinstance(response, dict):
+                return response
+            
+            # ✅ String ise temizle ve parse et
+            if isinstance(response, str):
+                response = response.strip()
+                if response.startswith("```json"):
+                    response = response[7:]
+                if response.startswith("```"):
+                    response = response[3:]
+                if response.endswith("```"):
+                    response = response[:-3]
+                response = response.strip()
+                return json.loads(response)
+            
+            # ✅ Hiçbiri değilse hata fırlat
+            raise ValueError(f"Beklenmeyen response tipi: {type(response)}")
+            
         except json.JSONDecodeError as e:
             logger.error(f"Executive JSON parse hatası: {e}")
             return {
@@ -159,3 +176,15 @@ IMPORTANT: Return ONLY valid JSON.
                 "executive_recommendations": [],
                 "confidence": 0.5
             }
+        except Exception as e:
+            logger.error(f"Executive parse hatası: {e}")
+            return {
+                "summary": "Executive özet parse edilemedi.",
+                "company_direction": "Bilinmiyor",
+                "risk_trend": "Bilinmiyor",
+                "key_developments": [],
+                "recurring_problems": [],
+                "critical_attention": [],
+                "executive_recommendations": [],
+                "confidence": 0.5
+            } 

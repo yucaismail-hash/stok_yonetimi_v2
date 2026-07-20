@@ -24,6 +24,7 @@ class TrendSummaryEngine:
     def __init__(self, language: str = "English"):
         self.language = language
         self.ai_engine = AISummaryEngine(language=language)
+        self.llm_service = self.ai_engine.llm_service  # ✅ DOĞRU
         self.max_analyses = 5
         self.max_days = 30
     
@@ -130,8 +131,12 @@ class TrendSummaryEngine:
         
         # AI çağır
         try:
-            response = self.ai_engine.llm.generate(prompt, temperature=0.3, max_tokens=800)
-            result = self._parse_trend_response(response)
+            result = self.llm_service.generate_json(
+                prompt,
+                temperature=0.3,
+                max_tokens=800
+            )
+            # result = self._parse_trend_response(response)
             
             # Metadata ekle
             result["_meta"] = {
@@ -242,20 +247,44 @@ Provide a trend summary that answers:
 IMPORTANT: Return ONLY valid JSON.
 """
     
+    # app/analysis/trend_summary_engine.py - _parse_trend_response metodunu güncelle
+
     def _parse_trend_response(self, response: str) -> Dict[str, Any]:
         """Trend yanıtını parse eder"""
         try:
-            response = response.strip()
-            if response.startswith("```json"):
-                response = response[7:]
-            if response.startswith("```"):
-                response = response[3:]
-            if response.endswith("```"):
-                response = response[:-3]
-            response = response.strip()
-            return json.loads(response)
+            # ✅ EĞER response zaten dict ise direkt döndür
+            if isinstance(response, dict):
+                return response
+            
+            # ✅ String ise temizle ve parse et
+            if isinstance(response, str):
+                response = response.strip()
+                if response.startswith("```json"):
+                    response = response[7:]
+                if response.startswith("```"):
+                    response = response[3:]
+                if response.endswith("```"):
+                    response = response[:-3]
+                response = response.strip()
+                return json.loads(response)
+            
+            # ✅ Hiçbiri değilse hata fırlat
+            raise ValueError(f"Beklenmeyen response tipi: {type(response)}")
+            
         except json.JSONDecodeError as e:
             logger.error(f"Trend JSON parse hatası: {e}")
+            return {
+                "summary": "Trend analizi parse edilemedi.",
+                "trend_direction": "Bilinmiyor",
+                "risk_trend": "Bilinmiyor",
+                "key_insights": [],
+                "recurring_issues": [],
+                "improvements": [],
+                "executive_recommendations": [],
+                "confidence": 0.5
+            }
+        except Exception as e:
+            logger.error(f"Trend parse hatası: {e}")
             return {
                 "summary": "Trend analizi parse edilemedi.",
                 "trend_direction": "Bilinmiyor",

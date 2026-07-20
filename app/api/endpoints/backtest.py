@@ -332,8 +332,7 @@ def run_backtest_batch(
             generate_ai_summary_background,
             analysis_result.id,
             'backtest_batch',
-            current_user.id,
-            current_user.billing_country or 'TR'
+            current_user.id
         )
 
         # ✅ Trend Summary'yi arka planda yenile
@@ -651,7 +650,6 @@ def run_async_backtest_job(task_id: str, user_id: int, upload_id: str, request: 
         except Exception as e:
             print(f"⚠️ Bildirim hatası: {e}")
         
-
         # ============================================================
         # 📌 AI SUMMARY + TREND + EXECUTIVE (Hepsi Arka Planda)
         # ============================================================
@@ -662,33 +660,37 @@ def run_async_backtest_job(task_id: str, user_id: int, upload_id: str, request: 
             country = user.billing_country if user else 'TR'
             language = get_language_from_country(country)
             
-            # 2. AI Summary oluştur
-            engine = AISummaryEngine(language=language)
-            summary = engine.build_summary(result_type, result_data)
+            # ✅ Sonucu al (result_data yerine doğrudan result.data kullan)
+            result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
             
-            # 3. AnalysisResult'u güncelle
-            db.query(AnalysisResult).filter(
-                AnalysisResult.task_id == task_id
-            ).update({
-                'ai_summary': summary,
-                'ai_status': 'completed',
-                'ai_version': engine.ai_version,
-                'ai_created_at': datetime.utcnow(),
-                'ai_prompt_version': engine.prompt_version,
-                'data': result_data,
-                'status': 'completed',
-                'progress': 100,
-                'message': 'Tamamlandı!',
-                'total_materials': len(results),
-                'updated_at': datetime.utcnow()
-            })
-            db.commit()
-            logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
-            
-            # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
-            refresh_trend_summary(user_id, country)
-            logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
-            
+            if result:
+                # ✅ result_type'ı result.result_type'den al
+                result_type = result.result_type
+                
+                # 2. AI Summary oluştur
+                engine = AISummaryEngine(language=language)
+                summary = engine.build_summary(result_type, result.data)  # ✅ result.data kullan
+                
+                # 3. AnalysisResult'u güncelle
+                result.ai_summary = summary
+                result.ai_status = "completed"
+                result.ai_version = engine.ai_version
+                result.ai_created_at = datetime.utcnow()
+                result.ai_prompt_version = engine.prompt_version
+                result.status = 'completed'
+                result.progress = 100
+                result.message = 'Tamamlandı!'
+                result.total_materials = len(results)
+                result.updated_at = datetime.utcnow()
+                result.data = result_data  # ✅ Zaten güncellenmiş data
+                
+                db.commit()
+                logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
+                
+                # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
+                refresh_trend_summary(user_id, country)
+                logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
+                
         except Exception as e:
             logger.error(f"❌ Async AI/Trend hatası: {e}")
             db.query(AnalysisResult).filter(

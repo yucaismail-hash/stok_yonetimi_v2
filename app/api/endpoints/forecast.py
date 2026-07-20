@@ -9,6 +9,7 @@ import os
 import requests
 from app.database import get_db
 from app.models import User, UploadedData, AnalysisResult, Notification
+
 from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.forecast import DemandForecaster
@@ -20,7 +21,7 @@ import numpy as np
 import logging
 
 # 🆕 AI ENTEGRASYONU
-from app.analysis.ai_summary_engine import AISummaryEngine
+from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
 from app.services.llm_service import get_llm_service
 
 logger = logging.getLogger(__name__)
@@ -98,33 +99,53 @@ def update_async_task_status(db: Session, task_id: str, status: str, message: st
 
 
 # 🆕 AI ÖZETİ ARKA PLANDA OLUŞTUR
-def generate_ai_summary_background(result_id: int, result_type: str, user_id: int):
+
+def generate_ai_summary_background(
+    result_id: int,
+    result_type: str,
+    user_id: int,
+    country: str = "TR"  # ✅ country parametresini EKLE
+):
     """Arka planda AI özeti oluşturur"""
     try:
         from app.database import SessionLocal
+        from app.models import User
+        
         db2 = SessionLocal()
         try:
+            user = db2.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
             result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
             if result and result.ai_summary is None:
                 logger.info(f"🔄 AI özeti oluşturuluyor: {result_type} (ID: {result_id})")
                 
-                # AI summary oluştur
-                summary = ai_engine.build_summary(result_type, result.data)
+                # ✅ country parametresini kullan
+                user_country = user.billing_country or country or "TR"
+                language = get_language_from_country(user_country)
                 
-                # Sonucu güncelle
+                engine = AISummaryEngine(language=language)
+                summary = engine.build_summary(result_type, result.data)
+                
+                if summary.get("_error"):
+                    logger.warning(f"⚠️ AI özeti hata ile tamamlandı: {summary.get('_error')}")
+                
                 result.ai_summary = summary
                 result.ai_status = "completed"
-                result.ai_version = ai_engine.ai_version
+                result.ai_version = engine.ai_version
                 result.ai_created_at = datetime.utcnow()
-                result.ai_prompt_version = ai_engine.prompt_version
+                result.ai_prompt_version = engine.prompt_version
                 db2.commit()
                 
-                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id})")
+                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id}, Dil: {language})")
         finally:
             db2.close()
     except Exception as e:
         logger.error(f"❌ AI özeti oluşturma hatası: {e}")
-
+        import traceback
+        traceback.print_exc()
 
 # ============================================================
 # 📌 SENKRON FORECAST
@@ -315,8 +336,7 @@ def batch_forecast(
             generate_ai_summary_background,
             analysis_result.id,
             'forecast_batch',
-            current_user.id,
-            current_user.billing_country or 'TR'
+            current_user.id            
         )
 
         # ✅ Trend Summary'yi arka planda yenile
@@ -425,6 +445,10 @@ def start_async_forecast(
 # 📌 ASYNC FORECAST JOB
 # ============================================================
 
+# ============================================================
+# 📌 ASYNC FORECAST JOB - TAM DÜZELTİLMİŞ
+# ============================================================
+
 def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: ForecastRequest, db: Session):
     """Async forecast işini gerçekleştirir."""
     try:
@@ -449,17 +473,14 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 if len(historical) < 4:
                     continue
                 
-                # ✅ Pattern analizi
                 pattern, pattern_stats = pattern_analyzer.analyze_demand_pattern(historical)
                 
-                # ✅ Pattern ile zenginleştirilmiş forecast
                 forecast_result = forecaster.forecast(
                     historical_data=historical,
                     horizon=request.horizon,
                     model_type=request.model_type
                 )
                 
-                # Model karşılaştırması
                 model_comparison = {}
                 for model_name in ['holt_winters', 'arima', 'simple']:
                     try:
@@ -483,7 +504,6 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 trend_percent = ((historical[-1] - historical[0]) / historical[0] * 100) if historical[0] > 0 else 0
                 trend_direction = 'Artış' if trend_percent > 0 else 'Azalış'
                 
-                # ✅ Pattern bilgilerini model_params'e ekle
                 model_params = {}
                 if forecast_result.get('model_used') == 'holt_winters':
                     model_params = {
@@ -505,7 +525,6 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 if 'selection_info' in forecast_result:
                     model_params.update(forecast_result['selection_info'])
                 
-                # ✅ Pattern bilgilerini ekle
                 model_params['pattern'] = pattern
                 model_params['pattern_label'] = get_pattern_label(pattern)
                 model_params['pattern_color'] = get_pattern_color(pattern)
@@ -569,6 +588,7 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
             'completed_at': datetime.utcnow().isoformat()
         }
         
+        # ✅ Önce ana kaydı güncelle
         db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
         ).update({
@@ -598,10 +618,12 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         
         db.commit()
         
+        # ✅ Sonucu tekrar al (ID için)
+        result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
+        
         # ============================================================
         # 📌 BİLDİRİM OLUŞTUR
         # ============================================================
-        
         try:
             notification = Notification(
                 user_id=user_id,
@@ -615,7 +637,6 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         except Exception as e:
             print(f"⚠️ Bildirim hatası: {e}")
         
-        
         # ============================================================
         # 📌 AI SUMMARY + TREND + EXECUTIVE (Hepsi Arka Planda)
         # ============================================================
@@ -626,33 +647,37 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
             country = user.billing_country if user else 'TR'
             language = get_language_from_country(country)
             
-            # 2. AI Summary oluştur
-            engine = AISummaryEngine(language=language)
-            summary = engine.build_summary(result_type, result_data)
+            # ✅ Sonucu al (result_data yerine doğrudan result.data kullan)
+            result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
             
-            # 3. AnalysisResult'u güncelle
-            db.query(AnalysisResult).filter(
-                AnalysisResult.task_id == task_id
-            ).update({
-                'ai_summary': summary,
-                'ai_status': 'completed',
-                'ai_version': engine.ai_version,
-                'ai_created_at': datetime.utcnow(),
-                'ai_prompt_version': engine.prompt_version,
-                'data': result_data,
-                'status': 'completed',
-                'progress': 100,
-                'message': 'Tamamlandı!',
-                'total_materials': len(results),
-                'updated_at': datetime.utcnow()
-            })
-            db.commit()
-            logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
-            
-            # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
-            refresh_trend_summary(user_id, country)
-            logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
-            
+            if result:
+                # ✅ result_type'ı result.result_type'den al
+                result_type = result.result_type
+                
+                # 2. AI Summary oluştur
+                engine = AISummaryEngine(language=language)
+                summary = engine.build_summary(result_type, result.data)  # ✅ result.data kullan
+                
+                # 3. AnalysisResult'u güncelle
+                result.ai_summary = summary
+                result.ai_status = "completed"
+                result.ai_version = engine.ai_version
+                result.ai_created_at = datetime.utcnow()
+                result.ai_prompt_version = engine.prompt_version
+                result.status = 'completed'
+                result.progress = 100
+                result.message = 'Tamamlandı!'
+                result.total_materials = len(results)
+                result.updated_at = datetime.utcnow()
+                result.data = result_data  # ✅ Zaten güncellenmiş data
+                
+                db.commit()
+                logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
+                
+                # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
+                refresh_trend_summary(user_id, country)
+                logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
+                
         except Exception as e:
             logger.error(f"❌ Async AI/Trend hatası: {e}")
             db.query(AnalysisResult).filter(
@@ -670,7 +695,7 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         update_async_task_status(db, task_id, 'failed', str(e))
         db.rollback()
 
-# safety_stock.py - DOSYA SONUNA EKLE
+
 
 # ============================================================
 # 📌 TREND SUMMARY YENİLEME FONKSİYONU

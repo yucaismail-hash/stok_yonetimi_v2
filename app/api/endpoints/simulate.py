@@ -17,6 +17,7 @@ import os
 from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -321,8 +322,7 @@ def simulate_batch(
         # ✅ Trend Summary'yi arka planda yenile
         background_tasks.add_task(
             refresh_trend_summary,
-            current_user.id,
-            current_user.billing_country or 'TR'
+            current_user.id
         )
         
         return {
@@ -926,33 +926,37 @@ def run_async_simulation_job(task_id: str, user_id: int, upload_id: str, config:
             country = user.billing_country if user else 'TR'
             language = get_language_from_country(country)
             
-            # 2. AI Summary oluştur
-            engine = AISummaryEngine(language=language)
-            summary = engine.build_summary(result_type, result_data)
+            # ✅ Sonucu al (result_data yerine doğrudan result.data kullan)
+            result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
             
-            # 3. AnalysisResult'u güncelle
-            db.query(AnalysisResult).filter(
-                AnalysisResult.task_id == task_id
-            ).update({
-                'ai_summary': summary,
-                'ai_status': 'completed',
-                'ai_version': engine.ai_version,
-                'ai_created_at': datetime.utcnow(),
-                'ai_prompt_version': engine.prompt_version,
-                'data': result_data,
-                'status': 'completed',
-                'progress': 100,
-                'message': 'Tamamlandı!',
-                'total_materials': len(results),
-                'updated_at': datetime.utcnow()
-            })
-            db.commit()
-            logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
-            
-            # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
-            refresh_trend_summary(user_id, country)
-            logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
-            
+            if result:
+                # ✅ result_type'ı result.result_type'den al
+                result_type = result.result_type
+                
+                # 2. AI Summary oluştur
+                engine = AISummaryEngine(language=language)
+                summary = engine.build_summary(result_type, result.data)  # ✅ result.data kullan
+                
+                # 3. AnalysisResult'u güncelle
+                result.ai_summary = summary
+                result.ai_status = "completed"
+                result.ai_version = engine.ai_version
+                result.ai_created_at = datetime.utcnow()
+                result.ai_prompt_version = engine.prompt_version
+                result.status = 'completed'
+                result.progress = 100
+                result.message = 'Tamamlandı!'
+                result.total_materials = len(results)
+                result.updated_at = datetime.utcnow()
+                result.data = result_data  # ✅ Zaten güncellenmiş data
+                
+                db.commit()
+                logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
+                
+                # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
+                refresh_trend_summary(user_id, country)
+                logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
+                
         except Exception as e:
             logger.error(f"❌ Async AI/Trend hatası: {e}")
             db.query(AnalysisResult).filter(
@@ -975,7 +979,14 @@ def run_async_simulation_job(task_id: str, user_id: int, upload_id: str, config:
 # 📌 AI ÖZETİ FONKSİYONU
 # ============================================================
 
-def generate_ai_summary_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
+# app/api/endpoints/simulate.py - DOSYA SONUNA EKLE
+
+def generate_ai_summary_background(
+    result_id: int,
+    result_type: str,
+    user_id: int,
+    country: str = "TR"
+):
     """Arka planda AI özeti oluşturur"""
     try:
         from app.database import SessionLocal
@@ -998,8 +1009,11 @@ def generate_ai_summary_background(result_id: int, result_type: str, user_id: in
                 engine = AISummaryEngine(language=language)
                 summary = engine.build_summary(result_type, result.data)
                 
+                if summary.get("_error"):
+                    logger.warning(f"⚠️ AI özeti hata ile tamamlandı: {summary.get('_error')}")
+                
                 result.ai_summary = summary
-                result.ai_status = "completed"
+                result.ai_status = "completed" if not summary.get("_error") else "failed"
                 result.ai_version = engine.ai_version
                 result.ai_created_at = datetime.utcnow()
                 result.ai_prompt_version = engine.prompt_version
@@ -1013,17 +1027,20 @@ def generate_ai_summary_background(result_id: int, result_type: str, user_id: in
         import traceback
         traceback.print_exc()
 
-# safety_stock.py - DOSYA SONUNA EKLE
 
 # ============================================================
 # 📌 TREND SUMMARY YENİLEME FONKSİYONU
 # ============================================================
+
 
 def refresh_trend_summary(user_id: int, country: str = "TR"):
     """Trend Summary'yi yenile"""
     try:
         from app.database import SessionLocal
         from app.models import User
+        from app.analysis.trend_summary_engine import TrendSummaryEngine
+        from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
+        from app.analysis.ai_summary_engine import get_language_from_country
         
         db = SessionLocal()
         try:
@@ -1032,26 +1049,22 @@ def refresh_trend_summary(user_id: int, country: str = "TR"):
                 logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
                 return
             
-            language = get_language_from_country(country)
+            language = get_language_from_country(country or user.billing_country or "TR")
             trend_engine = TrendSummaryEngine(language=language)
             exec_engine = ExecutiveSummaryEngine(language=language)
             
-            # Son analizleri al
             recent_analyses = trend_engine.get_recent_analyses(db, user_id)
             if not recent_analyses:
                 logger.info(f"ℹ️ Trend için yeterli analiz yok: {user_id}")
                 return
             
-            # Trend Summary oluştur
             trend_summary = trend_engine.build_trend_summary(recent_analyses)
             
-            # Executive Summary oluştur
             executive_summary = exec_engine.build_executive_summary(
                 trend_summary=trend_summary,
                 previous_executive=user.executive_summary
             )
             
-            # Kaydet
             user.trend_summary = trend_summary
             user.trend_updated_at = datetime.utcnow()
             user.executive_summary = executive_summary
@@ -1069,3 +1082,4 @@ def refresh_trend_summary(user_id: int, country: str = "TR"):
             
     except Exception as e:
         logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
+

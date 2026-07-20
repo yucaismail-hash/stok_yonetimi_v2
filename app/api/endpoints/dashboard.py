@@ -40,18 +40,21 @@ async def get_dashboard_ai_summary(
     
     user_language = get_language_from_country(current_user.billing_country or "TR")
     
-    # 1. Executive Summary var mı kontrol et
+        # 1. Executive Summary var mı kontrol et
     if current_user.executive_summary:
         logger.info(f"✅ Executive Summary bulundu (User: {current_user.id})")
         executive = current_user.executive_summary
         
+        # ✅ Önce summary alanını kontrol et, yoksa manager_summary dene
+        summary_text = executive.get("summary") or executive.get("manager_summary") or "Analizleriniz başarıyla tamamlandı."
+        
         return {
             "has_data": True,
-            "summary": executive.get("summary", ""),
-            "trend_direction": executive.get("trend_direction", "Bilinmiyor"),
+            "summary": summary_text,
+            "trend_direction": executive.get("trend_direction", executive.get("company_direction", "Bilinmiyor")),
             "risk_trend": executive.get("risk_trend", "Bilinmiyor"),
-            "key_insights": executive.get("key_insights", []),
-            "recurring_issues": executive.get("recurring_issues", []),
+            "key_insights": executive.get("key_insights", executive.get("key_developments", [])),
+            "recurring_issues": executive.get("recurring_issues", executive.get("recurring_problems", [])),
             "improvements": executive.get("improvements", []),
             "executive_recommendations": executive.get("executive_recommendations", []),
             "critical_attention": executive.get("critical_attention", []),
