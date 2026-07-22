@@ -16,6 +16,12 @@ import uuid
 import numpy as np
 import logging
 
+from app.api.dependencies import (
+    get_or_create_dataset_from_upload,
+    process_pricing_with_dataset,
+    get_active_dataset
+)
+
 # ✅ LOGGER
 logger = logging.getLogger(__name__)
 
@@ -343,21 +349,56 @@ def calculate_safety_stock_batch(
 ):
     """
     Akıllı Emniyet Stoğu Analizi - Pattern + ABC/XYZ + Otomatik Model Seçimi
-    Token maliyeti: 4 token
+    🆕 Pricing Engine ile dinamik ücretlendirme
     """
     try:
-        token_cost = 4
-        if current_user.token_balance < token_cost:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"Yetersiz kredi! Gerekli: {token_cost}, Mevcut: {current_user.token_balance}"
-            )
-        
+        # 1. Cache'den verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
         
         upload_id = cached_data.get('upload_id')
+        
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/safety-stock/batch",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Analizi çalıştır (mevcut kod)
         materials = cached_data.get('materials', [])
         if not materials:
             raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
@@ -449,6 +490,7 @@ def calculate_safety_stock_batch(
         if not results:
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
+        # 5. Sonuçları kaydet
         result_data = {
             'success': True,
             'total': len(results),
@@ -468,7 +510,9 @@ def calculate_safety_stock_batch(
                 'service_level': service_level,
                 'total_materials': len(results),
                 'pattern_analysis': True,
-                'abc_xyz_analysis': True
+                'abc_xyz_analysis': True,
+                'processing_score': pricing_response.processing_score,
+                'credit_cost': pricing_response.credit_cost
             },
             total_materials=len(results),
             task_id=None,
@@ -493,20 +537,19 @@ def calculate_safety_stock_batch(
             ]
             update_learning_from_pattern(current_user.id, pattern_results, db)
         
-        current_user.token_balance -= token_cost
         db.commit()
         db.refresh(analysis_result)
 
-
-        # ✅ AI Özetini arka planda oluştur
+        # AI Özetini arka planda oluştur
         background_tasks.add_task(
             generate_ai_summary_background,
             analysis_result.id,
             'safety_stock_batch',
-            current_user.id
+            current_user.id,
+            current_user.billing_country or 'TR'
         )
 
-        # ✅ Trend Summary'yi arka planda yenile
+        # Trend Summary'yi arka planda yenile
         background_tasks.add_task(
             refresh_trend_summary,
             current_user.id,
@@ -517,8 +560,9 @@ def calculate_safety_stock_batch(
             'success': True,
             'total': len(results),
             'results': results,
-            'token_cost': token_cost,
-            'new_balance': current_user.token_balance,
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score,
             'result_id': analysis_result.id,
             'ai_status': 'pending',
             'pattern_analysis': True,
@@ -532,30 +576,23 @@ def calculate_safety_stock_batch(
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-
 # ============================================================
 # 📌 ASYNC SAFETY STOCK ANALİZİ
 # ============================================================
 
 @router.post("/safety-stock/batch/async")
 def start_async_safety_stock(
-    request: Dict[str, Any],
+    request: Dict[str, Any],  # ✅ Dict tipinde (service_level içeriyor)
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Async Emniyet Stoğu Analizi - Hemen task_id döner
-    Token maliyeti: 6 token
+    🆕 Pricing Engine ile dinamik ücretlendirme
     """
     try:
-        token_cost = 6
-        if current_user.token_balance < token_cost:
-            raise HTTPException(
-                status_code=status.HTTP_402_PAYMENT_REQUIRED,
-                detail=f"Yetersiz kredi! Gerekli: {token_cost}, Mevcut: {current_user.token_balance}"
-            )
-        
+        # 1. Cache'den verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
@@ -567,12 +604,49 @@ def start_async_safety_stock(
         
         service_level = request.get('service_level', 0.95)
         
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme (Async'de hemen düş)
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/safety-stock/batch/async",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Task ID oluştur
         task_id = str(uuid.uuid4())
         
-        # ============================================================
-        # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
-        # ============================================================
-        
+        # 5. Initial record'u kaydet
         initial_data = {
             'status': 'processing',
             'message': 'Emniyet stoğu analizi başlatıldı, işleniyor...',
@@ -580,7 +654,10 @@ def start_async_safety_stock(
             'results': [],
             'service_level': service_level,
             'task_id': task_id,
-            'started_at': datetime.utcnow().isoformat()
+            'started_at': datetime.utcnow().isoformat(),
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score
         }
         
         initial_record = AnalysisResult(
@@ -592,7 +669,9 @@ def start_async_safety_stock(
                 'service_level': service_level,
                 'total_materials': len(materials),
                 'pattern_analysis': True,
-                'abc_xyz_analysis': True
+                'abc_xyz_analysis': True,
+                'credit_cost': pricing_response.credit_cost,
+                'processing_score': pricing_response.processing_score
             },
             total_materials=len(materials),
             task_id=task_id,
@@ -604,11 +683,7 @@ def start_async_safety_stock(
         db.add(initial_record)
         db.commit()
         
-        # ✅ Krediyi düş (async başlatıldığında)
-        current_user.token_balance -= token_cost
-        db.commit()
-        
-        # ✅ Async job'u arka planda başlat
+        # 6. Async job'u arka planda başlat
         background_tasks.add_task(
             run_async_safety_stock_job,
             task_id=task_id,
@@ -622,8 +697,9 @@ def start_async_safety_stock(
             "task_id": task_id,
             "status": "started",
             "message": "Emniyet stoğu analizi arka planda başlatıldı.",
-            "token_cost": token_cost,
-            "new_balance": current_user.token_balance
+            "credit_cost": pricing_response.credit_cost,
+            "balance_after": pricing_response.balance_after,
+            "processing_score": pricing_response.processing_score
         }
         
     except HTTPException:
@@ -631,7 +707,6 @@ def start_async_safety_stock(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
 
 # ============================================================
 # 📌 ASYNC SAFETY STOCK JOB

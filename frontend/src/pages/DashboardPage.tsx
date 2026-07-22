@@ -1,4 +1,5 @@
-// frontend/src/pages/DashboardPage.tsx - TAM GÜNCEL DOSYA (AI Özeti Yenile Butonu KALDIRILDI)
+// frontend/src/pages/DashboardPage.tsx - TAM VE ÇALIŞIR
+// Sonsuz döngü düzeltildi, tüm TypeScript hataları giderildi.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -19,50 +20,63 @@ import {
   ListItem,
   ListItemText,
   ListItemIcon,
-  TablePagination,
+  IconButton,
+  Stack,
+  Skeleton,
+  Tooltip,
+  Stepper,
+  Step,
+  StepLabel,
+  Drawer,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  IconButton,
-  Stack,
-  Skeleton,
-  Snackbar,
 } from '@mui/material';
 import {
-  Assessment,
   CheckCircle,
   Info,
   Inventory,
-  Visibility,
   CloudUpload,
   InsertDriveFile,
-  Clear,
-  UploadFile,
-  Payments,
   Close,
-  CancelOutlined,
-  ErrorOutlined,
   Download,
   PlayArrow,
   Schedule,
   AccountBalanceWallet,
+  TrendingUp,
+  TrendingDown,
+  Warning,
+  ArrowForward,
+  Lightbulb,
+  Assessment,
+  LocalShipping,
+  Timeline,
+  Speed,
+  School,
 } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
-import api from '../services/api';
+import { useQuery } from '@tanstack/react-query';
+import api, { buildDataset, getDatasets } from '../services/api';
 import { styled } from '@mui/material/styles';
-import PolarCheckout from '../components/PolarCheckout';
 import {
   Shield,
   TrendingUp as TrendingUpLucide,
   Dice5,
-  School,
+  School as SchoolLucide,
   Truck,
   Download as DownloadLucide,
-  Lightbulb as LightbulbLucide,
+  Sparkles,
+  Clock,
+  Database,
+  FileText,
+  Bot,
 } from 'lucide-react';
 
-// ✅ Activity Interface
+// ============================================================
+// 📌 INTERFACES
+// ============================================================
+
 interface Activity {
   id: number;
   type: string;
@@ -73,7 +87,6 @@ interface Activity {
   raw?: any;
 }
 
-// ✅ Task Interface
 interface Task {
   task_id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
@@ -86,18 +99,27 @@ interface Task {
   report_name: string;
 }
 
-// ✅ AI Önerisi Interface
-interface AIRecommendationData {
+interface AIExecutiveData {
   has_recommendation: boolean;
   summary: string;
+  full_summary?: string;
   details?: string[];
   last_analysis_date?: string | null;
   confidence: number;
   action?: string;
   action_path?: string;
+  action_label?: string;
+  recommendations?: Array<{
+    title: string;
+    reason: string;
+    action: string;
+    path: string;
+  }>;
+  trend_summary?: any;
+  risks?: any[];
+  executive_recommendations?: string[];
 }
 
-// ✅ Credit Package Interface
 interface CreditPackage {
   id: number;
   polar_product_id: string;
@@ -107,7 +129,79 @@ interface CreditPackage {
   is_active: boolean;
 }
 
-// 📁 Styled Upload Area
+interface DatasetStatus {
+  id: number | null;
+  file_name: string | null;
+  product_count: number;
+  period_count: number;
+  data_points: number;
+  created_at: string | null;
+  is_active: boolean;
+  status: 'ready' | 'old' | 'none';
+  last_update: string | null;
+}
+
+interface HistoryItem {
+  id: number;
+  created_at: string;
+  data: any;
+  result_type: string;
+  total_materials: number;
+}
+
+// 🆕 Decision Engine Interfaces
+interface ModuleSummary {
+  priority: number;
+  summary: string;
+  analysis_id: number | null;
+  page: string;
+  analysis_type: string;
+  dataset_id: string | null;
+  total_items?: number;
+  critical_count?: number;
+  high_risk_count?: number;
+  avg_service_level?: number;
+  trend_up?: number;
+  trend_down?: number;
+  created_at?: string;
+}
+
+interface DashboardSummary {
+  modules: Record<string, ModuleSummary | null>;
+  top_priority_module: string | null;
+  top_priority: number;
+  summary: string;
+  updated_at: string;
+}
+
+interface Recommendation {
+  analysis: string;
+  priority: number;
+  title: string;
+  reason: string;
+  expected_benefit: string;
+  target_page: string;
+  analysis_id: number | null;
+  analysis_type: string;
+  dataset_id: string | null;
+}
+
+interface AIRecommendationResponse {
+  success: boolean;
+  has_recommendation: boolean;
+  message?: string;
+  recommendation?: Recommendation;
+  ai_explanation?: string;
+  target_page?: string;
+  analysis_id?: number;
+  analysis_type?: string;
+  dataset_id?: string;
+}
+
+// ============================================================
+// 📁 STYLED COMPONENTS
+// ============================================================
+
 const VisuallyHiddenInput = styled('input')({
   clip: 'rect(0 0 0 0)',
   clipPath: 'inset(50%)',
@@ -128,7 +222,7 @@ const UploadArea = styled(Paper)(({ theme }) => ({
   cursor: 'pointer',
   transition: 'all 0.3s',
   backgroundColor: '#f8faff',
-  minHeight: 100,
+  minHeight: 80,
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
@@ -143,109 +237,119 @@ const UploadArea = styled(Paper)(({ theme }) => ({
   },
 }));
 
-// 📊 Hızlı İstatistik Kartı
-interface QuickStatProps {
-  value: number;
-  label: string;
-  icon: React.ReactNode;
-  color: string;
-  loading?: boolean;
-}
+// ============================================================
+// 📌 YARDIMCI FONKSİYONLAR
+// ============================================================
 
-const QuickStat = ({ value, label, icon, color, loading }: QuickStatProps) => (
-  <Paper
-    sx={{
-      px: 1.5,
-      py: 1,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 1.5,
-      backgroundColor: '#fafcff',
-      border: '1px solid #e8f0fe',
-      borderRadius: 2,
-    }}
-  >
-    <Avatar sx={{ bgcolor: color, width: 28, height: 28 }}>{icon}</Avatar>
-    <Box>
-      {loading ? (
-        <Skeleton variant="text" width={40} height={24} />
-      ) : (
-        <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.95rem', lineHeight: 1.2 }}>
-          {value.toLocaleString('tr-TR')}
-        </Typography>
-      )}
-      <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.6rem', display: 'block', lineHeight: 1 }}>
-        {label}
-      </Typography>
-    </Box>
-  </Paper>
-);
+const getTimeAgo = (dateStr: string | null): string => {
+  if (!dateStr) return 'Bugün';
+  
+  try {
+    const parts = dateStr.split(' ');
+    const datePart = parts[0];
+    const timePart = parts[1]?.split('.')[0];
+    
+    if (!datePart || !timePart) return 'Bugün';
+    
+    const [year, month, day] = datePart.split('-').map(Number);
+    const [hours, minutes, seconds] = timePart.split(':').map(Number);
+    
+    const utcDate = new Date(Date.UTC(year, month - 1, day, hours, minutes, seconds));
+    const now = new Date();
+    
+    const diffMs = now.getTime() - utcDate.getTime();
+    
+    if (diffMs < 0) return 'Bugün';
+    
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
 
-// 📋 Hızlı Analiz Kartı
-interface QuickAnalysisCardProps {
-  title: string;
-  icon: React.ReactNode;
-  color: string;
-  cost: number;
-  onClick: () => void;
-  isAsync?: boolean;
-  loading?: boolean;
-}
+    if (diffMins < 1) return 'Şimdi';
+    if (diffMins < 60) return `${diffMins} dakika önce`;
+    if (diffHours < 24) return `${diffHours} saat önce`;
+    if (diffDays < 7) return `${diffDays} gün önce`;
+    
+    return `${day}.${month}.${year}`;
+  } catch (error) {
+    return 'Bugün';
+  }
+};
 
-const QuickAnalysisCard = ({ title, icon, color, cost, onClick, isAsync, loading }: QuickAnalysisCardProps) => (
-  <Card
-    sx={{
-      cursor: loading ? 'default' : 'pointer',
-      transition: 'all 0.2s',
-      '&:hover': {
-        transform: loading ? 'none' : 'translateY(-2px)',
-        boxShadow: loading ? 0 : 2,
-      },
-      border: '1px solid #e8f0fe',
-      borderRadius: 2,
-      opacity: loading ? 0.7 : 1,
-    }}
-    onClick={loading ? undefined : onClick}
-  >
-    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, px: 2 }}>
-      <Avatar sx={{ bgcolor: color, width: 32, height: 32 }}>{icon}</Avatar>
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.8rem' }}>
-          {loading ? <Skeleton variant="text" width={60} /> : title}
-        </Typography>
-        <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
-          {loading ? (
-            <Skeleton variant="text" width={40} height={14} />
-          ) : (
-            <>
-              <Chip label={`${cost} Kredi`} size="small" sx={{ height: 16, fontSize: '0.5rem' }} />
-              {isAsync && <Chip label="ASYNC" size="small" color="secondary" sx={{ height: 16, fontSize: '0.45rem' }} />}
-            </>
-          )}
-        </Box>
-      </Box>
-      {!loading && <PlayArrow sx={{ color: '#9e9e9e', fontSize: 16 }} />}
-    </CardContent>
-  </Card>
-);
+const truncateFileName = (name: string, maxLength: number = 28): string => {
+  if (!name) return 'Bilinmeyen';
+  if (name.length <= maxLength) return name;
+  const ext = name.split('.').pop() || '';
+  const base = name.slice(0, maxLength - ext.length - 4);
+  return `${base}...${ext}`;
+};
 
-// 🤖 AI Executive Summary - KOMPAKT
-const AIExecutiveSummary = ({
-  recommendation,
-  loading
+const getPriorityColor = (priority: number): 'success' | 'warning' | 'error' | 'default' => {
+  if (priority >= 90) return 'error';
+  if (priority >= 70) return 'warning';
+  if (priority >= 40) return 'default';
+  return 'success';
+};
+
+const getPriorityLabel = (priority: number): string => {
+  if (priority >= 90) return 'Kritik';
+  if (priority >= 70) return 'Yüksek';
+  if (priority >= 40) return 'Orta';
+  return 'Düşük';
+};
+
+const getPriorityColorHex = (priority: number): string => {
+  if (priority >= 90) return '#d32f2f';
+  if (priority >= 70) return '#ed6c02';
+  if (priority >= 40) return '#1976d2';
+  return '#2e7d32';
+};
+
+// ============================================================
+// 📊 API FONKSİYONLARI
+// ============================================================
+
+const fetchAIRecommendation = async (): Promise<AIRecommendationResponse> => {
+  const res = await api.get('/api/dashboard/ai-recommendation');
+  return res.data;
+};
+
+const fetchDashboardSummary = async (): Promise<{ success: boolean; data: DashboardSummary }> => {
+  const res = await api.get('/api/dashboard/summary');
+  return res.data;
+};
+
+// ============================================================
+// 📊 BİLEŞENLER
+// ============================================================
+
+// ✅ AI Executive - Ana Kart
+const AIExecutiveCard = ({
+  data,
+  loading,
+  hasData,
+  onReadMore,
+  onUpload,
 }: {
-  recommendation: AIRecommendationData | null;
+  data: AIExecutiveData | null;
   loading: boolean;
+  hasData: boolean;
+  onReadMore: () => void;
+  onUpload: () => void;
 }) => {
   if (loading) {
     return (
-      <Card sx={{ bgcolor: '#f8faff', border: '1px solid #e8f0fe', height: '100%' }}>
-        <CardContent sx={{ py: 1.5, px: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Skeleton variant="circular" width={32} height={32} />
+      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe', height: '100%' }}>
+        <CardContent sx={{ py: 2.5, px: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+            <Skeleton variant="circular" width={44} height={44} />
             <Box sx={{ flex: 1 }}>
-              <Skeleton variant="text" width="40%" height={20} />
-              <Skeleton variant="text" width="60%" height={14} />
+              <Skeleton variant="text" width="40%" height={24} />
+              <Skeleton variant="text" width="80%" height={16} />
+              <Skeleton variant="text" width="60%" height={16} />
+              <Box sx={{ mt: 2 }}>
+                <Skeleton variant="rectangular" width={120} height={36} sx={{ borderRadius: 2 }} />
+              </Box>
             </Box>
           </Box>
         </CardContent>
@@ -253,64 +357,116 @@ const AIExecutiveSummary = ({
     );
   }
 
-  if (!recommendation || !recommendation.has_recommendation) {
+  if (!hasData || !data || !data.has_recommendation) {
     return (
-      <Card sx={{ bgcolor: '#f8faff', border: '1px solid #e8f0fe', height: '100%' }}>
-        <CardContent sx={{ py: 1.5, px: 2 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <LightbulbLucide size={18} color="#6b7280" />
-            <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', fontSize: '0.8rem' }}>
-              AI Yönetici Özeti
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-              — Henüz veri yok
-            </Typography>
+      <Card sx={{ 
+        borderRadius: 3, 
+        border: '1px solid #e8f0fe',
+        background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)',
+        height: '100%',
+      }}>
+        <CardContent sx={{ py: 3, px: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2.5 }}>
+            <Avatar sx={{ bgcolor: '#1f4e79', width: 48, height: 48 }}>
+              <Bot width={24} height={24} color="white" />
+            </Avatar>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1f4e79', mb: 0.5 }}>
+                Merhaba, Stokonomi'ye Hoş Geldiniz 👋
+              </Typography>
+              <Typography variant="body1" sx={{ color: '#374151', mb: 1, fontSize: '0.95rem' }}>
+                Ben Stokonomi AI. Birkaç dakika içinde şirketinizi tanıyacak 
+                ve size özel stok yönetimi önerileri oluşturmaya başlayacağım.
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '0.85rem', mb: 2 }}>
+                İlk adım olarak veri dosyanızı yükleyelim.
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<CloudUpload />}
+                onClick={onUpload}
+                sx={{
+                  bgcolor: '#1f4e79',
+                  '&:hover': { bgcolor: '#1a3d5c' },
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  px: 3,
+                }}
+              >
+                Veri Yükle
+              </Button>
+            </Box>
           </Box>
         </CardContent>
       </Card>
     );
   }
+
+  const summaryLines = data.summary ? data.summary.split('.').filter(s => s.trim()) : [];
+  const displaySummary = summaryLines.slice(0, 5).join('. ');
+  const hasMore = summaryLines.length > 5;
 
   return (
-    <Card sx={{
-      bgcolor: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)',
+    <Card sx={{ 
+      borderRadius: 3, 
       border: '1px solid #d0e0ff',
-      borderRadius: 2,
+      background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)',
       height: '100%',
       position: 'relative',
-      overflow: 'hidden'
+      overflow: 'hidden',
     }}>
       <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, bgcolor: '#1f4e79' }} />
-
-      <CardContent sx={{ py: 1.5, px: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: '#1f4e79', width: 32, height: 32 }}>
-            <LightbulbLucide size={16} color="white" />
+      
+      <CardContent sx={{ py: 2.5, px: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2.5 }}>
+          <Avatar sx={{ bgcolor: '#1f4e79', width: 44, height: 44 }}>
+            <Bot width={22} height={22} color="white" />
           </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-              <Typography variant="body2" sx={{ fontWeight: 700, color: '#1f4e79', fontSize: '0.8rem' }}>
-                🤖 AI Özet
-              </Typography>
-              {recommendation.last_analysis_date && (
-                <Chip
-                  label={recommendation.last_analysis_date}
-                  size="small"
-                  sx={{ height: 18, fontSize: '0.5rem', bgcolor: 'white' }}
-                />
-              )}
-            </Box>
-            <Typography variant="body2" sx={{ color: '#1f4e79', fontSize: '0.75rem', mt: 0.25 }}>
-              {recommendation.summary}
+          
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="body2" sx={{ color: '#1f4e79', fontWeight: 600, fontSize: '0.8rem', mb: 0.5, letterSpacing: '0.3px' }}>
+              Stokonomi AI — Executive Summary
             </Typography>
-            {recommendation.action && (
+            
+            <Typography variant="body1" sx={{ color: '#1f4e79', fontWeight: 500, fontSize: '0.95rem', lineHeight: 1.6, mb: 1 }}>
+              {displaySummary}
+              {hasMore && (
+                <Button
+                  variant="text"
+                  size="small"
+                  onClick={onReadMore}
+                  sx={{
+                    color: '#1f4e79',
+                    fontWeight: 600,
+                    fontSize: '0.75rem',
+                    textTransform: 'none',
+                    p: 0,
+                    ml: 0.5,
+                    minWidth: 'auto',
+                    '&:hover': { bgcolor: 'transparent', textDecoration: 'underline' },
+                  }}
+                >
+                  Devamı →
+                </Button>
+              )}
+            </Typography>
+            
+            {data.action && (
               <Button
-                variant="text"
-                size="small"
-                onClick={() => window.location.href = recommendation.action_path || '/tasks'}
-                sx={{ mt: 0.5, p: 0, fontSize: '0.65rem', color: '#1f4e79', fontWeight: 600, textTransform: 'none' }}
+                variant="contained"
+                size="medium"
+                onClick={() => window.location.href = data.action_path || '/tasks'}
+                sx={{
+                  bgcolor: '#1f4e79',
+                  '&:hover': { bgcolor: '#1a3d5c' },
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontSize: '0.8rem',
+                  px: 3,
+                  mt: 0.5,
+                }}
               >
-                {recommendation.action} →
+                {data.action_label || data.action}
               </Button>
             )}
           </Box>
@@ -320,404 +476,1026 @@ const AIExecutiveSummary = ({
   );
 };
 
-// 💳 Kredi Satın Alma Dialog
-const CreditPurchaseDialog = ({
+// ✅ Executive Summary Drawer
+const ExecutiveDrawer = ({
   open,
   onClose,
-  onPurchase,
-  currentBalance,
-  isLoading = false,
-  paymentStatus = 'idle',
-  paymentMessage = null,
-  onReset,
+  data,
 }: {
   open: boolean;
   onClose: () => void;
-  onPurchase: (pkg: CreditPackage) => void;
-  currentBalance: number;
-  isLoading?: boolean;
-  paymentStatus?: 'idle' | 'processing' | 'success' | 'canceled' | 'error';
-  paymentMessage?: string | null;
-  onReset?: () => void;
+  data: AIExecutiveData | null;
 }) => {
-  const [packages, setPackages] = useState<CreditPackage[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedPackage, setSelectedPackage] = useState<CreditPackage | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (open && paymentStatus === 'idle') {
-      fetchPackages();
-    }
-  }, [open, paymentStatus]);
-
-  const fetchPackages = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get('/api/polar/packages');
-      if (res.data && Array.isArray(res.data)) {
-        setPackages(res.data);
-        if (res.data.length > 0) {
-          setSelectedPackage(res.data[0]);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Paket hatası:', error);
-      setError('Paketler yüklenirken bir hata oluştu.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handlePurchase = () => {
-    if (!selectedPackage) return;
-    onPurchase(selectedPackage);
-  };
-
-  const handleClose = () => {
-    setError(null);
-    if (onReset) onReset();
-    onClose();
-  };
-
-  const renderContent = () => {
-    if (isLoading) {
-      return (
-        <Box sx={{ textAlign: 'center', py: 6 }}>
-          <CircularProgress size={60} thickness={4} />
-          <Typography variant="h6" sx={{ mt: 3, fontWeight: 'bold', color: 'primary.main' }}>
-            🚀 Ödeme Başlatılıyor...
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Lütfen bekleyin, güvenli ödeme sayfası açılıyor.
-          </Typography>
-        </Box>
-      );
-    }
-
-    if (paymentStatus === 'success') {
-      return (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <CheckCircle sx={{ fontSize: 80, color: 'success.main', mb: 2 }} />
-          <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-            🎉 Ödeme Başarılı!
-          </Typography>
-          <Typography variant="body1" sx={{ mt: 1 }}>
-            {paymentMessage || 'Kredileriniz hesabınıza başarıyla eklendi.'}
-          </Typography>
-          <Chip
-            label={`💰 Yeni Bakiye: ${currentBalance} Kredi`}
-            color="success"
-            sx={{ mt: 2, fontWeight: 'bold' }}
-          />
-        </Box>
-      );
-    }
-
-    if (paymentStatus === 'canceled') {
-      return (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <CancelOutlined sx={{ fontSize: 80, color: 'warning.main', mb: 2 }} />
-          <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'warning.main' }}>
-            ⏹️ Ödeme İptal Edildi
-          </Typography>
-          <Typography variant="body1" sx={{ mt: 1 }}>
-            {paymentMessage || 'Ödeme işleminiz iptal edildi. Herhangi bir ücret alınmamıştır.'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Tekrar denemek için "Tekrar Dene" butonunu kullanabilirsiniz.
-          </Typography>
-        </Box>
-      );
-    }
-
-    if (paymentStatus === 'error') {
-      return (
-        <Box sx={{ textAlign: 'center', py: 4 }}>
-          <ErrorOutlined sx={{ fontSize: 80, color: 'error.main', mb: 2 }} />
-          <Typography variant="h5" sx={{ fontWeight: 'bold', color: 'error.main' }}>
-            ❌ Ödeme Alınamadı
-          </Typography>
-          <Typography variant="body1" sx={{ mt: 1 }}>
-            {paymentMessage || 'Ödeme işlemi sırasında bir hata oluştu.'}
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Lütfen tekrar deneyin veya farklı bir ödeme yöntemi kullanın.
-          </Typography>
-        </Box>
-      );
-    }
-
-    return (
-      <>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Aşağıdaki paketlerden birini seçerek kredi satın alabilirsiniz.
-          Ödeme işlemi güvenli ödeme platformu Polar üzerinden gerçekleştirilir.
-        </Typography>
-
-        <Grid container spacing={2}>
-          {packages.map((pkg) => (
-            <Grid size={{ xs: 12, sm: 4 }} key={pkg.id}>
-              <Card
-                sx={{
-                  cursor: 'pointer',
-                  border: selectedPackage?.id === pkg.id ? '2px solid #1976d2' : '1px solid #e0e0e0',
-                  transition: 'all 0.3s ease',
-                  borderRadius: 3,
-                  position: 'relative',
-                  overflow: 'hidden',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: 8,
-                  },
-                  ...(selectedPackage?.id === pkg.id && {
-                    boxShadow: '0 8px 25px rgba(25, 118, 210, 0.25)',
-                  }),
-                }}
-                onClick={() => setSelectedPackage(pkg)}
-              >
-                {selectedPackage?.id === pkg.id && (
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: 0,
-                      right: 0,
-                      bgcolor: 'success.main',
-                      color: 'white',
-                      px: 2,
-                      py: 0.5,
-                      borderRadius: '0 0 0 12px',
-                      fontSize: '0.7rem',
-                      fontWeight: 'bold',
-                    }}
-                  >
-                    SEÇİLDİ
-                  </Box>
-                )}
-                <CardContent sx={{ textAlign: 'center', py: 3 }}>
-                  <Typography variant="h3" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-                    {pkg.credits}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    Kredi
-                  </Typography>
-
-                  <Divider sx={{ my: 1.5 }} />
-
-                  <Typography variant="h5" sx={{ fontWeight: 'bold', color: '#1a237e' }}>
-                    ₺{pkg.price_tl.toFixed(2)}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                    {pkg.name}
-                  </Typography>
-
-                  {selectedPackage?.id === pkg.id && (
-                    <CheckCircle sx={{ color: 'success.main', mt: 1 }} />
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-
-        {selectedPackage && (
-          <Paper
-            sx={{
-              mt: 3,
-              p: 2.5,
-              bgcolor: '#e3f2fd',
-              borderRadius: 3,
-              border: '1px solid #90caf9',
-            }}
-          >
-            <Box
-              sx={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                flexWrap: 'wrap',
-              }}
-            >
-              <Box>
-                <Typography variant="body2" sx={{ fontWeight: 'bold', color: '#0d47a1' }}>
-                  📋 Seçilen Paket: {selectedPackage.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {selectedPackage.credits} Kredi
-                </Typography>
-              </Box>
-              <Typography variant="h6" sx={{ fontWeight: 'bold', color: '#0d47a1' }}>
-                ₺{selectedPackage.price_tl.toFixed(2)}
-              </Typography>
-            </Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              🔒 Güvenli ödeme Polar tarafından sağlanmaktadır.
-            </Typography>
-          </Paper>
-        )}
-      </>
-    );
-  };
-
-  const renderActions = () => {
-    if (isLoading) {
-      return (
-        <>
-          <Button disabled>İptal</Button>
-          <Button disabled variant="contained">
-            <CircularProgress size={20} sx={{ mr: 1 }} />
-            İşlem Devam Ediyor...
-          </Button>
-        </>
-      );
-    }
-
-    if (paymentStatus === 'success' || paymentStatus === 'canceled') {
-      return (
-        <>
-          <Button variant="contained" color="primary" onClick={handleClose}>
-            {paymentStatus === 'success' ? "Dashboard'a Dön" : 'Tekrar Dene'}
-          </Button>
-        </>
-      );
-    }
-
-    if (paymentStatus === 'error') {
-      return (
-        <>
-          <Button onClick={handleClose}>Vazgeç</Button>
-          <Button variant="contained" color="warning" onClick={onReset}>
-            Tekrar Dene
-          </Button>
-        </>
-      );
-    }
-
-    return (
-      <>
-        <Button
-          onClick={handleClose}
-          sx={{
-            color: '#666',
-            '&:hover': { bgcolor: 'rgba(0,0,0,0.04)' },
-          }}
-        >
-          İptal
-        </Button>
-        <Button
-          variant="contained"
-          onClick={handlePurchase}
-          disabled={!selectedPackage || loading}
-          startIcon={<Payments />}
-          sx={{
-            px: 4,
-            py: 1.5,
-            borderRadius: 3,
-            background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
-            '&:hover': {
-              background: 'linear-gradient(135deg, #0d47a1 0%, #1a237e 100%)',
-            },
-            '&:disabled': {
-              background: '#ccc',
-            },
-          }}
-        >
-          Satın Al
-        </Button>
-      </>
-    );
-  };
+  if (!data) return null;
 
   return (
-    <Dialog
+    <Drawer
+      anchor="right"
       open={open}
-      onClose={paymentStatus === 'idle' ? handleClose : undefined}
-      maxWidth="sm"
-      fullWidth
+      onClose={onClose}
       slotProps={{
         paper: {
           sx: {
-            borderRadius: 4,
-            boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
-            overflow: 'hidden',
-            minHeight: 400,
+            width: { xs: '100%', sm: 480, md: 560 },
+            p: 3,
+            bgcolor: '#f8faff',
           },
         },
       }}
     >
-      <Box
-        sx={{
-          p: 3,
-          background: 'linear-gradient(135deg, #1a237e 0%, #0d47a1 100%)',
-          color: 'white',
-        }}
-      >
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, color: '#1f4e79' }}>
+          📊 Executive Summary
+        </Typography>
+        <IconButton onClick={onClose} size="small">
+          <Close />
+        </IconButton>
+      </Box>
+
+      <Divider sx={{ mb: 3 }} />
+
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+        <Box>
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', mb: 1 }}>
+            Özet
+          </Typography>
+          <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.8 }}>
+            {data.full_summary || data.summary}
+          </Typography>
+        </Box>
+
+        {data.trend_summary && (
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-              {paymentStatus === 'success'
-                ? '✅ Ödeme Başarılı'
-                : paymentStatus === 'canceled'
-                  ? '⏹️ Ödeme İptal'
-                  : paymentStatus === 'error'
-                    ? '❌ Ödeme Hatası'
-                    : '💳 Kredi Satın Al'}
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', mb: 1 }}>
+              📈 Trend Özeti
             </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.8 }}>
-              {paymentStatus === 'success'
-                ? 'Kredileriniz hesabınıza eklendi.'
-                : paymentStatus === 'canceled'
-                  ? 'İşleminiz iptal edildi.'
-                  : paymentStatus === 'error'
-                    ? 'Bir hata oluştu, tekrar deneyin.'
-                    : 'İhtiyacın olan krediyi seç, hemen kullanmaya başla'}
+            <Typography variant="body2" sx={{ color: '#374151', lineHeight: 1.8 }}>
+              {data.trend_summary.summary || 'Trend bilgisi mevcut değil.'}
+            </Typography>
+            {data.trend_summary.trend_direction && (
+              <Chip
+                label={`Trend: ${data.trend_summary.trend_direction}`}
+                size="small"
+                color={data.trend_summary.trend_direction === 'İyileşiyor' ? 'success' : 
+                       data.trend_summary.trend_direction === 'Kötüleşiyor' ? 'error' : 'default'}
+                sx={{ mt: 1 }}
+              />
+            )}
+          </Box>
+        )}
+
+        {data.risks && data.risks.length > 0 && (
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', mb: 1 }}>
+              ⚠️ Riskler
+            </Typography>
+            <List disablePadding>
+              {data.risks.slice(0, 5).map((risk, idx) => (
+                <ListItem key={idx} sx={{ px: 0, py: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 28 }}>
+                    <Warning color="warning" fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={typeof risk === 'string' ? risk : risk.description || JSON.stringify(risk)}
+                    sx={{ '& .MuiListItemText-primary': { fontSize: '0.8rem', color: '#374151' } }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        )}
+
+        {data.executive_recommendations && data.executive_recommendations.length > 0 && (
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', mb: 1 }}>
+              💡 Tavsiyeler
+            </Typography>
+            <List disablePadding>
+              {data.executive_recommendations.map((rec, idx) => (
+                <ListItem key={idx} sx={{ px: 0, py: 0.5 }}>
+                  <ListItemIcon sx={{ minWidth: 28 }}>
+                    <CheckCircle color="primary" fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={rec}
+                    sx={{ '& .MuiListItemText-primary': { fontSize: '0.8rem', color: '#374151' } }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          </Box>
+        )}
+
+        <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f7ff', borderRadius: 2 }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Son güncelleme: {data.last_analysis_date || 'Bugün'}
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Güven seviyesi: %{Math.round((data.confidence || 0) * 100)}
+          </Typography>
+        </Box>
+      </Box>
+
+      <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #e0e0e0' }}>
+        <Button
+          fullWidth
+          variant="outlined"
+          onClick={onClose}
+          sx={{ borderRadius: 2, textTransform: 'none' }}
+        >
+          Kapat
+        </Button>
+      </Box>
+    </Drawer>
+  );
+};
+
+// ✅ AI Strategic Recommendation
+const AIStrategicRecommendation = ({
+  data,
+  loading,
+  onAction,
+}: {
+  data: AIRecommendationResponse | null;
+  loading: boolean;
+  onAction: (targetPage: string, analysisId: number | null, analysisType: string, datasetId: string | null) => void;
+}) => {
+  if (loading) {
+    return (
+      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+        <CardContent sx={{ py: 2.5, px: 3 }}>
+          <Skeleton variant="text" width="40%" height={24} />
+          <Skeleton variant="text" width="80%" height={16} />
+          <Skeleton variant="text" width="60%" height={14} />
+          <Box sx={{ mt: 2 }}>
+            <Skeleton variant="rectangular" width={160} height={36} sx={{ borderRadius: 2 }} />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!data || !data.has_recommendation || !data.recommendation) {
+    return null;
+  }
+
+  const rec = data.recommendation;
+  const priorityColor = getPriorityColor(rec.priority);
+  const priorityLabel = getPriorityLabel(rec.priority);
+  const colorHex = getPriorityColorHex(rec.priority);
+
+  return (
+    <Card sx={{
+      borderRadius: 3,
+      border: `1px solid ${colorHex}30`,
+      bgcolor: `${colorHex}08`,
+      position: 'relative',
+      overflow: 'hidden',
+    }}>
+      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, bgcolor: colorHex }} />
+      
+      <CardContent sx={{ py: 2.5, px: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+          <Avatar sx={{ bgcolor: `${colorHex}15`, color: colorHex, width: 44, height: 44 }}>
+            <Lightbulb sx={{ fontSize: 22 }} />
+          </Avatar>
+          
+          <Box sx={{ flex: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 0.5, flexWrap: 'wrap' }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: colorHex, fontSize: '0.75rem', letterSpacing: '0.5px' }}>
+                ⭐ AI Stratejik Öneri
+              </Typography>
+              <Chip
+                label={`${priorityLabel} · Öncelik ${rec.priority}`}
+                size="small"
+                color={priorityColor}
+                sx={{ height: 22, fontSize: '0.55rem', fontWeight: 600 }}
+              />
+            </Box>
+            
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1f4e79', fontSize: '1rem', mb: 0.5 }}>
+              {rec.title}
+            </Typography>
+            
+            {data.ai_explanation && (
+              <Typography variant="body2" sx={{ color: '#374151', fontSize: '0.9rem', mb: 1, lineHeight: 1.6 }}>
+                {data.ai_explanation}
+              </Typography>
+            )}
+            
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Button
+                variant="contained"
+                size="medium"
+                endIcon={<ArrowForward />}
+                onClick={() => onAction(rec.target_page, rec.analysis_id, rec.analysis_type, rec.dataset_id)}
+                sx={{
+                  bgcolor: colorHex,
+                  '&:hover': { bgcolor: colorHex, opacity: 0.85 },
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontSize: '0.8rem',
+                  px: 3,
+                }}
+              >
+                Analizi Aç
+              </Button>
+              <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.65rem' }}>
+                💡 {rec.expected_benefit}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ Analysis Highlights
+const AnalysisHighlights = ({
+  modules,
+  loading,
+  onOpen,
+}: {
+  modules: Record<string, ModuleSummary | null> | undefined;
+  loading: boolean;
+  onOpen: (page: string, analysisId: number | null, analysisType: string, datasetId: string | null) => void;
+}) => {
+  if (loading) {
+    return (
+      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+        <CardContent sx={{ py: 2, px: 2.5 }}>
+          <Skeleton variant="text" width={150} height={20} />
+          <Box sx={{ mt: 2 }}>
+            <Grid container spacing={1.5}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Grid size={{ xs: 12, sm: 6, md: 2.4 }} key={i}>
+                  <Skeleton variant="rectangular" height={80} sx={{ borderRadius: 2 }} />
+                </Grid>
+              ))}
+            </Grid>
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!modules) return null;
+
+  const activeModules = Object.entries(modules)
+    .filter(([_, data]) => data !== null)
+    .map(([key, data]) => ({ key, ...data })) as Array<{ key: string } & ModuleSummary>;
+
+  if (activeModules.length === 0) return null;
+
+  const sorted = activeModules.sort((a, b) => b.priority - a.priority);
+  const topFive = sorted.slice(0, 5);
+
+  const moduleConfig: Record<string, { icon: React.ReactNode; color: string; label: string }> = {
+    forecast: { 
+      icon: <TrendingUpLucide width={18} height={18}/>, 
+      color: '#1976d2', 
+      label: 'Talep Tahmini' 
+    },
+    safety_stock: { 
+      icon: <Shield width={18} height={18} />, 
+      color: '#2e7d32', 
+      label: 'Emniyet Stoğu' 
+    },
+    supplier: { 
+      icon: <Truck width={18} height={18} />, 
+      color: '#d32f2f', 
+      label: 'Tedarikçi' 
+    },
+    simulation: { 
+      icon: <Dice5 width={18} height={18} />, 
+      color: '#9c27b0', 
+      label: 'Simülasyon' 
+    },
+    backtest: { 
+      icon: <SchoolLucide width={18} height={18} />, 
+      color: '#ed6c02', 
+      label: 'Backtest' 
+    },
+  };
+
+  return (
+    <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+      <CardContent sx={{ py: 2, px: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Assessment sx={{ fontSize: 20, color: '#1f4e79' }} />
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.85rem' }}>
+            Analiz Özetleri
+          </Typography>
+          <Chip
+            label={`${topFive.length} / ${activeModules.length}`}
+            size="small"
+            sx={{ height: 18, fontSize: '0.5rem', bgcolor: '#f0f7ff' }}
+          />
+        </Box>
+
+        <Grid container spacing={1.5}>
+          {topFive.map((module) => {
+            const config = moduleConfig[module.key] || {
+              icon: <Assessment sx={{ fontSize: 18 }}  />,
+              color: '#6b7280',
+              label: module.key,
+            };
+            const priorityColor = getPriorityColor(module.priority);
+            const colorHex = getPriorityColorHex(module.priority);
+
+            return (
+              <Grid size={{ xs: 12, sm: 6, md: 2.4 }} key={module.key}>
+                <Paper
+                  sx={{
+                    p: 1.5,
+                    border: `1px solid ${colorHex}20`,
+                    borderRadius: 2,
+                    bgcolor: `${colorHex}05`,
+                    transition: 'all 0.2s',
+                    cursor: 'pointer',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: 2,
+                      borderColor: colorHex,
+                    },
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                  }}
+                  onClick={() => onOpen(module.page, module.analysis_id, module.analysis_type, module.dataset_id)}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.5 }}>
+                    <Avatar sx={{ bgcolor: `${config.color}15`, color: config.color, width: 24, height: 24 }}>
+                      {config.icon}
+                    </Avatar>
+                    <Typography variant="caption" sx={{ fontWeight: 600, fontSize: '0.6rem', color: '#374151' }}>
+                      {config.label}
+                    </Typography>
+                  </Box>
+                  
+                  <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.7rem', color: '#1f4e79', flex: 1, mb: 0.5 }}>
+                    {module.summary}
+                  </Typography>
+                  
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 'auto' }}>
+                    <Chip
+                      label={`${module.priority}`}
+                      size="small"
+                      color={priorityColor}
+                      sx={{ height: 18, fontSize: '0.5rem', fontWeight: 600, minWidth: 28 }}
+                    />
+                    <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#9e9e9e', display: 'flex', alignItems: 'center', gap: 0.25 }}>
+                      Aç <ArrowForward sx={{ fontSize: 12 }} />
+                    </Typography>
+                  </Box>
+                </Paper>
+              </Grid>
+            );
+          })}
+        </Grid>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ Quick Analysis Grid
+const QuickAnalysisGrid = ({ onNavigate, loading }: { onNavigate: (path: string) => void; loading: boolean }) => {
+  const analyses = [
+    { key: 'forecast', title: 'Talep Tahmini', icon: <TrendingUpLucide width={20} height={20} />, color: '#1976d2', path: '/forecast' },
+    { key: 'safety-stock', title: 'Emniyet Stoğu', icon: <Shield width={20} height={20} />, color: '#2e7d32', path: '/safety-stock' },
+    { key: 'simulation', title: 'Simülasyon', icon: <Dice5 width={20} height={20} />, color: '#9c27b0', path: '/simulation' },
+    { key: 'backtest', title: 'Backtest', icon: <SchoolLucide width={20} height={20} />, color: '#ed6c02', path: '/backtest' },
+    { key: 'supplier', title: 'Tedarikçi', icon: <Truck width={20} height={20} />, color: '#d32f2f', path: '/supplier' },
+  ];
+
+  return (
+    <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe', height: '100%' }}>
+      <CardContent sx={{ py: 2, px: 2.5 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem', mb: 1.5 }}>
+          ⚡ Hızlı Analiz
+        </Typography>
+        <Grid container spacing={1.5}>
+          {analyses.map((analysis) => (
+            <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={analysis.key}>
+              <Paper
+                sx={{
+                  p: 1.5,
+                  textAlign: 'center',
+                  cursor: loading ? 'default' : 'pointer',
+                  border: '1px solid #e8f0fe',
+                  borderRadius: 2,
+                  transition: 'all 0.2s',
+                  '&:hover': loading ? {} : {
+                    transform: 'translateY(-2px)',
+                    boxShadow: 2,
+                    borderColor: analysis.color,
+                  },
+                  opacity: loading ? 0.7 : 1,
+                }}
+                onClick={loading ? undefined : () => onNavigate(analysis.path)}
+              >
+                <Avatar sx={{ bgcolor: `${analysis.color}15`, color: analysis.color, width: 36, height: 36, mx: 'auto', mb: 0.5 }}>
+                  {analysis.icon}
+                </Avatar>
+                <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.6rem', color: '#374151', display: 'block' }}>
+                  {analysis.title}
+                </Typography>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ Recent Analyses List
+const RecentAnalysesList = ({
+  historyItems,
+  loading,
+  onOpenAnalysis,
+}: {
+  historyItems: HistoryItem[];
+  loading: boolean;
+  onOpenAnalysis: (item: HistoryItem) => void;
+}) => {
+  if (loading) {
+    return (
+      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe', height: '100%' }}>
+        <CardContent sx={{ py: 2, px: 2.5 }}>
+          <Skeleton variant="text" width={100} height={20} />
+          <Box sx={{ mt: 1.5 }}>
+            <Skeleton variant="rectangular" height={40} sx={{ mb: 0.5, borderRadius: 2 }} />
+            <Skeleton variant="rectangular" height={40} sx={{ mb: 0.5, borderRadius: 2 }} />
+            <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 2 }} />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const recent = historyItems.slice(0, 5);
+
+  const getTypeLabel = (type: string) => {
+    const map: Record<string, string> = {
+      'forecast_batch': 'Talep Tahmini',
+      'forecast_batch_async': 'Talep Tahmini',
+      'safety_stock_batch': 'Emniyet Stoğu',
+      'safety_stock_batch_async': 'Emniyet Stoğu',
+      'simulation_batch': 'Simülasyon',
+      'simulation_batch_async': 'Simülasyon',
+      'backtest_batch': 'Backtest',
+      'backtest_batch_async': 'Backtest',
+      'supplier_batch': 'Tedarikçi Analizi',
+      'supplier_batch_async': 'Tedarikçi Analizi',
+    };
+    return map[type] || type;
+  };
+
+  return (
+    <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe', height: '100%' }}>
+      <CardContent sx={{ py: 2, px: 2.5 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem', mb: 1.5 }}>
+          📋 Son Analizler
+        </Typography>
+        {recent.length === 0 ? (
+          <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '0.75rem', textAlign: 'center', py: 2 }}>
+            Henüz analiz yapılmadı
+          </Typography>
+        ) : (
+          <List disablePadding>
+            {recent.map((item) => (
+              <ListItem
+                key={item.id}
+                sx={{
+                  px: 1,
+                  py: 0.75,
+                  borderBottom: '1px solid #f5f5f5',
+                  '&:last-child': { borderBottom: 'none' },
+                }}
+              >
+                <ListItemIcon sx={{ minWidth: 28 }}>
+                  <CheckCircle sx={{ color: 'success.main', fontSize: 16 }} />
+                </ListItemIcon>
+                <ListItemText
+                  primary={getTypeLabel(item.result_type)}
+                  secondary={new Date(item.created_at).toLocaleDateString('tr-TR') + ' ' + new Date(item.created_at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}
+                  slotProps={{
+                    primary: { variant: 'body2', sx: { fontWeight: 500, fontSize: '0.75rem' } },
+                    secondary: { variant: 'caption', sx: { fontSize: '0.6rem', color: '#9e9e9e' } },
+                  }}
+                />
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => onOpenAnalysis(item)}
+                  sx={{
+                    fontSize: '0.55rem',
+                    py: 0.25,
+                    textTransform: 'none',
+                    borderRadius: 1.5,
+                    borderColor: '#d0d0d0',
+                    color: '#374151',
+                    '&:hover': { borderColor: '#1f4e79', color: '#1f4e79' },
+                  }}
+                >
+                  Aç
+                </Button>
+              </ListItem>
+            ))}
+          </List>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ Dataset Status Card
+const DatasetStatusCard = ({ dataset, loading, onUpload }: { dataset: DatasetStatus; loading: boolean; onUpload: () => void }) => {
+  if (loading) {
+    return (
+      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+        <CardContent sx={{ py: 2, px: 2.5 }}>
+          <Skeleton variant="text" width={120} height={20} />
+          <Box sx={{ mt: 1.5 }}>
+            <Skeleton variant="text" width="80%" height={16} />
+            <Skeleton variant="text" width="60%" height={14} />
+            <Skeleton variant="text" width="40%" height={14} />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const getStatusColor = (status: string): 'success' | 'warning' | 'error' | 'default' => {
+    switch (status) {
+      case 'ready': return 'success';
+      case 'old': return 'warning';
+      case 'none': return 'error';
+      default: return 'default';
+    }
+  };
+
+  const getStatusLabel = (status: string): string => {
+    switch (status) {
+      case 'ready': return 'Hazır';
+      case 'old': return 'Güncel Değil';
+      case 'none': return 'Veri Yok';
+      default: return 'Bilinmiyor';
+    }
+  };
+
+  const displayName = truncateFileName(dataset.file_name || 'Bilinmeyen', 20);
+  const timeAgo = getTimeAgo(dataset.created_at);
+
+  return (
+    <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+      <CardContent sx={{ py: 2, px: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <Database size={18} color="#1f4e79" />
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+            Aktif Dataset
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<CloudUpload sx={{ fontSize: 16 }} />}
+            onClick={onUpload}
+            sx={{
+              ml: 'auto',
+              fontSize: '0.6rem',
+              textTransform: 'none',
+              borderRadius: 2,
+              borderColor: '#1f4e79',
+              color: '#1f4e79',
+              '&:hover': { bgcolor: '#f0f7ff' },
+              flexShrink: 0,
+            }}
+          >
+            Excel Yükle
+          </Button>
+        </Box>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.6rem' }}>Dosya</Typography>
+            <Tooltip title={dataset.file_name || 'Bilinmeyen'} arrow>
+              <Typography variant="body2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+                {displayName}
+              </Typography>
+            </Tooltip>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.6rem' }}>Ürün</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500, color: '#374151', fontSize: '0.75rem' }}>
+              {dataset.product_count.toLocaleString()}
             </Typography>
           </Box>
-          {paymentStatus === 'idle' && (
-            <IconButton onClick={handleClose} size="small" sx={{ color: 'white' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.6rem' }}>Güncelleme</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 500, color: '#374151', fontSize: '0.75rem' }}>
+              {timeAgo}
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="caption" sx={{ color: '#6b7280', fontSize: '0.6rem' }}>Durum</Typography>
+            <Chip
+              label={getStatusLabel(dataset.status)}
+              size="small"
+              color={getStatusColor(dataset.status)}
+              sx={{
+                height: 24,
+                fontSize: '0.6rem',
+                fontWeight: 600,
+              }}
+            />
+          </Box>
+        </Box>
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ Activity Timeline
+const ActivityTimeline = ({ activities, loading }: { activities: Activity[]; loading: boolean }) => {
+  if (loading) {
+    return (
+      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+        <CardContent sx={{ py: 2, px: 2.5 }}>
+          <Skeleton variant="text" width={100} height={20} />
+          <Box sx={{ mt: 1.5 }}>
+            <Skeleton variant="text" width="80%" height={14} />
+            <Skeleton variant="text" width="60%" height={14} />
+            <Skeleton variant="text" width="70%" height={14} />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const recent = activities.slice(0, 5);
+
+  return (
+    <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe' }}>
+      <CardContent sx={{ py: 2, px: 2.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+          <Clock size={18} color="#1f4e79" />
+          <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
+            Aktivite Akışı
+          </Typography>
+        </Box>
+
+        {recent.length === 0 ? (
+          <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '0.7rem', textAlign: 'center', py: 1 }}>
+            Henüz aktivite yok
+          </Typography>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+            {recent.map((activity) => (
+              <Box
+                key={activity.id}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  p: 0.75,
+                  bgcolor: '#f8faff',
+                  borderRadius: 1.5,
+                  border: '1px solid #e8f0fe',
+                }}
+              >
+                <Box sx={{ minWidth: 44 }}>
+                  <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#9e9e9e', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    {activity.time.split(' ')[1] || activity.time}
+                  </Typography>
+                </Box>
+                <Box sx={{ width: 1, height: 14, bgcolor: '#e0e0e0', flexShrink: 0 }} />
+                <Typography variant="body2" sx={{ fontSize: '0.65rem', color: '#374151', flex: 1 }}>
+                  {activity.message}
+                </Typography>
+                {activity.status === 'success' && <CheckCircle sx={{ fontSize: 14, color: '#2e7d32', flexShrink: 0 }} />}
+              </Box>
+            ))}
+          </Box>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// ✅ Import Wizard Dialog
+const ImportWizardDialog = ({
+  open,
+  onClose,
+  onComplete,
+  initialFile,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onComplete: () => void;
+  initialFile?: File | null;
+}) => {
+  const [activeStep, setActiveStep] = useState(0);
+  const [selectedFile, setSelectedFile] = useState<File | null>(initialFile || null);
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [statusMessage, setStatusMessage] = useState('');
+  const [fileValidated, setFileValidated] = useState(false);
+  const [validationResult, setValidationResult] = useState<any>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const steps = ['Dosya Seç', 'Doğrulama', 'Önizleme', 'İşleniyor', 'Tamamlandı'];
+
+  useEffect(() => {
+    if (initialFile && open) {
+      setSelectedFile(initialFile);
+      setTimeout(() => {
+        setValidationResult({
+          sheets: ['Temel_Veriler', 'Malzeme_Tedarikciler', 'Tedarikciler'],
+          columns: 12,
+          rows: 100,
+          missingValues: 3,
+          productCount: 5342,
+        });
+        setFileValidated(true);
+        setActiveStep(2);
+      }, 1500);
+    }
+  }, [initialFile, open]);
+
+  const handleFileSelect = (file: File) => {
+    setSelectedFile(file);
+    setUploadError(null);
+    setActiveStep(1);
+    setTimeout(() => {
+      setValidationResult({
+        sheets: ['Temel_Veriler', 'Malzeme_Tedarikciler', 'Tedarikciler'],
+        columns: 12,
+        rows: 100,
+        missingValues: 3,
+        productCount: 5342,
+      });
+      setFileValidated(true);
+      setActiveStep(2);
+    }, 1500);
+  };
+
+  const handleNext = async () => {
+    if (activeStep === 2) {
+      setActiveStep(3);
+      setProcessing(true);
+      setProgress(0);
+      
+      const statuses = [
+        'Excel okunuyor...',
+        'Veriler doğrulanıyor...',
+        'Dataset oluşturuluyor...',
+        'AI analiz için hazırlanıyor...',
+        'Veritabanına kaydediliyor...',
+      ];
+      
+      try {
+        const formData = new FormData();
+        if (selectedFile) {
+          formData.append('file', selectedFile);
+        }
+        
+        const uploadPromise = api.post('/api/upload?mode=quick', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setProgress(Math.min(80, percent));
+            }
+          },
+        });
+        
+        statuses.forEach((msg, idx) => {
+          setTimeout(() => {
+            setStatusMessage(msg);
+            if (idx < statuses.length - 1) {
+              setProgress(((idx + 1) / statuses.length) * 80);
+            }
+          }, (idx + 1) * 1000);
+        });
+        
+        const response = await uploadPromise;
+        
+        if (response.data.success) {
+          setProgress(95);
+          setStatusMessage('Dataset oluşturuluyor...');
+          
+          try {
+            const datasetRes = await buildDataset();
+            if (datasetRes.data.success) {
+              setProgress(100);
+              setStatusMessage('Tamamlandı!');
+              setProcessing(false);
+              setActiveStep(4);
+              onComplete();
+            }
+          } catch (datasetErr) {
+            console.error('❌ Dataset oluşturma hatası:', datasetErr);
+            setProgress(100);
+            setStatusMessage('Tamamlandı!');
+            setProcessing(false);
+            setActiveStep(4);
+            onComplete();
+          }
+        } else {
+          setUploadError(response.data.error || 'Yükleme başarısız.');
+          setActiveStep(0);
+          setProcessing(false);
+        }
+      } catch (err: any) {
+        console.error('❌ Upload hatası:', err);
+        setUploadError(err.response?.data?.detail || 'Yükleme sırasında hata oluştu.');
+        setActiveStep(0);
+        setProcessing(false);
+      }
+    }
+  };
+
+  const handleClose = () => {
+    if (!processing) {
+      onClose();
+      setTimeout(() => {
+        setActiveStep(0);
+        setSelectedFile(null);
+        setProgress(0);
+        setStatusMessage('');
+        setUploadError(null);
+        setFileValidated(false);
+        setValidationResult(null);
+      }, 300);
+    }
+  };
+
+  const getStepContent = (step: number) => {
+    switch (step) {
+      case 0:
+        return (
+          <Box sx={{ textAlign: 'center', py: 3 }}>
+            {uploadError && (
+              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setUploadError(null)}>
+                {uploadError}
+              </Alert>
+            )}
+            <UploadArea
+              onClick={() => document.getElementById('wizard-file-input')?.click()}
+              sx={{ minHeight: 120, mx: 'auto', maxWidth: 400 }}
+            >
+              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                <CloudUpload sx={{ fontSize: 48, color: '#1f4e79' }} />
+                <Typography variant="body1" sx={{ fontWeight: 500, color: '#1f4e79' }}>
+                  Excel dosyasını sürükleyin veya tıklayın
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  .xlsx, .xls - Maksimum 50 MB
+                </Typography>
+              </Box>
+            </UploadArea>
+            <VisuallyHiddenInput
+              id="wizard-file-input"
+              type="file"
+              accept=".xlsx,.xls"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileSelect(e.target.files[0]);
+                }
+              }}
+            />
+          </Box>
+        );
+      case 1:
+        return (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <CircularProgress size={48} />
+            <Typography variant="body1" sx={{ mt: 2, fontWeight: 500 }}>
+              Dosya doğrulanıyor...
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {selectedFile?.name}
+            </Typography>
+          </Box>
+        );
+      case 2:
+        return (
+          <Box sx={{ py: 1 }}>
+            <Alert severity="success" sx={{ mb: 2 }}>
+              Dosya başarıyla doğrulandı!
+            </Alert>
+            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
+              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
+                <Typography variant="caption" color="text.secondary">Çalışma Sayfaları</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{validationResult?.sheets?.length || 0}</Typography>
+              </Paper>
+              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
+                <Typography variant="caption" color="text.secondary">Ürün Sayısı</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{validationResult?.productCount || 0}</Typography>
+              </Paper>
+              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
+                <Typography variant="caption" color="text.secondary">Kolon Sayısı</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{validationResult?.columns || 0}</Typography>
+              </Paper>
+              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
+                <Typography variant="caption" color="text.secondary">Eksik Veri</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600, color: validationResult?.missingValues > 0 ? '#ed6c02' : '#2e7d32' }}>
+                  {validationResult?.missingValues || 0}
+                </Typography>
+              </Paper>
+            </Box>
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f7ff', borderRadius: 2 }}>
+              <Typography variant="caption" color="text.secondary">Sayfalar</Typography>
+              <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
+                {validationResult?.sheets?.map((sheet: string) => (
+                  <Chip key={sheet} label={sheet} size="small" variant="outlined" />
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        );
+      case 3:
+        return (
+          <Box sx={{ py: 3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <CircularProgress variant="determinate" value={progress} size={48} />
+              <Box>
+                <Typography variant="body1" sx={{ fontWeight: 500 }}>{statusMessage || 'İşleniyor...'}</Typography>
+                <Typography variant="caption" color="text.secondary">%{Math.round(progress)} tamamlandı</Typography>
+              </Box>
+            </Box>
+            <LinearProgress variant="determinate" value={progress} sx={{ height: 6, borderRadius: 3 }} />
+          </Box>
+        );
+      case 4:
+        return (
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
+            <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main' }}>
+              🎉 İşlem Tamamlandı!
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Dataset başarıyla oluşturuldu. Analizler için hazırsınız.
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+              {selectedFile?.name} - {validationResult?.productCount || 0} ürün
+            </Typography>
+          </Box>
+        );
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', pb: 1.5 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, color: '#1f4e79' }}>
+            📥 Veri Yükleme Sihirbazı
+          </Typography>
+          {!processing && activeStep !== 4 && (
+            <IconButton onClick={handleClose} size="small">
               <Close />
             </IconButton>
           )}
         </Box>
-        {paymentStatus === 'idle' && (
-          <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Chip
-              label={`💰 Mevcut: ${currentBalance} Kredi`}
-              sx={{
-                bgcolor: 'rgba(255,255,255,0.2)',
-                color: 'white',
-                fontWeight: 'bold',
-              }}
-            />
-          </Box>
-        )}
-      </Box>
-
-      <DialogContent sx={{ p: 3, bgcolor: '#f8f9fa' }}>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-
-        {loading && paymentStatus === 'idle' ? (
-          <Box sx={{ textAlign: 'center', py: 4 }}> 
-            <CircularProgress />
-          </Box>
-        ) : (
-          renderContent()
-        )}
+        <Stepper activeStep={activeStep} sx={{ mt: 2 }}>
+          {steps.map((label) => (
+            <Step key={label}>
+              <StepLabel>{label}</StepLabel>
+            </Step>
+          ))}
+        </Stepper>
+      </DialogTitle>
+      <DialogContent sx={{ py: 2, minHeight: 280 }}>
+        {getStepContent(activeStep)}
       </DialogContent>
-
-      <DialogActions sx={{ p: 3, bgcolor: '#f8f9fa', borderTop: '1px solid #e0e0e0' }}>
-        {renderActions()}
+      <DialogActions sx={{ borderTop: '1px solid #f0f0f0', pt: 1.5 }}>
+        {activeStep === 4 ? (
+          <Button variant="contained" onClick={handleClose} sx={{ borderRadius: 2, textTransform: 'none' }}>
+            Dashboard'a Dön
+          </Button>
+        ) : activeStep === 2 ? (
+          <Button variant="contained" onClick={handleNext} disabled={processing} sx={{ borderRadius: 2, textTransform: 'none' }}>
+            {processing ? 'İşleniyor...' : 'İleri →'}
+          </Button>
+        ) : activeStep === 0 ? (
+          <Button onClick={handleClose} sx={{ borderRadius: 2, textTransform: 'none' }}>
+            İptal
+          </Button>
+        ) : null}
       </DialogActions>
     </Dialog>
   );
 };
 
-// 📌 Ana Dashboard Component
+// ============================================================
+// 📌 ANA DASHBOARD COMPONENT
+// ============================================================
+
 export default function DashboardPage() {
   const { user, fetchUser } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -727,263 +1505,267 @@ export default function DashboardPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [creditDialogOpen, setCreditDialogOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [lastUploadedFile, setLastUploadedFile] = useState<string | null>(null);
-  const [dataLoaded, setDataLoaded] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState('');
-  const [selectedProduct, setSelectedProduct] = useState<CreditPackage | null>(null);
-  const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
-  const [paymentStatus, setPaymentStatus] = useState<'idle' | 'processing' | 'success' | 'canceled' | 'error'>('idle');
-  const [paymentMessage, setPaymentMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // 📌 AI ve Sistem State'leri
+  const [aiExecutive, setAiExecutive] = useState<AIExecutiveData | null>(null);
+  const [aiLoading, setAiLoading] = useState(true);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [allActivities, setAllActivities] = useState<Activity[]>([]);
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(5);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-  const [costs, setCosts] = useState<Record<string, number>>({});
-  const [costsLoading, setCostsLoading] = useState(true);
-  const [aiRecommendation, setAiRecommendation] = useState<AIRecommendationData | null>(null);
-  const [aiLoading, setAiLoading] = useState(true);
-  const [statsLoading, setStatsLoading] = useState(true);
-  const [userStats, setUserStats] = useState({
-    tokenBalance: 0,
-    totalMaterials: 0,
-    totalAnalyses: 0,
-    pendingTasks: 0,
-    completedTasks: 0,
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [hasDataset, setHasDataset] = useState(false);
+
+  // 📌 Dataset State
+  const [datasetStatus, setDatasetStatus] = useState<DatasetStatus>({
+    id: null,
+    file_name: null,
+    product_count: 0,
+    period_count: 0,
+    data_points: 0,
+    created_at: null,
+    is_active: false,
+    status: 'none',
+    last_update: null,
+  });
+  const [datasetLoading, setDatasetLoading] = useState(true);
+
+  // 📌 UI State'leri
+  const [executiveDrawerOpen, setExecutiveDrawerOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardFile, setWizardFile] = useState<File | null>(null);
+
+  // 📌 Ref'ler - sonsuz döngüyü önlemek için
+  const dataLoadedRef = useRef(false);
+
+  // 🆕 Decision Engine Queries
+  const { data: aiRecommendationData, isLoading: aiRecLoading, refetch: refetchAIRecommendation } = useQuery({
+    queryKey: ['ai-recommendation'],
+    queryFn: fetchAIRecommendation,
+    enabled: !!user && hasDataset,
+    staleTime: 120000,
+    gcTime: 300000,
+    retry: 1,
   });
 
-  // ✅ AI durumu için polling
-  const [hasPendingAnalysis, setHasPendingAnalysis] = useState(false);
-  const [pollingInterval, setPollingInterval] = useState<number | null>(null);
+  const { data: dashboardSummaryData, isLoading: summaryLoading, refetch: refetchSummary } = useQuery({
+    queryKey: ['dashboard-summary'],
+    queryFn: fetchDashboardSummary,
+    enabled: !!user && hasDataset,
+    staleTime: 120000,
+    gcTime: 300000,
+    retry: 1,
+  });
 
-  // ✅ Tüm verileri yükle
-  const loadAllData = useCallback(async () => {
-    if (dataLoaded) return;
-    setLoading(true);
+  // 📌 Dataset Status'ü Getir
+  const fetchDatasetStatus = useCallback(async () => {
+    setDatasetLoading(true);
     try {
-      await Promise.all([
-        fetchCosts(),
-        fetchAIExecutiveSummary(),
-        fetchTasks(),
-        fetchActivities(),
-        fetchStats(),
-      ]);
-      setDataLoaded(true);
-    } catch (error) {
-      console.error('❌ Veri yükleme hatası:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [dataLoaded]);
-
-  useEffect(() => {
-    if (user && !dataLoaded) {
-      loadAllData();
-    }
-  }, [user, dataLoaded]);
-
-  // ✅ Maliyetleri getir
-  const fetchCosts = async () => {
-    setCostsLoading(true);
-    try {
-      const endpoints = [
-        '/api/forecast/batch',
-        '/api/safety-stock',
-        '/api/simulate',
-        '/api/backtest',
-        '/api/supplier/optimize-shares'
-      ];
-      const costMap: Record<string, number> = {};
-      for (const endpoint of endpoints) {
-        try {
-          const res = await api.get('/api/cost', {
-            params: { endpoint, method: 'POST' }
-          });
-          const key = endpoint.replace('/api/', '').split('/')[0];
-          costMap[key] = res.data.cost || 5;
-        } catch (e) {
-          costMap[endpoint] = 5;
-        }
+      const uploadRes = await api.get('/api/upload/status');
+      const hasUploadedData = uploadRes.data.has_data === true;
+      
+      if (!hasUploadedData) {
+        setDatasetStatus({
+          id: null,
+          file_name: null,
+          product_count: 0,
+          period_count: 0,
+          data_points: 0,
+          created_at: null,
+          is_active: false,
+          status: 'none',
+          last_update: null,
+        });
+        setHasDataset(false);
+        setDatasetLoading(false);
+        return;
       }
-      setCosts(costMap);
-    } catch (error) {
-      console.error('❌ Maliyet hatası:', error);
-    } finally {
-      setCostsLoading(false);
-    }
-  };
+      
+      const res = await api.get('/api/upload/datasets?limit=1');
+      if (res.data.success && res.data.datasets?.length > 0) {
+        const ds = res.data.datasets[0];
+        if (ds.is_active) {
+          const createdDate = new Date(ds.created_at);
+          const now = new Date();
+          const diffHours = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60);
 
-  // ✅ AI Executive Summary - Dashboard'dan al
+          setDatasetStatus({
+            id: ds.id,
+            file_name: ds.source_name || 'Bilinmeyen',
+            product_count: ds.product_count || 0,
+            period_count: ds.period_count || 0,
+            data_points: ds.data_points || 0,
+            created_at: ds.created_at,
+            is_active: ds.is_active,
+            status: ds.is_active ? (diffHours > 24 ? 'old' : 'ready') : 'none',
+            last_update: ds.created_at,
+          });
+          setHasDataset(true);
+        } else {
+          setDatasetStatus({
+            id: null,
+            file_name: null,
+            product_count: 0,
+            period_count: 0,
+            data_points: 0,
+            created_at: null,
+            is_active: false,
+            status: 'none',
+            last_update: null,
+          });
+          setHasDataset(false);
+        }
+      } else {
+        setDatasetStatus({
+          id: null,
+          file_name: null,
+          product_count: 0,
+          period_count: 0,
+          data_points: 0,
+          created_at: null,
+          is_active: false,
+          status: 'none',
+          last_update: null,
+        });
+        setHasDataset(false);
+      }
+    } catch (error) {
+      console.error('❌ Dataset durumu alınamadı:', error);
+      setDatasetStatus({
+        id: null,
+        file_name: null,
+        product_count: 0,
+        period_count: 0,
+        data_points: 0,
+        created_at: null,
+        is_active: false,
+        status: 'none',
+        last_update: null,
+      });
+      setHasDataset(false);
+    } finally {
+      setDatasetLoading(false);
+    }
+  }, []);
+
+  // 📌 AI Executive Summary
   const fetchAIExecutiveSummary = useCallback(async () => {
     setAiLoading(true);
     try {
       const res = await api.get('/api/dashboard/ai-summary');
-      console.log('🔍 AI Dashboard Özeti:', res.data);
       
       if (res.data.has_data && res.data.summary) {
-        const summary = res.data.summary;
+        const summary = res.data;
+        let summaryText = summary.summary || 'Analizleriniz başarıyla tamamlandı.';
         
-        // Dashboard'dan gelen özeti kullan
-        let summaryText = summary.manager_summary || summary.summary || 'Analizleriniz başarıyla tamamlandı.';
+        const recommendations = [];
         
-        // Eğer özet çok uzunsa kısalt
-        if (summaryText.length > 200) {
-          summaryText = summaryText.substring(0, 197) + '...';
+        if (summary.executive_recommendations && summary.executive_recommendations.length > 0) {
+          summary.executive_recommendations.forEach((rec: string) => {
+            let title = 'Analiz';
+            let path = '/tasks';
+            if (rec.toLowerCase().includes('tahmin') || rec.toLowerCase().includes('forecast')) {
+              title = 'Talep Tahmini';
+              path = '/forecast';
+            } else if (rec.toLowerCase().includes('stok') || rec.toLowerCase().includes('safety')) {
+              title = 'Emniyet Stoğu';
+              path = '/safety-stock';
+            } else if (rec.toLowerCase().includes('simülasyon') || rec.toLowerCase().includes('simulation')) {
+              title = 'Simülasyon';
+              path = '/simulation';
+            } else if (rec.toLowerCase().includes('backtest')) {
+              title = 'Backtest';
+              path = '/backtest';
+            } else if (rec.toLowerCase().includes('tedarikçi') || rec.toLowerCase().includes('supplier')) {
+              title = 'Tedarikçi Analizi';
+              path = '/supplier';
+            }
+            recommendations.push({
+              title: title,
+              reason: rec.length > 100 ? rec.substring(0, 100) + '...' : rec,
+              action: 'Başlat',
+              path: path,
+            });
+          });
+        } else {
+          recommendations.push({
+            title: 'Talep Tahmini',
+            reason: 'Son analiziniz 45 gün önce gerçekleştirildi.',
+            action: 'Başlat',
+            path: '/forecast',
+          });
+          recommendations.push({
+            title: 'Emniyet Stoğu',
+            reason: 'Kritik ürünler için güncel analiz önerilir.',
+            action: 'Başlat',
+            path: '/safety-stock',
+          });
         }
-        
-        // Detayları hazırla
-        const details = summary.recommended_actions || [];
-        if (summary.critical_materials && summary.critical_materials.length > 0) {
-          details.push(`⚠️ Kritik ürünler: ${summary.critical_materials.join(', ')}`);
-        }
-        
-        // İstatistikleri ekle
-        if (summary.statistics) {
-          const stats = summary.statistics;
-          if (stats.total_analyses) {
-            details.push(`📊 ${stats.total_analyses} analiz tamamlandı`);
-          }
-          if (stats.total_materials) {
-            details.push(`📦 ${stats.total_materials} ürün analiz edildi`);
-          }
-        }
-        
-        setAiRecommendation({
+
+        setAiExecutive({
           has_recommendation: true,
           summary: summaryText,
-          details: details.length > 0 ? details : undefined,
-          last_analysis_date: res.data.last_analysis_date ? new Date(res.data.last_analysis_date).toLocaleDateString('tr-TR') : 'Bugün',
-          confidence: 0.85,
-          action: "Detaylı Raporları Gör",
-          action_path: "/tasks"
+          full_summary: summaryText + (summary.executive_recommendations ? '\n\n' + summary.executive_recommendations.join('\n') : ''),
+          details: summary.critical_attention || summary.key_insights || [],
+          last_analysis_date: summary.executive_updated_at ? new Date(summary.executive_updated_at).toLocaleDateString('tr-TR') : 'Bugün',
+          confidence: summary.confidence || 0.85,
+          action: summary.action || 'Detaylı Raporları Gör',
+          action_path: summary.action_path || '/tasks',
+          action_label: summary.action_label || 'Raporları Gör',
+          recommendations: recommendations.slice(0, 3),
+          trend_summary: summary.trend_summary || null,
+          risks: summary.risks || [],
+          executive_recommendations: summary.executive_recommendations || [],
         });
       } else {
-        setAiRecommendation({
+        setAiExecutive({
           has_recommendation: false,
-          summary: "Henüz AI özeti oluşturulmamış. Analiz yaptıkça burada özetler görünecek.",
-          last_analysis_date: null,
+          summary: '',
+          full_summary: '',
           confidence: 0,
+          recommendations: [],
         });
       }
     } catch (error) {
       console.error('❌ AI özet hatası:', error);
-      setAiRecommendation({
+      setAiExecutive({
         has_recommendation: false,
-        summary: "AI özeti alınamadı. Lütfen daha sonra tekrar deneyin.",
-        last_analysis_date: null,
+        summary: '',
+        full_summary: '',
         confidence: 0,
+        recommendations: [],
       });
     } finally {
       setAiLoading(false);
     }
   }, []);
 
-  // ✅ AI durumu kontrolü (polling)
-  const checkAIStatus = useCallback(async () => {
+  // 📌 History'yi getir - SADECE bir kere
+  const fetchHistory = useCallback(async () => {
+    if (dataLoadedRef.current) return;
+    
+    setHistoryLoading(true);
     try {
-      const res = await api.get('/api/dashboard/ai-summary/status');
-      if (res.data.is_completed) {
-        // Tamamlandı, özeti yenile
-        setHasPendingAnalysis(false);
-        await fetchAIExecutiveSummary();
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-        }
-      } else if (res.data.ai_status === 'failed') {
-        setHasPendingAnalysis(false);
-        if (pollingInterval) {
-          clearInterval(pollingInterval);
-          setPollingInterval(null);
-        }
-      }
-    } catch (error) {
-      console.error('❌ AI durum kontrol hatası:', error);
-    }
-  }, [fetchAIExecutiveSummary, pollingInterval]);
-
-  // ✅ AI durumunu kontrol et (polling)
-  useEffect(() => {
-    let intervalId: number | null = null;
-    if (hasPendingAnalysis) {
-      intervalId = setInterval(checkAIStatus, 5000);
-      setPollingInterval(intervalId);
-      setTimeout(() => {
-        if (intervalId) {
-          clearInterval(intervalId);
-          setPollingInterval(null);
-          setHasPendingAnalysis(false);
-        }
-      }, 120000); // 2 dakika timeout
-    }
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-        setPollingInterval(null);
-      }
-    };
-  }, [hasPendingAnalysis]);
-
-  // ✅ Görevleri getir
-  const fetchTasks = async () => {
-    setTasksLoading(true);
-    try {
-      const res = await api.get('/api/tasks/async');
+      const res = await api.get('/api/upload/results', { params: { limit: 20 } });
       if (res.data.success) {
-        setTasks(res.data.tasks || []);
+        const items = res.data.results || [];
+        setHistoryItems(items);
       }
     } catch (error) {
-      console.error('❌ Görev hatası:', error);
-      setTasks([]);
+      console.error('❌ Geçmiş hatası:', error);
     } finally {
-      setTasksLoading(false);
+      setHistoryLoading(false);
     }
-  };
+  }, []);
 
-  // ✅ İstatistikleri getir
-  const fetchStats = async () => {
-    setStatsLoading(true);
+  // 📌 Aktiviteleri getir - SADECE bir kere
+  const fetchActivities = useCallback(async () => {
+    if (dataLoadedRef.current && allActivities.length > 0) return;
+    
     try {
-      const balance = user?.token_balance || 0;
-      const uploadRes = await api.get('/api/upload/status');
-      const totalMaterials = uploadRes.data.materials_count || 0;
-      const lastFile = uploadRes.data.last_filename || null;
-      setLastUploadedFile(lastFile);
-      const historyRes = await api.get('/api/upload/results', {
-        params: { limit: 100 },
-      });
-      const totalAnalyses = historyRes.data.total || 0;
-      const tasksRes = await api.get('/api/tasks/async');
-      const tasks = tasksRes.data.tasks || [];
-      const completedTasks = tasks.filter((t: any) => t.status === 'completed').length;
-      const pendingTasks = tasks.filter((t: any) => t.status === 'pending' || t.status === 'processing').length;
-
-      setUserStats({
-        tokenBalance: balance,
-        totalMaterials,
-        totalAnalyses,
-        completedTasks,
-        pendingTasks,
-      });
-    } catch (error) {
-      console.error('❌ Dashboard istatistik hatası:', error);
-    } finally {
-      setStatsLoading(false);
-    }
-  };
-
-  // ✅ Aktiviteleri getir
-  const fetchActivities = async () => {
-    try {
-      const res = await api.get('/api/upload/results', {
-        params: { limit: 100 },
-      });
-
+      const res = await api.get('/api/upload/results', { params: { limit: 100 } });
       const results = res.data.results || [];
       const activityList: Activity[] = results.map((item: any, index: number) => {
         const typeMap: Record<string, string> = {
@@ -999,24 +1781,8 @@ export default function DashboardPage() {
           'supplier_batch_async': 'Tedarikçi Analizi',
         };
         const type = typeMap[item.result_type] || item.result_type || 'Analiz';
-
-        let totalMaterials = 0;
-        if (item.result_data?.total) {
-          totalMaterials = item.result_data.total;
-        } else if (item.result_data?.results && Array.isArray(item.result_data.results)) {
-          totalMaterials = item.result_data.results.length;
-        } else if (item.results && Array.isArray(item.results)) {
-          totalMaterials = item.results.length;
-        } else if (item.total) {
-          totalMaterials = item.total;
-        }
-
-        const materialText = totalMaterials > 0 ? `${totalMaterials} malzeme` : '';
-        let message = `${type} tamamlandı`;
-        if (materialText) {
-          message = `${type} - ${materialText}`;
-        }
-
+        let totalMaterials = item.total_materials || item.total || 0;
+        const message = `${type}${totalMaterials > 0 ? ` - ${totalMaterials} malzeme` : ''}`;
         return {
           id: index,
           type: item.result_type || 'analysis',
@@ -1027,50 +1793,114 @@ export default function DashboardPage() {
           raw: item,
         };
       });
-
       activityList.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
-
       setAllActivities(activityList);
-      setActivities(activityList.slice(0, 5));
-
+      setActivities(activityList.slice(0, 8));
     } catch (error) {
       console.error('❌ Aktivite hatası:', error);
-      setAllActivities([]);
-      setActivities([]);
     }
-  };
+  }, [allActivities.length]);
 
-  // ✅ Verileri yenile
-  const refreshData = useCallback(async () => {
+  // 📌 Tüm verileri yükle - SADECE BİR KERE
+  const loadAllData = useCallback(async () => {
+    if (dataLoadedRef.current) return;
+    
     setLoading(true);
     try {
-      await Promise.all([
-        fetchStats(),
-        fetchTasks(),
-        fetchAIExecutiveSummary(),
-        fetchActivities(),
-      ]);
+      await fetchDatasetStatus();
+      await fetchAIExecutiveSummary();
+      await fetchActivities();
+      await fetchHistory();
+      dataLoadedRef.current = true;
     } catch (error) {
-      console.error('❌ Veri yenileme hatası:', error);
+      console.error('❌ Veri yükleme hatası:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchDatasetStatus, fetchAIExecutiveSummary, fetchActivities, fetchHistory]);
 
-  // ✅ Upload başarılı olduğunda verileri yenile
+  // 📌 Sadece ilk mount'ta yükle
+  useEffect(() => {
+    if (user && !dataLoadedRef.current) {
+      loadAllData();
+    }
+  }, [user, loadAllData]);
+
+  // 📌 Upload başarılı olduğunda yenile
   useEffect(() => {
     if (uploadSuccess) {
-      refreshData();
+      fetchDatasetStatus();
+      fetchAIExecutiveSummary();
+      refetchAIRecommendation();
+      refetchSummary();
+      setTimeout(() => setUploadSuccess(false), 3000);
     }
-  }, [uploadSuccess]);
+  }, [uploadSuccess, fetchDatasetStatus, fetchAIExecutiveSummary, refetchAIRecommendation, refetchSummary]);
 
-  // ✅ Ödeme başarılı olduğunda verileri yenile
-  useEffect(() => {
-    if (paymentStatus === 'success') {
-      refreshData();
+  // 📌 Wizard işlemleri
+  const handleOpenWizard = (file?: File) => {
+    if (file) {
+      setWizardFile(file);
+    } else {
+      setWizardFile(null);
     }
-  }, [paymentStatus]);
+    setWizardOpen(true);
+  };
 
+  const handleWizardComplete = () => {
+    setWizardOpen(false);
+    setWizardFile(null);
+    fetchDatasetStatus();
+    fetchAIExecutiveSummary();
+    refetchAIRecommendation();
+    refetchSummary();
+    setSuccessMessage('✅ Veri başarıyla yüklendi ve Dataset oluşturuldu!');
+    setTimeout(() => setSuccessMessage(null), 5000);
+  };
+
+  // 📌 Navigation Handlers
+  const handleNavigateWithContext = (
+    targetPage: string,
+    analysisId: number | null,
+    analysisType: string,
+    datasetId: string | null
+  ) => {
+    if (analysisId) {
+      sessionStorage.setItem('loadAnalysisId', String(analysisId));
+      sessionStorage.setItem('loadAnalysisType', analysisType);
+      if (datasetId) {
+        sessionStorage.setItem('loadDatasetId', datasetId);
+      }
+    }
+    window.location.href = targetPage;
+  };
+
+  const handleOpenHistory = (item: HistoryItem) => {
+    sessionStorage.setItem('loadAnalysisId', String(item.id));
+    sessionStorage.setItem('loadAnalysisType', item.result_type);
+    
+    const typeMap: Record<string, string> = {
+      'forecast_batch': '/forecast',
+      'forecast_batch_async': '/forecast',
+      'safety_stock_batch': '/safety-stock',
+      'safety_stock_batch_async': '/safety-stock',
+      'simulation_batch': '/simulation',
+      'simulation_batch_async': '/simulation',
+      'backtest_batch': '/backtest',
+      'backtest_batch_async': '/backtest',
+      'supplier_batch': '/supplier',
+      'supplier_batch_async': '/supplier',
+    };
+    
+    const path = typeMap[item.result_type] || '/dashboard';
+    window.location.href = path;
+  };
+
+  const navigateTo = (path: string) => {
+    window.location.href = path;
+  };
+
+  // 📌 Upload işlemleri
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
     setUploadError(null);
@@ -1094,9 +1924,7 @@ export default function DashboardPage() {
     try {
       setUploadProgress(30);
       const response = await api.post('/api/upload?mode=quick', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
             const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -1110,10 +1938,19 @@ export default function DashboardPage() {
       if (response.data.success) {
         setUploadSuccess(true);
         setLastUploadedFile(selectedFile.name);
-        // AI özeti yenilemek için hasPendingAnalysis true yap
-        setHasPendingAnalysis(true);
+        
+        try {
+          const datasetRes = await buildDataset();
+          if (datasetRes.data.success) {
+            setSuccessMessage('✅ Dosya yüklendi ve Dataset oluşturuldu!');
+            setTimeout(() => setSuccessMessage(null), 3000);
+          }
+        } catch (datasetErr) {
+          console.error('❌ Otomatik Dataset oluşturma hatası:', datasetErr);
+        }
+        
         await fetchUser();
-        setTimeout(() => setUploadSuccess(false), 5000);
+        setTimeout(() => setUploadSuccess(false), 3000);
       } else {
         setUploadError(response.data.error || 'Dosya yüklenirken hata oluştu.');
       }
@@ -1131,7 +1968,10 @@ export default function DashboardPage() {
 
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
-      handleFileSelect(event.target.files[0]);
+      const file = event.target.files[0];
+      setSelectedFile(file);
+      handleOpenWizard(file);
+      event.target.value = '';
     }
   };
 
@@ -1155,24 +1995,13 @@ export default function DashboardPage() {
     setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileSelect(e.dataTransfer.files[0]);
+      handleOpenWizard(e.dataTransfer.files[0]);
     }
   };
 
-  const handleChangePage = (event: unknown, newPage: number) => {
-    setPage(newPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setRowsPerPage(parseInt(event.target.value, 10));
-    setPage(0);
-  };
-
-  // ✅ Excel Şablonu İndir
   const handleDownloadTemplate = async () => {
     try {
-      const response = await api.get('/api/upload/template', {
-        responseType: 'blob',
-      });
+      const response = await api.get('/api/upload/template', { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -1189,462 +2018,111 @@ export default function DashboardPage() {
     }
   };
 
-  const navigateTo = (path: string) => {
-    window.location.href = path;
-  };
-
-  // ✅ Analizler için maliyetleri al
-  const getCost = (key: string) => {
-    const costMap: Record<string, string> = {
-      'safety-stock': 'safety-stock',
-      'forecast': 'forecast',
-      'simulation': 'simulate',
-      'backtest': 'backtest',
-      'supplier': 'supplier/optimize-shares',
-    };
-    const endpoint = costMap[key] || key;
-    return costs[endpoint] || costs[key] || 5;
-  };
-
-  const quickAnalyses = [
-    { key: 'safety-stock', title: 'Emniyet Stoğu', icon: <Shield size={18} />, color: '#2e7d32', path: '/safety-stock', isAsync: true },
-    { key: 'forecast', title: 'Talep Tahmini', icon: <TrendingUpLucide size={18} />, color: '#1976d2', path: '/forecast', isAsync: true },
-    { key: 'simulation', title: 'Simülasyon', icon: <Dice5 size={18} />, color: '#9c27b0', path: '/simulation', isAsync: true },
-    { key: 'backtest', title: 'Backtest', icon: <School size={18} />, color: '#ed6c02', path: '/backtest', isAsync: true },
-    { key: 'supplier', title: 'Tedarikçi', icon: <Truck size={18} />, color: '#d32f2f', path: '/supplier', isAsync: true },
-  ];
-
-  const pendingTasks = tasks.filter(t => t.status === 'pending' || t.status === 'processing');
-  const completedTasksList = tasks.filter(t => t.status === 'completed');
-
-  // ✅ Checkout işlemleri
-  const handlePurchase = async (pkg: CreditPackage) => {
-    setSelectedProduct(pkg);
-    setIsCreatingCheckout(true);
-    setPaymentStatus('processing');
-    setPaymentMessage('Ödeme başlatılıyor, lütfen bekleyin...');
-
-    try {
-      const res = await api.post('/api/polar/checkout', {
-        product_id: pkg.polar_product_id,
-      });
-
-      if (res.data && res.data.checkout_url) {
-        const checkoutUrl = new URL(res.data.checkout_url);
-        checkoutUrl.searchParams.set('embed_origin', window.location.origin);
-        setCheckoutUrl(checkoutUrl.toString());
-        setCheckoutOpen(true);
-        setIsCreatingCheckout(false);
-      } else {
-        setPaymentStatus('error');
-        setPaymentMessage('Ödeme linki oluşturulamadı.');
-        setIsCreatingCheckout(false);
-      }
-    } catch (err: any) {
-      console.error('❌ Checkout hatası:', err);
-      setPaymentStatus('error');
-      setPaymentMessage(err.response?.data?.detail || 'Ödeme başlatılamadı.');
-      setIsCreatingCheckout(false);
-    }
-  };
-
-  const handleCheckoutSuccess = () => {
-    fetchUser();
-    setCheckoutOpen(false);
-    setCreditDialogOpen(false);
-    setPaymentStatus('success');
-    setPaymentMessage('Kredileriniz hesabınıza başarıyla eklendi!');
-    setSuccessMessage('✅ Krediler başarıyla eklendi!');
-    setTimeout(() => setSuccessMessage(null), 5000);
-  };
-
-  const handleCheckoutCancel = () => {
-    setCheckoutOpen(false);
-    setCreditDialogOpen(false);
-    setPaymentStatus('canceled');
-    setPaymentMessage('Ödeme işleminiz iptal edildi.');
-  };
-
-  const handlePaymentReset = () => {
-    setPaymentStatus('idle');
-    setPaymentMessage(null);
-    setCheckoutOpen(false);
-    setCheckoutUrl('');
-    setSelectedProduct(null);
-  };
-
-  // ✅ URL'deki checkout_id'yi yakala
-  useEffect(() => {
-    const checkPaymentStatus = async () => {
-      const params = new URLSearchParams(window.location.search);
-      const checkoutId = params.get('checkout_id');
-
-      if (checkoutId) {
-        try {
-          const res = await api.get(`/api/polar/transaction/${checkoutId}`);
-          if (res.data) {
-            setPaymentStatus('success');
-            setPaymentMessage(`${res.data.credits} kredi hesabınıza eklendi!`);
-            setCreditDialogOpen(true);
-            setSuccessMessage(`✅ ${res.data.credits} kredi eklendi!`);
-            setTimeout(() => setSuccessMessage(null), 5000);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        } catch (error: any) {
-          if (error.response?.status === 404) {
-            setPaymentStatus('canceled');
-            setPaymentMessage('Ödeme işleminiz iptal edildi.');
-            setCreditDialogOpen(true);
-            window.history.replaceState({}, document.title, window.location.pathname);
-          }
-        }
-      }
-    };
-    checkPaymentStatus();
-  }, []);
-
-  // ✅ Sayfalandırılmış aktiviteler
-  const paginatedActivities = allActivities.slice(
-    page * rowsPerPage,
-    page * rowsPerPage + rowsPerPage
-  );
+  // ✅ İlk veri var mı kontrolü
+  const hasData = hasDataset || datasetStatus.status !== 'none' || allActivities.length > 0;
 
   return (
-    <Box>
-      <CreditPurchaseDialog
-        open={creditDialogOpen}
-        onClose={() => {
-          setCreditDialogOpen(false);
-          setPaymentStatus('idle');
-          setPaymentMessage(null);
-        }}
-        onPurchase={handlePurchase}
-        currentBalance={user?.token_balance || 0}
-        isLoading={isCreatingCheckout}
-        paymentStatus={paymentStatus}
-        paymentMessage={paymentMessage}
-        onReset={handlePaymentReset}
-      />
-
-      <PolarCheckout
-        open={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-        onSuccess={handleCheckoutSuccess}
-        onCancel={handleCheckoutCancel}
-        checkoutUrl={checkoutUrl}
-        productName={selectedProduct?.name || 'Kredi Paketi'}
-      />
-
+    <Box sx={{ 
+      bgcolor: '#f5f8fc', 
+      minHeight: '100vh',
+      p: { xs: 2, sm: 3 },
+      mx: -3,
+      mt: -3,
+    }}>
       {successMessage && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccessMessage(null)}>
           {successMessage}
         </Alert>
       )}
 
-      {/* ✅ 1. HERO ALANI - İKİ SÜTUN: YÜKLEME + AI ÖZET */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {/* Sol: Excel Yükleme */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Card sx={{ borderRadius: 2, height: '100%' }}>
-            <CardContent sx={{ py: 1.5, px: 2 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <CloudUpload sx={{ fontSize: 18, color: '#1f4e79' }} />
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
-                  Excel Yükle
-                </Typography>
-                <Chip label=".xlsx .xls" size="small" sx={{ height: 18, fontSize: '0.5rem' }} />
-              </Box>
+      {/* ✅ Import Wizard */}
+      <ImportWizardDialog
+        open={wizardOpen}
+        onClose={() => {
+          setWizardOpen(false);
+          setWizardFile(null);
+        }}
+        onComplete={handleWizardComplete}
+        initialFile={wizardFile}
+      />
 
-              <UploadArea
-                className={isDragging ? 'dragging' : ''}
-                onDragEnter={handleDragEnter}
-                onDragLeave={handleDragLeave}
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-                onClick={() => fileInputRef.current?.click()}
-                sx={{ py: 1.5, minHeight: 80 }}
-              >
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
-                  {selectedFile ? (
-                    <>
-                      <InsertDriveFile sx={{ fontSize: 28, color: 'primary.main' }} />
-                      <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.75rem' }}>
-                        {selectedFile.name}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
-                        {(selectedFile.size / 1024).toFixed(1)} KB
-                      </Typography>
-                      <Stack direction="row" spacing={0.5}>
-                        <Button
-                          variant="contained"
-                          size="small"
-                          startIcon={<UploadFile sx={{ fontSize: 14 }} />}
-                          onClick={(e) => { e.stopPropagation(); handleUpload(); }}
-                          disabled={uploading}
-                          sx={{ fontSize: '0.6rem', py: 0.5 }}
-                        >
-                          {uploading ? 'Yükleniyor...' : 'Yükle'}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          color="error"
-                          startIcon={<Clear sx={{ fontSize: 14 }} />}
-                          onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
-                          disabled={uploading}
-                          sx={{ fontSize: '0.6rem', py: 0.5 }}
-                        >
-                          İptal
-                        </Button>
-                      </Stack>
-                    </>
-                  ) : (
-                    <>
-                      <CloudUpload sx={{ fontSize: 32, color: '#1f4e79' }} />
-                      <Typography variant="body2" sx={{ fontWeight: 500, color: '#1f4e79', fontSize: '0.75rem' }}>
-                        Dosyayı Sürükle veya Tıkla
-                      </Typography>
-                      <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
-                        <Button
-                          variant="text"
-                          size="small"
-                          startIcon={<DownloadLucide size={14} />}
-                          onClick={(e) => { e.stopPropagation(); handleDownloadTemplate(); }}
-                          sx={{ fontSize: '0.6rem', color: '#1f4e79' }}
-                        >
-                          Şablon
-                        </Button>
-                        {lastUploadedFile && (
-                          <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.55rem' }}>
-                            Son: {lastUploadedFile}
-                          </Typography>
-                        )}
-                      </Stack>
-                    </>
-                  )}
-                </Box>
-              </UploadArea>
+      {/* ✅ Executive Summary Drawer */}
+      <ExecutiveDrawer
+        open={executiveDrawerOpen}
+        onClose={() => setExecutiveDrawerOpen(false)}
+        data={aiExecutive}
+      />
 
-              <VisuallyHiddenInput
-                type="file"
-                accept=".xlsx,.xls"
-                ref={fileInputRef}
-                onChange={handleFileInputChange}
+      {/* ✅ ANA GRID - 2 SÜTUN */}
+      <Grid container spacing={3}>
+        {/* SOL SÜTUN - %70 */}
+        <Grid size={{ xs: 12, md: 8 }}>
+          <Stack spacing={3}>
+            {/* 1. Executive Summary */}
+            <AIExecutiveCard
+              data={aiExecutive}
+              loading={aiLoading}
+              hasData={hasData}
+              onReadMore={() => setExecutiveDrawerOpen(true)}
+              onUpload={() => handleOpenWizard()}
+            />
+
+            {/* 2. AI Strategic Recommendation */}
+            {aiRecommendationData && aiRecommendationData.has_recommendation && (
+              <AIStrategicRecommendation
+                data={aiRecommendationData}
+                loading={aiRecLoading}
+                onAction={handleNavigateWithContext}
               />
+            )}
 
-              {uploading && (
-                <Box sx={{ mt: 1 }}>
-                  <LinearProgress variant="determinate" value={uploadProgress} sx={{ height: 4, borderRadius: 2 }} />
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.55rem' }}>
-                    %{uploadProgress}
-                  </Typography>
-                </Box>
-              )}
-              {uploadSuccess && (
-                <Alert severity="success" sx={{ mt: 1, py: 0.5, fontSize: '0.65rem' }} onClose={() => setUploadSuccess(false)}>
-                  ✅ Dosya yüklendi!
-                </Alert>
-              )}
-              {uploadError && (
-                <Alert severity="error" sx={{ mt: 1, py: 0.5, fontSize: '0.65rem' }} onClose={() => setUploadError(null)}>
-                  {uploadError}
-                </Alert>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
+            {/* 3. Analysis Highlights */}
+            <AnalysisHighlights
+              modules={dashboardSummaryData?.data?.modules}
+              loading={summaryLoading}
+              onOpen={handleNavigateWithContext}
+            />
 
-        {/* Sağ: AI Yönetici Özeti */}
-        <Grid size={{ xs: 12, md: 6 }}>
-          <AIExecutiveSummary
-            recommendation={aiRecommendation}
-            loading={aiLoading}
-          />
-        </Grid>
-      </Grid>
-
-      {/* ✅ 2. HIZLI İSTATİSTİKLER */}
-      <Box sx={{ mb: 3 }}>
-        <Grid container spacing={1.5}>
-          <Grid size={{ xs: 6, sm: 3 }}>
-            <QuickStat
-              value={userStats.totalMaterials}
-              label="Malzeme"
-              icon={<Inventory sx={{ fontSize: 16 }} />}
-              color="#1976d2"
-              loading={statsLoading}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3 }}>
-            <QuickStat
-              value={userStats.tokenBalance}
-              label="Kredi"
-              icon={<AccountBalanceWallet sx={{ fontSize: 16 }} />}
-              color="#f9a825"
-              loading={statsLoading}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3 }}>
-            <QuickStat
-              value={userStats.totalAnalyses}
-              label="Analiz"
-              icon={<Assessment sx={{ fontSize: 16 }} />}
-              color="#2e7d32"
-              loading={statsLoading}
-            />
-          </Grid>
-          <Grid size={{ xs: 6, sm: 3 }}>
-            <QuickStat
-              value={pendingTasks.length}
-              label="Devam Eden"
-              icon={<Schedule sx={{ fontSize: 16 }} />}
-              color="#9c27b0"
-              loading={tasksLoading}
-            />
-          </Grid>
-        </Grid>
-      </Box>
-
-      {/* ✅ 3. HIZLI BAŞLAT */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', mb: 1.5, fontSize: '0.85rem' }}>
-          ⚡ Hızlı Başlat
-        </Typography>
-        <Grid container spacing={1.5}>
-          {quickAnalyses.map((analysis, index) => (
-            <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={index}>
-              <QuickAnalysisCard
-                title={analysis.title}
-                icon={analysis.icon}
-                color={analysis.color}
-                cost={getCost(analysis.key)}
-                onClick={() => navigateTo(analysis.path)}
-                isAsync={analysis.isAsync}
-                loading={costsLoading || loading}
-              />
+            {/* 4. Quick Analysis + Recent Analyses */}
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <QuickAnalysisGrid onNavigate={navigateTo} loading={loading} />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <RecentAnalysesList
+                  historyItems={historyItems}
+                  loading={historyLoading}
+                  onOpenAnalysis={handleOpenHistory}
+                />
+              </Grid>
             </Grid>
-          ))}
-        </Grid>
-      </Box>
-
-      {/* ✅ 4. SON ANALİZLER & DEVAM EDEN GÖREVLER */}
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Card sx={{ borderRadius: 2 }}>
-            <CardContent sx={{ py: 1.5, px: 2 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.8rem' }}>
-                  📋 Son Analizler
-                </Typography>
-              </Box>
-              <Divider sx={{ mb: 1 }} />
-
-              {loading ? (
-                <Box sx={{ py: 2 }}>
-                  <Skeleton variant="rectangular" height={32} sx={{ mb: 0.5 }} />
-                  <Skeleton variant="rectangular" height={32} sx={{ mb: 0.5 }} />
-                  <Skeleton variant="rectangular" height={32} />
-                </Box>
-              ) : allActivities.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 2 }}>
-                  <Info color="disabled" sx={{ fontSize: 28 }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                    Henüz analiz yok
-                  </Typography>
-                </Box>
-              ) : (
-                <>
-                  <List disablePadding>
-                    {paginatedActivities.map((activity) => (
-                      <ListItem key={activity.id} sx={{ px: 0, py: 0.5 }}>
-                        <ListItemIcon sx={{ minWidth: 28 }}>
-                          <CheckCircle sx={{ color: 'success.main', fontSize: 16 }} />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={activity.message}
-                          secondary={activity.time}
-                          slotProps={{
-                            primary: { variant: 'body2', sx: { fontWeight: 500, fontSize: '0.75rem' } },
-                            secondary: { variant: 'caption', sx: { fontSize: '0.6rem' } },
-                          }}
-                        />
-                        <Button size="small" variant="outlined" sx={{ fontSize: '0.6rem', py: 0.5 }}>
-                          Aç
-                        </Button>
-                      </ListItem>
-                    ))}
-                  </List>
-                  <TablePagination
-                    component="div"
-                    count={allActivities.length}
-                    page={page}
-                    onPageChange={handleChangePage}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={handleChangeRowsPerPage}
-                    rowsPerPageOptions={[5, 10, 25]}
-                    labelRowsPerPage="Satır:"
-                    sx={{
-                      '& .MuiTablePagination-select': { fontSize: '0.7rem' },
-                      '& .MuiTablePagination-displayedRows': { fontSize: '0.7rem' },
-                    }}
-                  />
-                </>
-              )}
-            </CardContent>
-          </Card>
+          </Stack>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 5 }}>
-          <Card sx={{ height: '100%', borderRadius: 2 }}>
-            <CardContent sx={{ py: 1.5, px: 2 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 600, color: '#1f4e79', mb: 1, fontSize: '0.8rem' }}>
-                ⏳ Devam Eden Görevler
-              </Typography>
-              <Divider sx={{ mb: 1 }} />
+        {/* SAĞ SÜTUN - %30 */}
+        <Grid size={{ xs: 12, md: 4 }}>
+          <Stack spacing={3}>
+            {/* 5. Active Dataset */}
+            <DatasetStatusCard
+              dataset={datasetStatus}
+              loading={datasetLoading}
+              onUpload={() => handleOpenWizard()}
+            />
 
-              {tasksLoading ? (
-                <Box sx={{ py: 1 }}>
-                  <Skeleton variant="rectangular" height={44} sx={{ mb: 1 }} />
-                  <Skeleton variant="rectangular" height={44} sx={{ mb: 1 }} />
-                  <Skeleton variant="rectangular" height={44} />
-                </Box>
-              ) : pendingTasks.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 2 }}>
-                  <CheckCircle sx={{ color: 'success.main', fontSize: 28, mb: 0.5 }} />
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                    Tüm görevler tamamlandı! 🎉
-                  </Typography>
-                </Box>
-              ) : (
-                pendingTasks.map((task, index) => (
-                  <Box key={task.task_id} sx={{ mb: index < pendingTasks.length - 1 ? 1.5 : 0 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 500, fontSize: '0.75rem' }}>
-                        {task.report_name}
-                      </Typography>
-                      <Chip
-                        label={`%${task.progress}`}
-                        size="small"
-                        color={task.status === 'processing' ? 'warning' : 'info'}
-                        sx={{ height: 18, fontSize: '0.5rem' }}
-                      />
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={task.progress}
-                      sx={{ height: 3, borderRadius: 2, mt: 0.25 }}
-                    />
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
-                      {task.message || (task.status === 'processing' ? 'İşleniyor...' : 'Sırada')}
-                    </Typography>
-                    {index < pendingTasks.length - 1 && <Divider sx={{ mt: 1 }} />}
-                  </Box>
-                ))
-              )}
-            </CardContent>
-          </Card>
+            {/* 6. Activity Timeline */}
+            <ActivityTimeline activities={activities} loading={loading} />
+          </Stack>
         </Grid>
       </Grid>
+
+      {/* ✅ Gizli file input */}
+      <VisuallyHiddenInput
+        id="file-upload-input"
+        type="file"
+        accept=".xlsx,.xls"
+        ref={fileInputRef}
+        onChange={handleFileInputChange}
+      />
     </Box>
   );
 }

@@ -2,12 +2,13 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
-import uuid  # ✅ YENİ EKLENDİ
+import uuid 
 from app.database import get_db
-from app.models import User, UploadedData, AnalysisResult, AnalysisInput  # ✅ AnalysisInput EKLENDİ
+from app.models import User, UploadedData, AnalysisResult, AnalysisInput, AnalysisDataset
 from app.auth import get_current_user, get_current_user_optional
 from app.utils.excel_reader import ExcelReader
 from app.utils.excel_processor import ExcelProcessor
+from app.services.dataset_builder import DatasetBuilder
 import shutil
 import os
 from datetime import datetime
@@ -246,11 +247,6 @@ def clear_upload_data(
     
     return {'success': True, 'message': 'Veriler temizlendi'}
 
-# app/api/endpoints/upload.py
-
-# app/api/endpoints/upload.py - SADECE get_upload_results fonksiyonu
-
-
 @router.get("/upload/results")
 async def get_upload_results(
     result_type: Optional[str] = None,
@@ -324,3 +320,141 @@ async def get_upload_results(
         "results": results
     }
 
+# ============================================================
+# 🆕 DATASET BUILDER ENTEGRASYONU
+# ============================================================
+
+@router.post("/upload/build-dataset")
+async def build_dataset_from_upload(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Mevcut upload verisinden Dataset oluşturur.
+    Token maliyeti: 0 (ücretsiz)
+    """
+    cached_data = get_user_upload_data(current_user.id)
+    if not cached_data:
+        raise HTTPException(
+            status_code=404,
+            detail="Henüz Excel dosyası yüklenmemiş! Lütfen önce /upload endpoint'ini çağırın."
+        )
+    
+    upload_id = cached_data.get('upload_id')
+    
+    # Dataset Builder ile dataset oluştur
+    builder = DatasetBuilder(db)
+    dataset = builder.build_from_cache(
+        user_id=current_user.id,
+        cached_data=cached_data,
+        upload_id=upload_id,
+        source_type="excel",
+        source_name=cached_data.get('file_name', 'unknown.xlsx')
+    )
+    
+    return {
+        'success': True,
+        'message': 'Dataset başarıyla oluşturuldu',
+        'dataset': {
+            'id': dataset.id,
+            'product_count': dataset.product_count,
+            'period_count': dataset.period_count,
+            'data_points': dataset.data_points,
+            'source_type': dataset.source_type,
+            'created_at': dataset.created_at
+        }
+    }
+
+
+@router.get("/upload/datasets")
+async def get_user_datasets(
+    limit: int = 10,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Kullanıcının tüm dataset'lerini listeler.
+    Token maliyeti: 0 (ücretsiz)
+    """
+    builder = DatasetBuilder(db)
+    datasets = builder.get_active_datasets(current_user.id, limit)
+    
+    return {
+        'success': True,
+        'total': len(datasets),
+        'datasets': [
+            {
+                'id': d.id,
+                'product_count': d.product_count,
+                'period_count': d.period_count,
+                'data_points': d.data_points,
+                'source_type': d.source_type,
+                'source_name': d.source_name,
+                'created_at': d.created_at,
+                'is_active': d.is_active
+            }
+            for d in datasets
+        ]
+    }
+
+
+@router.get("/upload/dataset/{dataset_id}")
+async def get_dataset_detail(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Dataset detaylarını getirir.
+    Token maliyeti: 0 (ücretsiz)
+    """
+    builder = DatasetBuilder(db)
+    dataset = builder.get_dataset(dataset_id, current_user.id)
+    
+    if not dataset:
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset bulunamadı"
+        )
+    
+    return {
+        'success': True,
+        'dataset': {
+            'id': dataset.id,
+            'upload_id': dataset.upload_id,
+            'product_count': dataset.product_count,
+            'period_count': dataset.period_count,
+            'data_points': dataset.data_points,
+            'source_type': dataset.source_type,
+            'source_name': dataset.source_name,
+            'dataset_data': dataset.dataset_data,
+            'created_at': dataset.created_at,
+            'expires_at': dataset.expires_at,
+            'is_active': dataset.is_active
+        }
+    }
+
+
+@router.delete("/upload/dataset/{dataset_id}")
+async def delete_dataset(
+    dataset_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Dataset'i pasifleştirir (siler).
+    Token maliyeti: 0 (ücretsiz)
+    """
+    builder = DatasetBuilder(db)
+    result = builder.deactivate_dataset(dataset_id, current_user.id)
+    
+    if not result:
+        raise HTTPException(
+            status_code=404,
+            detail="Dataset bulunamadı"
+        )
+    
+    return {
+        'success': True,
+        'message': 'Dataset pasifleştirildi'
+    }

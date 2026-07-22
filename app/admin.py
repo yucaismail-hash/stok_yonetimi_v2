@@ -683,3 +683,462 @@ async def create_admin_user(
         "email": admin_email,
         "password": "admin123"
     }
+
+# app/admin.py - DOSYANIN EN SONUNA EKLEYİN
+
+# ============================================================
+# 🆕 PROCESSING CREDIT - ADMIN ENDPOINT'LERİ
+# ============================================================
+
+from app.models import EndpointProfile, ProcessingScoreRange, AnalysisDataset, ProcessingTransaction
+from app.schemas.credit import (
+    EndpointProfileCreate,
+    EndpointProfileUpdate,
+    EndpointProfileResponse,
+    ProcessingScoreRangeCreate,
+    ProcessingScoreRangeUpdate,
+    ProcessingScoreRangeResponse
+)
+
+
+# ----- ENDPOINT PROFİL ENDPOINT'LERİ -----
+
+@router.get("/endpoint-profiles", response_model=List[EndpointProfileResponse])
+async def get_endpoint_profiles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Tüm endpoint profillerini listeler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    profiles = db.query(EndpointProfile).order_by(EndpointProfile.endpoint).all()
+    return profiles
+
+
+@router.post("/endpoint-profiles", response_model=EndpointProfileResponse)
+async def create_endpoint_profile(
+    request: EndpointProfileCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Yeni endpoint profili oluşturur (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    existing = db.query(EndpointProfile).filter(
+        EndpointProfile.endpoint == request.endpoint
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu endpoint zaten kayıtlı: {request.endpoint}"
+        )
+    
+    profile = EndpointProfile(
+        endpoint=request.endpoint,
+        method=request.method,
+        base_credit=request.base_credit,
+        pricing_type=request.pricing_type,
+        algorithm_weight=request.algorithm_weight,
+        avg_time_per_unit=request.avg_time_per_unit,
+        description=request.description,
+        is_active=request.is_active,
+        version="1.0"
+    )
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    
+    return profile
+
+
+@router.put("/endpoint-profiles/{profile_id}", response_model=EndpointProfileResponse)
+async def update_endpoint_profile(
+    profile_id: int,
+    request: EndpointProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Endpoint profilini günceller (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    profile = db.query(EndpointProfile).filter(EndpointProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profil bulunamadı")
+    
+    update_data = request.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(profile, key, value)
+    
+    profile.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(profile)
+    
+    return profile
+
+
+@router.delete("/endpoint-profiles/{profile_id}")
+async def delete_endpoint_profile(
+    profile_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Endpoint profilini siler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    profile = db.query(EndpointProfile).filter(EndpointProfile.id == profile_id).first()
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profil bulunamadı")
+    
+    db.delete(profile)
+    db.commit()
+    
+    return {"message": f"Profil silindi: {profile.endpoint}"}
+
+
+@router.post("/endpoint-profiles/init-defaults")
+async def init_default_endpoint_profiles(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Varsayılan endpoint profillerini yükler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    default_profiles = [
+        {
+            "endpoint": "/api/forecast/batch",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS",
+            "algorithm_weight": 2.3,
+            "description": "Talep tahmini analizi"
+        },
+        {
+            "endpoint": "/api/forecast/batch/async",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS",
+            "algorithm_weight": 2.3,
+            "description": "Talep tahmini analizi (Async)"
+        },
+        {
+            "endpoint": "/api/safety-stock/batch",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS",
+            "algorithm_weight": 1.0,
+            "description": "Emniyet stoğu analizi"
+        },
+        {
+            "endpoint": "/api/safety-stock/batch/async",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS",
+            "algorithm_weight": 1.0,
+            "description": "Emniyet stoğu analizi (Async)"
+        },
+        {
+            "endpoint": "/api/simulate/batch",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS_ITERATION",
+            "algorithm_weight": 8.5,
+            "description": "Monte Carlo simülasyonu"
+        },
+        {
+            "endpoint": "/api/simulate/batch/async",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS_ITERATION",
+            "algorithm_weight": 8.5,
+            "description": "Monte Carlo simülasyonu (Async)"
+        },
+        {
+            "endpoint": "/api/backtest/batch",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS_ITERATION",
+            "algorithm_weight": 12.0,
+            "description": "Backtest analizi"
+        },
+        {
+            "endpoint": "/api/backtest/batch/async",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS_ITERATION",
+            "algorithm_weight": 12.0,
+            "description": "Backtest analizi (Async)"
+        },
+        {
+            "endpoint": "/api/supplier/batch",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS",
+            "algorithm_weight": 1.4,
+            "description": "Tedarikçi analizi"
+        },
+        {
+            "endpoint": "/api/supplier/batch/async",
+            "method": "POST",
+            "base_credit": 1,
+            "pricing_type": "DATA_POINTS",
+            "algorithm_weight": 1.4,
+            "description": "Tedarikçi analizi (Async)"
+        }
+    ]
+    
+    created_count = 0
+    updated_count = 0
+    
+    for data in default_profiles:
+        existing = db.query(EndpointProfile).filter(
+            EndpointProfile.endpoint == data["endpoint"]
+        ).first()
+        
+        if existing:
+            existing.base_credit = data["base_credit"]
+            existing.pricing_type = data["pricing_type"]
+            existing.algorithm_weight = data["algorithm_weight"]
+            existing.description = data["description"]
+            existing.updated_at = datetime.utcnow()
+            updated_count += 1
+        else:
+            profile = EndpointProfile(**data, version="1.0", is_active=True)
+            db.add(profile)
+            created_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": "Varsayılan endpoint profilleri yüklendi",
+        "created": created_count,
+        "updated": updated_count,
+        "total": len(default_profiles)
+    }
+
+
+# ----- PROCESSING SCORE RANGE ENDPOINT'LERİ -----
+
+@router.get("/score-ranges", response_model=List[ProcessingScoreRangeResponse])
+async def get_score_ranges(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Tüm Processing Score aralıklarını listeler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    ranges = db.query(ProcessingScoreRange).order_by(
+        ProcessingScoreRange.min_score
+    ).all()
+    return ranges
+
+
+@router.post("/score-ranges", response_model=ProcessingScoreRangeResponse)
+async def create_score_range(
+    request: ProcessingScoreRangeCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Yeni Processing Score aralığı oluşturur (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    # Çakışma kontrolü
+    existing = db.query(ProcessingScoreRange).filter(
+        ProcessingScoreRange.min_score <= request.max_score,
+        ProcessingScoreRange.max_score >= request.min_score
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Bu aralık çakışıyor: {existing.min_score}-{existing.max_score}"
+        )
+    
+    range_record = ProcessingScoreRange(**request.dict())
+    db.add(range_record)
+    db.commit()
+    db.refresh(range_record)
+    
+    return range_record
+
+
+@router.put("/score-ranges/{range_id}", response_model=ProcessingScoreRangeResponse)
+async def update_score_range(
+    range_id: int,
+    request: ProcessingScoreRangeUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Processing Score aralığını günceller (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    range_record = db.query(ProcessingScoreRange).filter(
+        ProcessingScoreRange.id == range_id
+    ).first()
+    
+    if not range_record:
+        raise HTTPException(status_code=404, detail="Aralık bulunamadı")
+    
+    update_data = request.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(range_record, key, value)
+    
+    range_record.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(range_record)
+    
+    return range_record
+
+
+@router.delete("/score-ranges/{range_id}")
+async def delete_score_range(
+    range_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Processing Score aralığını siler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    range_record = db.query(ProcessingScoreRange).filter(
+        ProcessingScoreRange.id == range_id
+    ).first()
+    
+    if not range_record:
+        raise HTTPException(status_code=404, detail="Aralık bulunamadı")
+    
+    db.delete(range_record)
+    db.commit()
+    
+    return {"message": f"Aralık silindi: {range_record.min_score}-{range_record.max_score}"}
+
+
+@router.post("/score-ranges/init-defaults")
+async def init_default_score_ranges(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Varsayılan Processing Score aralıklarını yükler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    default_ranges = [
+        {"min_score": 0, "max_score": 20000, "credit_cost": 3, "description": "Düşük işlem yükü"},
+        {"min_score": 20001, "max_score": 50000, "credit_cost": 5, "description": "Orta-düşük işlem yükü"},
+        {"min_score": 50001, "max_score": 100000, "credit_cost": 8, "description": "Orta işlem yükü"},
+        {"min_score": 100001, "max_score": 250000, "credit_cost": 12, "description": "Orta-yüksek işlem yükü"},
+        {"min_score": 250001, "max_score": 500000, "credit_cost": 18, "description": "Yüksek işlem yükü"},
+        {"min_score": 500001, "max_score": 999999999, "credit_cost": 25, "description": "Çok yüksek işlem yükü"}
+    ]
+    
+    created_count = 0
+    updated_count = 0
+    
+    for data in default_ranges:
+        existing = db.query(ProcessingScoreRange).filter(
+            ProcessingScoreRange.min_score == data["min_score"],
+            ProcessingScoreRange.max_score == data["max_score"]
+        ).first()
+        
+        if existing:
+            existing.credit_cost = data["credit_cost"]
+            existing.description = data["description"]
+            existing.updated_at = datetime.utcnow()
+            updated_count += 1
+        else:
+            range_record = ProcessingScoreRange(**data, is_active=True)
+            db.add(range_record)
+            created_count += 1
+    
+    db.commit()
+    
+    return {
+        "message": "Varsayılan Processing Score aralıkları yüklendi",
+        "created": created_count,
+        "updated": updated_count,
+        "total": len(default_ranges)
+    }
+
+
+# ----- PROCESSING TRANSACTION ENDPOINT'LERİ -----
+
+@router.get("/processing-transactions")
+async def get_processing_transactions(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Tüm işlem kredisi harcamalarını listeler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    total = db.query(ProcessingTransaction).count()
+    
+    transactions = db.query(ProcessingTransaction).order_by(
+        ProcessingTransaction.created_at.desc()
+    ).offset(offset).limit(limit).all()
+    
+    result = []
+    for t in transactions:
+        user = db.query(User).filter(User.id == t.user_id).first()
+        dataset = db.query(AnalysisDataset).filter(
+            AnalysisDataset.id == t.dataset_id
+        ).first() if t.dataset_id else None
+        
+        result.append({
+            "id": t.id,
+            "user_id": t.user_id,
+            "user_email": user.email if user else None,
+            "dataset_id": t.dataset_id,
+            "endpoint": t.endpoint,
+            "processing_score": t.processing_score,
+            "credit_cost": t.credit_cost,
+            "balance_after": t.balance_after,
+            "elapsed_time_ms": t.elapsed_time_ms,
+            "avg_time_per_unit_ms": t.avg_time_per_unit_ms,
+            "status": t.status,
+            "created_at": t.created_at,
+            "dataset": {
+                "product_count": dataset.product_count if dataset else 0,
+                "period_count": dataset.period_count if dataset else 0,
+                "data_points": dataset.data_points if dataset else 0
+            } if dataset else None
+        })
+    
+    return {
+        "total": total,
+        "items": result
+    }
+
+
+@router.get("/processing-transactions/user/{user_id}")
+async def get_user_processing_transactions(
+    user_id: int,
+    limit: int = 50,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Belirli bir kullanıcının işlem kredisi harcamalarını listeler (Admin)"""
+    if not is_admin(current_user):
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    
+    transactions = db.query(ProcessingTransaction).filter(
+        ProcessingTransaction.user_id == user_id
+    ).order_by(
+        ProcessingTransaction.created_at.desc()
+    ).offset(offset).limit(limit).all()
+    
+    return {
+        "total": len(transactions),
+        "items": transactions
+    }

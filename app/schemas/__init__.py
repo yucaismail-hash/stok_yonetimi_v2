@@ -1,12 +1,13 @@
-# app/schemas.py - TAM DOSYA (MEVCUT + YENİ ŞEMALAR)
+# app/schemas/__init__.py
+
+# ============================================================
+# ESKİ ŞEMALAR (app/schemas.py'den taşındı)
+# ============================================================
+
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-
-# ============================================================
-# MEVCUT ŞEMALAR
-# ============================================================
 
 class TokenCostCreate(BaseModel):
     endpoint: str
@@ -87,7 +88,7 @@ class CreditPackageResponse(BaseModel):
 
 
 class CheckoutRequest(BaseModel):
-    product_id: str  # Polar product ID
+    product_id: str
 
 
 class CheckoutResponse(BaseModel):
@@ -165,7 +166,7 @@ class EndpointProfileCreate(BaseModel):
     endpoint: str
     method: str = "POST"
     base_credit: int = 1
-    pricing_type: str = "DATA_POINTS"  # FIXED, DATA_POINTS, DATA_POINTS_ITERATION, AI_USAGE, CUSTOM
+    pricing_type: str = "DATA_POINTS"
     algorithm_weight: float = 1.0
     avg_time_per_unit: float = 0.0
     description: Optional[str] = None
@@ -272,3 +273,44 @@ class PricingResponse(BaseModel):
     balance_after: int
     is_sufficient: bool
     message: Optional[str] = None
+
+
+# ============================================================
+# TÜM SINIFLARI DIŞA AÇ (Optional - IDE otomatik tamamlama için)
+# ============================================================
+
+__all__ = [
+    # Eski şemalar
+    'TokenCostCreate',
+    'TokenCostUpdate',
+    'TokenCostResponse',
+    'UserTokenUpdate',
+    'SupplierCreate',
+    'MaterialSupplierCreate',
+    'MaterialCreate',
+    # Polar şemaları
+    'CreditPackageCreate',
+    'CreditPackageUpdate',
+    'CreditPackageResponse',
+    'CheckoutRequest',
+    'CheckoutResponse',
+    'CreditTransactionResponse',
+    # Dataset şemaları
+    'DatasetMetadata',
+    'DatasetCreate',
+    'DatasetResponse',
+    'DatasetSummary',
+    # Endpoint profil şemaları
+    'EndpointProfileCreate',
+    'EndpointProfileUpdate',
+    'EndpointProfileResponse',
+    # Processing Score Range şemaları
+    'ProcessingScoreRangeCreate',
+    'ProcessingScoreRangeUpdate',
+    'ProcessingScoreRangeResponse',
+    # Processing Transaction şemaları
+    'ProcessingTransactionResponse',
+    # Pricing şemaları
+    'PricingRequest',
+    'PricingResponse',
+]

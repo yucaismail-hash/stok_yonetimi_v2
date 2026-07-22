@@ -1,4 +1,5 @@
-// frontend/src/pages/SimulationPage.tsx - TAM DOSYA (DÜZELTİLMİŞ)
+// frontend/src/pages/SimulationPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
+// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
 
 import { useState, useEffect } from 'react';
 import {
@@ -64,11 +65,13 @@ import {
   AutoAwesome,
   Psychology,
   ShowChart,
+  AccountBalanceWallet,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-
+import { usePricingPreview } from '../hooks/usePricing';
+import { fetchAndLoadResult, checkAndLoadAnalysis } from '../utils/loadAnalysisResult';
 interface SimulationResult {
   material_code: string;
   group: string;
@@ -94,7 +97,6 @@ interface HistoryItem {
   data: any;
 }
 
-// ✅ AI Yorumu Interface
 interface AIComment {
   summary: string;
   performance: string;
@@ -103,7 +105,6 @@ interface AIComment {
   confidence: string;
 }
 
-// ✅ Analiz Özeti Interface
 interface AnalysisSummary {
   totalMaterials: number;
   avgServiceLevel: number;
@@ -115,7 +116,6 @@ interface AnalysisSummary {
   adaptiveUsedCount: number;
 }
 
-// ✅ Analiz Aşamaları Interface
 interface AnalysisStep {
   label: string;
   description: string;
@@ -123,7 +123,7 @@ interface AnalysisStep {
   timestamp?: string;
 }
 
-// ✅ Analiz Aşamaları Bileşeni (Kompakt)
+// ✅ Analiz Aşamaları Bileşeni
 const AnalysisProgress = ({ 
   steps, 
   activeStep, 
@@ -211,13 +211,60 @@ export default function SimulationPage() {
   const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
   const [aiComment, setAiComment] = useState<AIComment | null>(null);
 
-  // ✅ State'ler
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
 
-  // ✅ Analiz Aşamaları State'leri
+  const [config, setConfig] = useState({
+    n_simulations: 500,
+    weeks: 26,
+    use_regime: false,
+    use_copula: false,
+    use_adaptive_ss: false,
+  });
+
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
+
+  // 🆕 Dataset ID için state
+  const [activeDatasetId, setActiveDatasetId] = useState<number | null>(() => {
+    const saved = localStorage.getItem('activeDatasetId');
+    return saved ? parseInt(saved) : null;
+  });
+
+  // 🆕 Pricing Preview Hook
+  const { data: pricingPreview, isLoading: pricingLoading } = usePricingPreview(
+    '/api/simulate/batch',
+    activeDatasetId || undefined
+  );
+
+    // 🆕 Dataset ID'yi al
+  useEffect(() => {
+    const fetchDataset = async () => {
+      if (!activeDatasetId) {
+        try {
+          const res = await api.get('/api/upload/datasets');
+          if (res.data.success && res.data.datasets?.length > 0) {
+            const firstDataset = res.data.datasets[0];
+            setActiveDatasetId(firstDataset.id);
+            localStorage.setItem('activeDatasetId', String(firstDataset.id));
+          }
+        } catch (error) {
+          console.error('❌ Dataset alınamadı:', error);
+        }
+      }
+    };
+    fetchDataset();
+  }, [activeDatasetId]);
+
   const [steps, setSteps] = useState<AnalysisStep[]>([
     { label: 'Veri okunuyor...', description: 'Excel dosyası kontrol ediliyor', status: 'pending' },
     { label: 'Talep geçmişi hazırlanıyor...', description: 'Malzeme verileri işleniyor', status: 'pending' },
@@ -229,7 +276,6 @@ export default function SimulationPage() {
   const [activeStep, setActiveStep] = useState(-1);
   const [isAnalysisComplete, setIsAnalysisComplete] = useState(false);
 
-  // ✅ Async Analiz Aşamaları State'leri
   const [asyncSteps, setAsyncSteps] = useState<AnalysisStep[]>([
     { label: 'Analiz Ediliyor...', description: 'Veriler işleniyor', status: 'pending' },
     { label: 'Görev Oluşturuluyor...', description: 'Arka plan işlemi başlatılıyor', status: 'pending' },
@@ -237,47 +283,6 @@ export default function SimulationPage() {
   ]);
   const [asyncActiveStep, setAsyncActiveStep] = useState(-1);
   const [isAsyncComplete, setIsAsyncComplete] = useState(false);
-
-  // ✅ Config
-  const [config, setConfig] = useState({
-    n_simulations: 500,
-    weeks: 26,
-    use_regime: false,
-    use_copula: false,
-    use_adaptive_ss: false,
-  });
-
-  // ✅ Snackbar
-  const [snackbar, setSnackbar] = useState<{ 
-    open: boolean; 
-    message: string; 
-    severity: 'success' | 'error' | 'info' 
-  }>({
-    open: false,
-    message: '',
-    severity: 'info',
-  });
-
-  // ✅ Kredi maliyeti
-  const { data: costData } = useQuery({
-    queryKey: ['simulation-cost'],
-    queryFn: async () => {
-      try {
-        const res = await api.get('/api/cost', {
-          params: {
-            endpoint: '/api/simulate',
-            method: 'POST'
-          }
-        });
-        return res.data;
-      } catch (error) {
-        console.error('❌ Kredi cost hatası:', error);
-        return { cost: 10 };
-      }
-    },
-    initialData: { cost: 10 },
-    staleTime: 60000,
-  });
 
   useEffect(() => {
     checkUploadedData();
@@ -302,10 +307,16 @@ export default function SimulationPage() {
     }
   };
 
-  // ✅ Sleep helper
+  const handleFetchAndLoad = (id: number) => {
+    fetchAndLoadResult(id, setResults, setPage, setSuccess, setError, setLoading);
+  };
+
+  useEffect(() => {
+    checkAndLoadAnalysis('simulation', handleFetchAndLoad);
+  }, []);
+
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // ✅ Adım güncelleme fonksiyonu
   const updateStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
     setSteps(prev => prev.map((step, i) => {
       if (i === index) {
@@ -321,7 +332,6 @@ export default function SimulationPage() {
     setActiveStep(index);
   };
 
-  // ✅ Async Adım güncelleme
   const updateAsyncStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
     setAsyncSteps(prev => prev.map((step, i) => {
       if (i === index) {
@@ -337,7 +347,6 @@ export default function SimulationPage() {
     setAsyncActiveStep(index);
   };
 
-  // ✅ Aşamaları sıfırla
   const resetSteps = () => {
     setSteps(prev => prev.map(step => ({
       ...step,
@@ -348,7 +357,6 @@ export default function SimulationPage() {
     setIsAnalysisComplete(false);
   };
 
-  // ✅ Async aşamaları sıfırla
   const resetAsyncSteps = () => {
     setAsyncSteps(prev => prev.map(step => ({
       ...step,
@@ -359,7 +367,6 @@ export default function SimulationPage() {
     setIsAsyncComplete(false);
   };
 
-  // ✅ Tüm aşamaları temizle
   const clearAllSteps = () => {
     resetSteps();
     resetAsyncSteps();
@@ -369,7 +376,6 @@ export default function SimulationPage() {
     setAiComment(null);
   };
 
-  // ✅ Analiz Özeti oluştur
   const generateSummary = (resultsData: SimulationResult[]) => {
     if (!resultsData || resultsData.length === 0) return null;
 
@@ -394,7 +400,6 @@ export default function SimulationPage() {
     };
   };
 
-  // ✅ AI Yorumu oluştur
   const generateAIComment = (summary: AnalysisSummary) => {
     if (!summary) return null;
 
@@ -446,35 +451,6 @@ export default function SimulationPage() {
     };
   };
 
-  // ✅ Rapor adını belirleme fonksiyonu
-  const getReportName = (items: any[]): string => {
-    if (!items || items.length === 0) return 'Monte Carlo Simülasyonu';
-    
-    const firstItem = items[0];
-    const resultType = firstItem?.result_type || firstItem?.data?.result_type || '';
-    const resultData = firstItem?.data || {};
-    
-    if (resultType === 'simulation_batch' || resultType === 'simulation_batch_async') {
-      const nSims = resultData?.n_simulations || 500;
-      const weeks = resultData?.weeks || 26;
-      return `Monte Carlo Simülasyonu (${nSims} senaryo, ${weeks} hafta)`;
-    }
-    
-    if (resultType === 'safety_stock_batch' || resultType === 'safety_stock_batch_async') {
-      const serviceLevel = resultData?.service_level || 0.95;
-      return `Emniyet Stoğu (%${(serviceLevel * 100).toFixed(0)})`;
-    }
-    
-    if (resultType === 'forecast_batch' || resultType === 'forecast_batch_async') {
-      const model = resultData?.selected_model || resultData?.model_type || 'Otomatik';
-      const horizon = resultData?.horizon || 4;
-      return `Talep Tahmini (${model}) - ${horizon} Hafta`;
-    }
-    
-    return 'Monte Carlo Simülasyonu';
-  };
-
-  // ✅ Aşamaları başlat (Normal Analiz)
   const startAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -544,7 +520,6 @@ export default function SimulationPage() {
     }
   };
 
-  // ✅ Async Aşamaları başlat
   const startAsyncAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -606,6 +581,15 @@ export default function SimulationPage() {
         setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla simüle edildi.`);
         setTimeout(() => setSuccess(null), 5000);
         await fetchUser();
+        
+        // ✅ Yeni: credit_cost ve balance_after'i göster
+        if (data.credit_cost !== undefined) {
+          setSnackbar({
+            open: true,
+            message: `💰 ${data.credit_cost} kredi harcandı. Kalan: ${data.balance_after} kredi. Processing Score: ${data.processing_score || '-'}`,
+            severity: 'info',
+          });
+        }
       } else {
         setError(data.error || 'Simülasyon başarısız');
       }
@@ -637,8 +621,7 @@ export default function SimulationPage() {
       setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}\n💰 Kredi: ${data.credit_cost || 0}, Kalan: ${data.balance_after || 0}`,
         severity: 'success',
       });
       setProgress(10);
@@ -665,7 +648,6 @@ export default function SimulationPage() {
     },
   });
 
-  // 📌 Async İlerleme Kontrol
   const checkAsyncProgress = async (taskId: string) => {
     if (!taskId) return;
     try {
@@ -709,61 +691,54 @@ export default function SimulationPage() {
   };
 
   const fetchHistory = async () => {
-      setLoading(true);
-      try {
-          const res = await api.get('/api/upload/results', {
-              params: { 
-                  result_type: 'simulation_batch', 
-                  limit: 10000 
-              }
-          });
+    setLoading(true);
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { 
+          result_type: 'simulation_batch', 
+          limit: 10000 
+        }
+      });
 
-          if (res.data.success) {
-              const rawResults = res.data.results || [];
-              console.log(`📊 ${rawResults.length} sonuç bulundu`);
-              
-              // ✅ SADECE BATCH kayıtlarını al
-              const batchResults = rawResults.filter((item: any) => item.is_batch === true);
-              
-              console.log(`📊 ${batchResults.length} batch sonucu bulundu`);
-              
-              const historyItems = batchResults.map((item: any) => {
-                  const data = item.data || {};
-                  const totalMaterials = item.total_materials || data.total || 0;
-                  
-                  // ✅ Simülasyon parametrelerini al
-                  const nSimulations = data?.n_simulations || data?.config?.n_simulations || 500;
-                  const weeks = data?.weeks || data?.config?.weeks || 26;
-                  
-                  // ✅ Rapor adını zenginleştir
-                  const reportName = `Monte Carlo Simülasyonu (${nSimulations} senaryo, ${weeks} hafta) - ${totalMaterials} Malzeme`;
-                  
-                  return {
-                      id: item.id,
-                      created_at: item.created_at,
-                      data: {
-                          total: totalMaterials,
-                          results: data.results || [],
-                          report_name: reportName,
-                          status: item.status || 'completed',
-                          n_simulations: nSimulations,
-                          weeks: weeks,
-                      }
-                  };
-              });
-              
-              setHistoryData(historyItems);
-              setHistoryDialogOpen(true);
-              setError(null);
-          } else {
-              setError('Geçmiş sonuçlar yüklenemedi');
-          }
-      } catch (err: any) {
-          console.error('❌ Geçmiş hatası:', err);
-          setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
-      } finally {
-          setLoading(false);
+      if (res.data.success) {
+        const rawResults = res.data.results || [];
+        const batchResults = rawResults.filter((item: any) => item.is_batch === true);
+        
+        const historyItems = batchResults.map((item: any) => {
+          const data = item.data || {};
+          const totalMaterials = item.total_materials || data.total || 0;
+          
+          const nSimulations = data?.n_simulations || data?.config?.n_simulations || 500;
+          const weeks = data?.weeks || data?.config?.weeks || 26;
+          
+          const reportName = `Monte Carlo Simülasyonu (${nSimulations} senaryo, ${weeks} hafta) - ${totalMaterials} Malzeme`;
+          
+          return {
+            id: item.id,
+            created_at: item.created_at,
+            data: {
+              total: totalMaterials,
+              results: data.results || [],
+              report_name: reportName,
+              status: item.status || 'completed',
+              n_simulations: nSimulations,
+              weeks: weeks,
+            }
+          };
+        });
+        
+        setHistoryData(historyItems);
+        setHistoryDialogOpen(true);
+        setError(null);
+      } else {
+        setError('Geçmiş sonuçlar yüklenemedi');
       }
+    } catch (err: any) {
+      console.error('❌ Geçmiş hatası:', err);
+      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleViewHistory = (item: HistoryItem) => {
@@ -849,7 +824,10 @@ export default function SimulationPage() {
     return 'error.main';
   };
 
-  // ✅ Hero Header Bileşeni
+  const isNormalAnalysisActive = activeStep >= 0 && !isAsyncComplete && !activeAsyncTask;
+  const isAsyncAnalysisActive = asyncActiveStep >= 0 || isAsyncComplete;
+
+  // ✅ Hero Header
   const HeroHeader = () => (
     <Card sx={{ mb: 3, borderRadius: 2, bgcolor: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)', border: '1px solid #d0e0ff' }}>
       <CardContent sx={{ py: 2.5, px: 3 }}>
@@ -962,9 +940,6 @@ export default function SimulationPage() {
       </Card>
     );
   };
-
-  const isNormalAnalysisActive = activeStep >= 0 && !isAsyncComplete && !activeAsyncTask;
-  const isAsyncAnalysisActive = asyncActiveStep >= 0 || isAsyncComplete;
 
   return (
     <Box>
@@ -1142,7 +1117,7 @@ export default function SimulationPage() {
                     minWidth: 120,
                   }}
                 >
-                  {simulationMutation.isPending ? 'Simüle Ediliyor...' : `Simülasyonu Başlat (${costData?.cost || 10} Kredi)`}
+                  {simulationMutation.isPending ? 'Simüle Ediliyor...' : 'Simülasyonu Başlat'}
                 </Button>
 
                 <Button
@@ -1162,7 +1137,7 @@ export default function SimulationPage() {
                     minWidth: 120,
                   }}
                 >
-                  {asyncSimulationMutation.isPending ? 'Başlatılıyor...' : `Arka Planda Çalıştır (${costData?.cost || 10} Kredi)`}
+                  {asyncSimulationMutation.isPending ? 'Başlatılıyor...' : 'Arka Planda Çalıştır'}
                 </Button>
 
                 <Button
@@ -1255,8 +1230,72 @@ export default function SimulationPage() {
               </Box>
             </CardContent>
           </Card>
+          
+          {/* ✅ Kredi Bakiyesi ve Maliyet Önizleme */}
+          <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <AccountBalanceWallet sx={{ fontSize: 20, color: '#f57c00' }} />
+                    <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                      Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
+                    </Typography>
+                  </Box>
+                </Grid>
+                
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingLoading ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Maliyet hesaplanıyor...
+                      </Typography>
+                    </Box>
+                  ) : pricingPreview && pricingPreview.estimated_credit_cost > 0 ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AttachMoney sx={{ fontSize: 18, color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }} />
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        Tahmini Maliyet: <strong style={{ color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }}>
+                          {pricingPreview.estimated_credit_cost} Kredi
+                        </strong>
+                      </Typography>
+                      {!pricingPreview.is_sufficient && (
+                        <Chip 
+                          label="Yetersiz Bakiye!" 
+                          size="small" 
+                          color="error" 
+                          sx={{ height: 20, fontSize: '0.55rem' }}
+                        />
+                      )}
+                      {pricingPreview.is_sufficient && pricingPreview.processing_score > 0 && (
+                        <Chip 
+                          label={`Score: ${pricingPreview.processing_score}`} 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ height: 18, fontSize: '0.5rem' }}
+                        />
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {activeDatasetId ? 'Simülasyon sonrası maliyet görünecek' : 'Dataset oluşturun'}
+                    </Typography>
+                  )}
+                </Grid>
 
-          {/* ✅ Analiz Özeti (varsa) */}
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingPreview && pricingPreview.data_points > 0 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block', textAlign: 'right' }}>
+                      📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} veri noktası
+                    </Typography>
+                  )}
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Analiz Özeti (varsa) */}
           {analysisSummary && (
             <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#e8f5e9', border: '1px solid #a5d6a7' }}>
               <CardContent sx={{ py: 1.5, px: 2 }}>
@@ -1295,7 +1334,7 @@ export default function SimulationPage() {
         </Grid>
       </Grid>
 
-      {/* ✅ Tanıtım Kartları - Emniyet Stoğu'ndaki gibi düzenlendi */}
+      {/* ✅ Tanıtım Kartları */}
       <Card sx={{ mb: 2, borderRadius: 2, bgcolor: 'info.light', border: '1px solid #90caf9' }}>
         <CardContent sx={{ py: 1.5, px: 2 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
@@ -1351,16 +1390,6 @@ export default function SimulationPage() {
               </Typography>
             </Grid>
           </Grid>
-        </CardContent>
-      </Card>
-
-      {/* Kredi Bakiyesi */}
-      <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
-        <CardContent sx={{ py: 1, px: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>💰 Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Simülasyon başına {costData?.cost || 10} kredi</Typography>
-          </Box>
         </CardContent>
       </Card>
 
@@ -1584,8 +1613,7 @@ export default function SimulationPage() {
         </Card>
       )}
 
-      {/* ✅ Geçmiş Dialog */}
-      {/* ✅ Geçmiş Dialog - DÜZENLENMİŞ */}
+      {/* Geçmiş Dialog */}
       <Dialog
         open={historyDialogOpen}
         onClose={() => setHistoryDialogOpen(false)}
@@ -1638,10 +1666,7 @@ export default function SimulationPage() {
                     const itemDate = new Date(item.created_at);
                     const dateStr = itemDate.toLocaleDateString('tr-TR');
                     const timeStr = itemDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-                    const total = item.data?.total || 0;
                     const status = item.data?.status || 'completed';
-                    
-                    // ✅ Durum config
                     const statusConfig = {
                       completed: { label: '✅ Tamamlandı', color: 'success' },
                       processing: { label: '🔄 İşleniyor', color: 'warning' },
@@ -1663,10 +1688,10 @@ export default function SimulationPage() {
                           </Box>
                         </TableCell>
                         <TableCell sx={{ fontSize: '0.7rem', fontWeight: 500 }}>
-                          {item.data?.report_name || 'Backtest Analizi'}
+                          {item.data?.report_name || 'Monte Carlo Simülasyonu'}
                         </TableCell>
                         <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
-                          {total}
+                          {item.data?.total || 0}
                         </TableCell>
                         <TableCell align="center">
                           <Chip

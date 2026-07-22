@@ -318,3 +318,130 @@ class AnalysisMaterialSummary(Base):
     
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
+
+# ============================================================
+# 🆕 PROCESSING CREDIT MİMARİSİ - YENİ MODELLER
+# ============================================================
+    
+    # Durum
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Metadata
+    description = Column(String, nullable=True)
+    version = Column(String, default="1.0")
+
+class ProcessingScoreRange(Base):
+    """
+    Processing Score -> İşlem Kredisi eşleştirme tablosu
+    """
+    __tablename__ = "processing_score_ranges"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    min_score = Column(Integer, nullable=False)  # Minimum Processing Score
+    max_score = Column(Integer, nullable=False)  # Maksimum Processing Score
+    credit_cost = Column(Integer, nullable=False)  # Bu aralığa denk gelen İşlem Kredisi
+    description = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AnalysisDataset(Base):
+    """
+    Dataset tablosu - Her analiz için oluşturulan veri kümesi
+    """
+    __tablename__ = "analysis_datasets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    upload_id = Column(String, nullable=True, index=True)  # Upload'dan gelen ID
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Dataset metrikleri
+    product_count = Column(Integer, default=0)  # Ürün sayısı
+    period_count = Column(Integer, default=0)  # Dönem sayısı (hafta)
+    data_points = Column(Integer, default=0)  # ProductCount × PeriodCount
+    
+    # Dataset içeriği (JSON)
+    dataset_data = Column(JSONB, nullable=False, default={})
+    
+    # Metadata
+    source_type = Column(String, default="excel")  # excel, api, erp, csv
+    source_name = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+    is_active = Column(Boolean, default=True)
+    
+    # İlişki
+    user = relationship("User")
+
+
+class ProcessingTransaction(Base):
+    """
+    İşlem Kredisi harcama log tablosu
+    """
+    __tablename__ = "processing_transactions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    dataset_id = Column(Integer, ForeignKey("analysis_datasets.id"), nullable=True)
+    endpoint = Column(String, nullable=False)
+    
+    # Hesaplama detayları
+    processing_score = Column(Integer, nullable=False)
+    credit_cost = Column(Integer, nullable=False)
+    balance_after = Column(Integer, nullable=False)
+    
+    # Performance
+    elapsed_time_ms = Column(Float, nullable=True)  # Gerçek işlem süresi (ms)
+    avg_time_per_unit_ms = Column(Float, nullable=True)  # Birim başına ortalama süre
+    
+    # Metadata
+    status = Column(String, default="completed")  # completed, failed
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # İlişki
+    user = relationship("User")
+    dataset = relationship("AnalysisDataset")
+
+# ============================================================
+# 🆕 ENDPOINT PROFILE MODELİ
+# ============================================================
+
+class EndpointProfile(Base):
+    """
+    Endpoint profil tablosu - Her endpoint'in fiyatlandırma profili
+    """
+    __tablename__ = "endpoint_profiles"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    endpoint = Column(String, unique=True, nullable=False, index=True)
+    method = Column(String, default="POST")
+    
+    # Ücretlendirme parametreleri
+    base_credit = Column(Integer, default=1)
+    pricing_type = Column(String, default="DATA_POINTS")  # FIXED, DATA_POINTS, DATA_POINTS_ITERATION, AI_USAGE, CUSTOM, COMPLEX
+    algorithm_weight = Column(Float, default=1.0)
+    avg_time_per_unit = Column(Float, default=0.0)
+    
+    # 🆕 Dataset konfigürasyonu (JSONB)
+    dataset_config = Column(JSONB, default={}, nullable=False)
+    # Örnek:
+    # {
+    #   "datasets": [
+    #     {"table": "materials", "weight": 1.0, "type": "data_points"},
+    #     {"table": "material_suppliers", "weight": 1.5, "type": "relation"},
+    #     {"table": "suppliers", "weight": 0.5, "type": "lookup"}
+    #   ]
+    # }
+    
+    # Durum
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Metadata
+    description = Column(String, nullable=True)
+    version = Column(String, default="1.0")

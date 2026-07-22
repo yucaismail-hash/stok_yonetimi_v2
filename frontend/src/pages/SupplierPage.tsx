@@ -1,4 +1,5 @@
-// frontend/src/pages/SupplierPage.tsx - TAM DOSYA (GEÇMİŞ DIALOG DÜZENLENDİ)
+// frontend/src/pages/SupplierPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
+// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
 
 import { useState, useEffect } from 'react';
 import {
@@ -61,11 +62,13 @@ import {
   TrendingUp,
   TrendingDown,
   Pending,
+  AccountBalanceWallet,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
-
+import { usePricingPreview } from '../hooks/usePricing';
+import { fetchAndLoadResult, checkAndLoadAnalysis } from '../utils/loadAnalysisResult';
 interface SupplierResult {
   supplier_id: string;
   name: string;
@@ -88,7 +91,6 @@ interface HistoryItem {
   data: any;
 }
 
-// ✅ Analiz Aşamaları Interface
 interface AnalysisStep {
   label: string;
   description: string;
@@ -96,7 +98,6 @@ interface AnalysisStep {
   timestamp?: string;
 }
 
-// ✅ Analiz Özeti Interface
 interface AnalysisSummary {
   totalSuppliers: number;
   avgRiskScore: number;
@@ -108,7 +109,6 @@ interface AnalysisSummary {
   topSupplierScore: number;
 }
 
-// ✅ AI Yorumu Interface
 interface AIComment {
   summary: string;
   risk: string;
@@ -117,7 +117,7 @@ interface AIComment {
   confidence: string;
 }
 
-// ✅ Analiz Aşamaları Bileşeni (Kompakt)
+// ✅ Analiz Aşamaları Bileşeni
 const AnalysisProgress = ({ 
   steps, 
   activeStep, 
@@ -206,13 +206,52 @@ export default function SupplierPage() {
   const [analysisSummary, setAnalysisSummary] = useState<AnalysisSummary | null>(null);
   const [aiComment, setAiComment] = useState<AIComment | null>(null);
 
-  // ✅ State'ler
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isProcessing, setIsProcessing] = useState(false);
   const [activeAsyncTask, setActiveAsyncTask] = useState<string | null>(null);
 
-  // ✅ Normal Analiz Aşamaları State'leri
+  const [snackbar, setSnackbar] = useState<{ 
+    open: boolean; 
+    message: string; 
+    severity: 'success' | 'error' | 'info' 
+  }>({
+    open: false,
+    message: '',
+    severity: 'info',
+  });
+
+  // 🆕 Dataset ID için state
+  const [activeDatasetId, setActiveDatasetId] = useState<number | null>(() => {
+    const saved = localStorage.getItem('activeDatasetId');
+    return saved ? parseInt(saved) : null;
+  });
+
+  // 🆕 Pricing Preview Hook
+  const { data: pricingPreview, isLoading: pricingLoading } = usePricingPreview(
+    '/api/supplier/batch',
+    activeDatasetId || undefined
+  );
+
+    // 🆕 Dataset ID'yi al
+  useEffect(() => {
+    const fetchDataset = async () => {
+      if (!activeDatasetId) {
+        try {
+          const res = await api.get('/api/upload/datasets');
+          if (res.data.success && res.data.datasets?.length > 0) {
+            const firstDataset = res.data.datasets[0];
+            setActiveDatasetId(firstDataset.id);
+            localStorage.setItem('activeDatasetId', String(firstDataset.id));
+          }
+        } catch (error) {
+          console.error('❌ Dataset alınamadı:', error);
+        }
+      }
+    };
+    fetchDataset();
+  }, [activeDatasetId]);
+
   const [steps, setSteps] = useState<AnalysisStep[]>([
     { label: 'Veri okunuyor...', description: 'Excel dosyası kontrol ediliyor', status: 'pending' },
     { label: 'Tedarikçi verileri hazırlanıyor...', description: 'Tedarikçi bilgileri işleniyor', status: 'pending' },
@@ -224,7 +263,6 @@ export default function SupplierPage() {
   const [activeStep, setActiveStep] = useState(-1);
   const [isAnalysisComplete, setIsAnalysisComplete] = useState(false);
 
-  // ✅ Async Analiz Aşamaları State'leri
   const [asyncSteps, setAsyncSteps] = useState<AnalysisStep[]>([
     { label: 'Analiz Ediliyor...', description: 'Veriler işleniyor', status: 'pending' },
     { label: 'Görev Oluşturuluyor...', description: 'Arka plan işlemi başlatılıyor', status: 'pending' },
@@ -232,38 +270,6 @@ export default function SupplierPage() {
   ]);
   const [asyncActiveStep, setAsyncActiveStep] = useState(-1);
   const [isAsyncComplete, setIsAsyncComplete] = useState(false);
-
-  // ✅ Snackbar
-  const [snackbar, setSnackbar] = useState<{ 
-    open: boolean; 
-    message: string; 
-    severity: 'success' | 'error' | 'info' 
-  }>({
-    open: false,
-    message: '',
-    severity: 'info',
-  });
-
-  // ✅ Kredi maliyeti
-  const { data: costData } = useQuery({
-    queryKey: ['supplier-cost'],
-    queryFn: async () => {
-      try {
-        const res = await api.get('/api/cost', {
-          params: {
-            endpoint: '/api/supplier/optimize-shares',
-            method: 'POST'
-          }
-        });
-        return res.data;
-      } catch (error) {
-        console.error('❌ Kredi cost hatası:', error);
-        return { cost: 8 };
-      }
-    },
-    initialData: { cost: 8 },
-    staleTime: 60000,
-  });
 
   useEffect(() => {
     checkSupplierData();
@@ -288,10 +294,17 @@ export default function SupplierPage() {
     }
   };
 
-  // ✅ Sleep helper
+
+  const handleFetchAndLoad = (id: number) => {
+    fetchAndLoadResult(id, setSuppliers, setPage, setSuccess, setError, setLoading);
+  };
+
+  useEffect(() => {
+    checkAndLoadAnalysis('supplier', handleFetchAndLoad);
+  }, []);
+
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // ✅ Adım güncelleme fonksiyonu
   const updateStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
     setSteps(prev => prev.map((step, i) => {
       if (i === index) {
@@ -307,7 +320,6 @@ export default function SupplierPage() {
     setActiveStep(index);
   };
 
-  // ✅ Async Adım güncelleme
   const updateAsyncStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
     setAsyncSteps(prev => prev.map((step, i) => {
       if (i === index) {
@@ -323,7 +335,6 @@ export default function SupplierPage() {
     setAsyncActiveStep(index);
   };
 
-  // ✅ Aşamaları sıfırla
   const resetSteps = () => {
     setSteps(prev => prev.map(step => ({
       ...step,
@@ -334,7 +345,6 @@ export default function SupplierPage() {
     setIsAnalysisComplete(false);
   };
 
-  // ✅ Async aşamaları sıfırla
   const resetAsyncSteps = () => {
     setAsyncSteps(prev => prev.map(step => ({
       ...step,
@@ -345,7 +355,6 @@ export default function SupplierPage() {
     setIsAsyncComplete(false);
   };
 
-  // ✅ Tüm aşamaları temizle
   const clearAllSteps = () => {
     resetSteps();
     resetAsyncSteps();
@@ -355,7 +364,6 @@ export default function SupplierPage() {
     setAiComment(null);
   };
 
-  // ✅ Analiz Özeti oluştur
   const generateSummary = (suppliersData: SupplierResult[]) => {
     if (!suppliersData || suppliersData.length === 0) return null;
 
@@ -382,7 +390,6 @@ export default function SupplierPage() {
     };
   };
 
-  // ✅ AI Yorumu oluştur
   const generateAIComment = (summary: AnalysisSummary) => {
     if (!summary) return null;
 
@@ -431,39 +438,6 @@ export default function SupplierPage() {
     };
   };
 
-  // ✅ Rapor adını belirleme fonksiyonu
-  const getReportName = (items: any[]): string => {
-    if (!items || items.length === 0) return 'Tedarikçi Analizi';
-    
-    const firstItem = items[0];
-    const resultType = firstItem?.result_type || firstItem?.data?.result_type || '';
-    const resultData = firstItem?.data || {};
-    
-    if (resultType === 'supplier_batch' || resultType === 'supplier_batch_async') {
-      const totalSuppliers = resultData?.total_suppliers || resultData?.suppliers?.length || 0;
-      return `Tedarikçi Analizi (${totalSuppliers} tedarikçi)`;
-    }
-    
-    if (resultType === 'forecast_batch' || resultType === 'forecast_batch_async') {
-      return 'Talep Tahmini';
-    }
-    
-    if (resultType === 'safety_stock_batch' || resultType === 'safety_stock_batch_async') {
-      return 'Emniyet Stoğu';
-    }
-    
-    if (resultType === 'simulation_batch' || resultType === 'simulation_batch_async') {
-      return 'Monte Carlo Simülasyonu';
-    }
-    
-    if (resultType === 'backtest_batch' || resultType === 'backtest_batch_async') {
-      return 'Backtest Analizi';
-    }
-    
-    return 'Tedarikçi Analizi';
-  };
-
-  // ✅ Aşamaları başlat (Normal Analiz)
   const startAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -533,7 +507,6 @@ export default function SupplierPage() {
     }
   };
 
-  // ✅ Async Aşamaları başlat
   const startAsyncAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -596,6 +569,15 @@ export default function SupplierPage() {
         setSuccess(`${data.total_suppliers || 0} tedarikçi başarıyla analiz edildi.`);
         setTimeout(() => setSuccess(null), 5000);
         await fetchUser();
+        
+        // ✅ Yeni: credit_cost ve balance_after'i göster
+        if (data.credit_cost !== undefined) {
+          setSnackbar({
+            open: true,
+            message: `💰 ${data.credit_cost} kredi harcandı. Kalan: ${data.balance_after} kredi. Processing Score: ${data.processing_score || '-'}`,
+            severity: 'info',
+          });
+        }
       } else {
         setError(data.error || 'Tedarikçi analizi başarısız');
       }
@@ -627,8 +609,7 @@ export default function SupplierPage() {
       setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}
-📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0,8)}\n💰 Kredi: ${data.credit_cost || 0}, Kalan: ${data.balance_after || 0}`,
         severity: 'success',
       });
       setProgress(10);
@@ -655,7 +636,6 @@ export default function SupplierPage() {
     },
   });
 
-  // 📌 Async İlerleme Kontrol
   const checkAsyncProgress = async (taskId: string) => {
     if (!taskId) return;
     try {
@@ -700,81 +680,73 @@ export default function SupplierPage() {
   };
 
   const fetchHistory = async () => {
-      setLoading(true);
-      try {
-          const res = await api.get('/api/upload/results', {
-              params: { 
-                  result_type: 'supplier_batch', 
-                  limit: 10000 
-              }
-          });
+    setLoading(true);
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { 
+          result_type: 'supplier_batch', 
+          limit: 10000 
+        }
+      });
 
-          if (res.data.success) {
-              const rawResults = res.data.results || [];
-              console.log(`📊 ${rawResults.length} sonuç bulundu`);
-              
-              // ✅ SADECE BATCH kayıtlarını al
-              const batchResults = rawResults.filter((item: any) => item.is_batch === true);
-              
-              console.log(`📊 ${batchResults.length} batch sonucu bulundu`);
-              
-              const historyItems = batchResults.map((item: any) => {
-                  const data = item.data || {};
-                  const totalSuppliers = item.total_materials || data.total_suppliers || 0;
-                  
-                  // ✅ Tedarikçi özet bilgileri
-                  const suppliers = data?.suppliers || [];
-                  let highRiskCount = 0;
-                  let lowRiskCount = 0;
-                  let topSupplier = '-';
-                  let topSupplierScore = 0;
-                  
-                  if (suppliers.length > 0) {
-                      suppliers.forEach((s: any) => {
-                          if (s.risk_level === 'YÜKSEK') highRiskCount++;
-                          if (s.risk_level === 'DÜŞÜK') lowRiskCount++;
-                      });
-                      
-                      // En iyi performans gösteren tedarikçiyi bul
-                      const sorted = [...suppliers].sort((a, b) => (b.performance_score || 0) - (a.performance_score || 0));
-                      if (sorted.length > 0) {
-                          topSupplier = sorted[0]?.name || '-';
-                          topSupplierScore = sorted[0]?.performance_score || 0;
-                      }
-                  }
-                  
-                  // ✅ Rapor adını zenginleştir
-                  const reportName = `Tedarikçi Analizi (${totalSuppliers} Tedarikçi) - ${lowRiskCount} Düşük Risk, ${highRiskCount} Yüksek Risk - En İyi: ${topSupplier}`;
-                  
-                  return {
-                      id: item.id,
-                      created_at: item.created_at,
-                      data: {
-                          total: totalSuppliers,
-                          suppliers: suppliers,
-                          recommendations: data?.recommendations || [],
-                          report_name: reportName,
-                          status: item.status || 'completed',
-                          high_risk_count: highRiskCount,
-                          low_risk_count: lowRiskCount,
-                          top_supplier: topSupplier,
-                          top_supplier_score: topSupplierScore,
-                      }
-                  };
-              });
-              
-              setHistoryData(historyItems);
-              setHistoryDialogOpen(true);
-              setError(null);
-          } else {
-              setError('Geçmiş sonuçlar yüklenemedi');
+      if (res.data.success) {
+        const rawResults = res.data.results || [];
+        const batchResults = rawResults.filter((item: any) => item.is_batch === true);
+        
+        const historyItems = batchResults.map((item: any) => {
+          const data = item.data || {};
+          const totalSuppliers = item.total_materials || data.total_suppliers || 0;
+          
+          const suppliersData = data?.suppliers || [];
+          let highRiskCount = 0;
+          let lowRiskCount = 0;
+          let topSupplier = '-';
+          let topSupplierScore = 0;
+          
+          if (suppliersData.length > 0) {
+            suppliersData.forEach((s: any) => {
+              if (s.risk_level === 'YÜKSEK') highRiskCount++;
+              if (s.risk_level === 'DÜŞÜK') lowRiskCount++;
+            });
+            
+            const sorted = [...suppliersData].sort((a, b) => (b.performance_score || 0) - (a.performance_score || 0));
+            if (sorted.length > 0) {
+              topSupplier = sorted[0]?.name || '-';
+              topSupplierScore = sorted[0]?.performance_score || 0;
+            }
           }
-      } catch (err: any) {
-          console.error('❌ Geçmiş hatası:', err);
-          setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
-      } finally {
-          setLoading(false);
+          
+          const reportName = `Tedarikçi Analizi (${totalSuppliers} Tedarikçi) - ${lowRiskCount} Düşük Risk, ${highRiskCount} Yüksek Risk - En İyi: ${topSupplier}`;
+          
+          return {
+            id: item.id,
+            created_at: item.created_at,
+            data: {
+              total: totalSuppliers,
+              suppliers: suppliersData,
+              recommendations: data?.recommendations || [],
+              report_name: reportName,
+              status: item.status || 'completed',
+              high_risk_count: highRiskCount,
+              low_risk_count: lowRiskCount,
+              top_supplier: topSupplier,
+              top_supplier_score: topSupplierScore,
+            }
+          };
+        });
+        
+        setHistoryData(historyItems);
+        setHistoryDialogOpen(true);
+        setError(null);
+      } else {
+        setError('Geçmiş sonuçlar yüklenemedi');
       }
+    } catch (err: any) {
+      console.error('❌ Geçmiş hatası:', err);
+      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleViewHistory = (item: HistoryItem) => {
@@ -787,7 +759,6 @@ export default function SupplierPage() {
       setSuccess(`${historySuppliers.length} tedarikçi geçmiş sonuçları yüklendi.`);
       setTimeout(() => setSuccess(null), 3000);
       
-      // ✅ Analiz özetini güncelle
       const summary = generateSummary(historySuppliers);
       setAnalysisSummary(summary);
       if (summary) {
@@ -859,7 +830,10 @@ export default function SupplierPage() {
     }
   };
 
-  // ✅ Hero Header Bileşeni
+  const isNormalAnalysisActive = activeStep >= 0 && !isAsyncComplete && !activeAsyncTask;
+  const isAsyncAnalysisActive = asyncActiveStep >= 0 || isAsyncComplete;
+
+  // ✅ Hero Header
   const HeroHeader = () => (
     <Card sx={{ mb: 3, borderRadius: 2, bgcolor: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)', border: '1px solid #d0e0ff' }}>
       <CardContent sx={{ py: 2.5, px: 3 }}>
@@ -924,9 +898,9 @@ export default function SupplierPage() {
           <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: summary ? '#e8f5e9' : '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
             <AttachMoney sx={{ fontSize: 18, color: summary ? '#2e7d32' : '#1f4e79' }} />
             <Typography variant="h6" sx={{ fontWeight: 700, fontSize: '0.9rem', color: summary ? '#2e7d32' : '#1f4e79' }}>
-              {summary ? costData?.cost || 8 : '-'}
+              {summary ? summary.totalSuppliers : '-'}
             </Typography>
-            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Token</Typography>
+            <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>Toplam Tedarikçi</Typography>
           </Paper>
         </Grid>
       </Grid>
@@ -972,9 +946,6 @@ export default function SupplierPage() {
       </Card>
     );
   };
-
-  const isNormalAnalysisActive = activeStep >= 0 && !isAsyncComplete && !activeAsyncTask;
-  const isAsyncAnalysisActive = asyncActiveStep >= 0 || isAsyncComplete;
 
   return (
     <Box>
@@ -1152,7 +1123,7 @@ export default function SupplierPage() {
                     minWidth: 120,
                   }}
                 >
-                  {supplierMutation.isPending ? 'Analiz Ediliyor...' : `Analiz Et (${costData?.cost || 8} Kredi)`}
+                  {supplierMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
                 </Button>
 
                 <Button
@@ -1172,7 +1143,7 @@ export default function SupplierPage() {
                     minWidth: 120,
                   }}
                 >
-                  {asyncSupplierMutation.isPending ? 'Başlatılıyor...' : `Arka Planda Çalıştır (${costData?.cost || 8} Kredi)`}
+                  {asyncSupplierMutation.isPending ? 'Başlatılıyor...' : 'Arka Planda Çalıştır'}
                 </Button>
 
                 <Button
@@ -1195,6 +1166,89 @@ export default function SupplierPage() {
                   {loading ? 'Yükleniyor...' : 'Geçmiş'}
                 </Button>
               </Stack>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Kredi Bakiyesi ve Maliyet Önizleme */}
+          <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <AccountBalanceWallet sx={{ fontSize: 20, color: '#f57c00' }} />
+                    <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                      Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
+                    </Typography>
+                  </Box>
+                </Grid>
+                
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingLoading ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Maliyet hesaplanıyor...
+                      </Typography>
+                    </Box>
+                  ) : pricingPreview && pricingPreview.estimated_credit_cost > 0 ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AttachMoney sx={{ fontSize: 18, color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }} />
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        Tahmini Maliyet: <strong style={{ color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }}>
+                          {pricingPreview.estimated_credit_cost} Kredi
+                        </strong>
+                      </Typography>
+                      {!pricingPreview.is_sufficient && (
+                        <Chip 
+                          label="Yetersiz Bakiye!" 
+                          size="small" 
+                          color="error" 
+                          sx={{ height: 20, fontSize: '0.55rem' }}
+                        />
+                      )}
+                      {pricingPreview.is_sufficient && pricingPreview.processing_score > 0 && (
+                        <Chip 
+                          label={`Score: ${pricingPreview.processing_score}`} 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ height: 18, fontSize: '0.5rem' }}
+                        />
+                      )}
+                      {pricingPreview.calculation_method === 'dataset_complexity' && (
+                        <Chip 
+                          label="🧩 Complex" 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ height: 16, fontSize: '0.45rem', color: '#9c27b0' }}
+                        />
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {activeDatasetId ? 'Analiz sonrası maliyet görünecek' : 'Dataset oluşturun'}
+                    </Typography>
+                  )}
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingPreview && pricingPreview.calculation_method === 'dataset_complexity' && pricingPreview.breakdown ? (
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block' }}>
+                        🧩 Dataset Complexity: {pricingPreview.breakdown.total || 0}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.5rem', display: 'block' }}>
+                        📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} 
+                        {pricingPreview.breakdown.relation && ` + ${pricingPreview.breakdown.relation.score} ilişki`}
+                        {pricingPreview.breakdown.lookup && ` + ${pricingPreview.breakdown.lookup.score} referans`}
+                      </Typography>
+                    </Box>
+                  ) : pricingPreview && pricingPreview.data_points > 0 ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block', textAlign: 'right' }}>
+                      📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} veri noktası
+                    </Typography>
+                  ) : null}
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
 
@@ -1297,16 +1351,6 @@ export default function SupplierPage() {
               </Typography>
             </Grid>
           </Grid>
-        </CardContent>
-      </Card>
-
-      {/* Kredi Bakiyesi */}
-      <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
-        <CardContent sx={{ py: 1, px: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>💰 Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong></Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>Analiz başına {costData?.cost || 8} kredi</Typography>
-          </Box>
         </CardContent>
       </Card>
 
@@ -1453,7 +1497,7 @@ export default function SupplierPage() {
         </Card>
       )}
 
-      {/* ✅ Geçmiş Dialog - DÜZENLENMİŞ */}
+      {/* Geçmiş Dialog */}
       <Dialog
         open={historyDialogOpen}
         onClose={() => setHistoryDialogOpen(false)}
@@ -1506,10 +1550,7 @@ export default function SupplierPage() {
                     const itemDate = new Date(item.created_at);
                     const dateStr = itemDate.toLocaleDateString('tr-TR');
                     const timeStr = itemDate.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-                    const total = item.data?.total || 0;
                     const status = item.data?.status || 'completed';
-                    
-                    // ✅ Durum config
                     const statusConfig = {
                       completed: { label: '✅ Tamamlandı', color: 'success' },
                       processing: { label: '🔄 İşleniyor', color: 'warning' },
@@ -1534,7 +1575,7 @@ export default function SupplierPage() {
                           {item.data?.report_name || 'Tedarikçi Analizi'}
                         </TableCell>
                         <TableCell align="center" sx={{ fontSize: '0.7rem', fontWeight: 600 }}>
-                          {total}
+                          {item.data?.total || 0}
                         </TableCell>
                         <TableCell align="center">
                           <Chip
@@ -1571,4 +1612,4 @@ export default function SupplierPage() {
       </Dialog>
     </Box>
   );
-} 
+}

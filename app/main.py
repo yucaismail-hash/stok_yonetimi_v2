@@ -1,18 +1,21 @@
+import os
+import re
+import logging
+import uvicorn
+from jose import jwt
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.database import engine, Base, init_db
-from app.api.endpoints import notifications, tasks, upload, forecast, simulate, report, pattern, safety_stock, backtest, supplier, learning, export, payment, profile, sectors, cost
-from app.api.endpoints import polar, dashboard  
+from app.database import engine, Base, init_db, SessionLocal
+from app.api.endpoints import (notifications, tasks, upload, 
+                               forecast, simulate, report, pattern, 
+                               safety_stock, backtest, supplier, learning, 
+                               export, payment, profile, sectors, cost,
+                                 pricing, polar, dashboard)
 from app.auth import auth_router
 from app.admin import router as admin_router
 from app.models import User, TokenCost, TokenHistory
-from app.database import SessionLocal
-from jose import jwt
-import os
-import logging
-import re
-import uvicorn
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,9 +56,18 @@ async def token_middleware(request: Request, call_next):
         r"^/api/upload/upload",
         r"^/api/upload/clear",
         r"^/api/upload/results",
+        r"^/api/upload/build-dataset",      # ✅ YENİ
+        r"^/api/upload/datasets",           # ✅ YENİ
+        r"^/api/upload/dataset/",           # ✅ YENİ
         r"^/api/polar/webhook",
         r"^/success$",        # ✅ Public
         r"^/cancel$",         # ✅ Public
+        # ✅ Yeni pricing endpoint'leri (admin üzerinden)
+        r"^/admin/endpoint-profiles",
+        r"^/admin/score-ranges",
+        r"^/admin/processing-transactions",
+        # ✅ Pricing Engine preview endpoint'i
+        r"^/api/pricing/preview",
     ]
     
     path = request.url.path
@@ -214,6 +226,7 @@ app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(polar.router, prefix="/api", tags=["polar"])
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
+app.include_router(pricing.router, prefix="/api", tags=["pricing"])
 
 
 # ============================================
@@ -260,6 +273,8 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=8000,
         reload=True,
-        timeout_keep_alive=120,
-        timeout_graceful_shutdown=60
+        timeout_keep_alive=120,          # ✅ Var
+        timeout_graceful_shutdown=30,    # ✅ 60'tan 30'a düşür
+        limit_concurrency=10,            # ✅ EKLE - eşzamanlı bağlantı limiti
+        timeout_notify=30                # ✅ EKLE - bildirim zaman aşımı
     )

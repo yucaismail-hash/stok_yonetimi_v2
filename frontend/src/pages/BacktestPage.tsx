@@ -1,4 +1,5 @@
-// frontend/src/pages/BacktestPage.tsx - DÜZELTİLMİŞ TAM KOD
+// frontend/src/pages/BacktestPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
+// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
 
 import { useState, useEffect } from 'react';
 import {
@@ -34,7 +35,7 @@ import {
   alpha,
 } from '@mui/material';
 import {
-  Backpack,
+  School,
   Send,
   Download,
   History,
@@ -56,15 +57,17 @@ import {
   Warning as WarningIcon,
   TrendingUp,
   TrendingDown,
-  School,
   Timeline,
   Analytics,
   Star,
   ShowChart,
+  AccountBalanceWallet,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
+import { usePricingPreview } from '../hooks/usePricing';
+import { fetchAndLoadResult, checkAndLoadAnalysis } from '../utils/loadAnalysisResult';
 
 interface BacktestResult {
   material_code: string;
@@ -113,7 +116,6 @@ const strategyColors: Record<string, string> = {
   last_value: '#6d4c41',
 };
 
-// ✅ Strateji Detayları (Tanıtım Kartları için)
 interface StrategyDetail {
   key: string;
   label: string;
@@ -231,7 +233,6 @@ const strategyDetails: StrategyDetail[] = [
 export default function BacktestPage() {
   const { user, fetchUser } = useAuth();
 
-  // ✅ STATE'LER
   const [hasUploadedData, setHasUploadedData] = useState(false);
   const [isCheckingData, setIsCheckingData] = useState(true);
   const [results, setResults] = useState<BacktestResult[]>([]);
@@ -245,12 +246,10 @@ export default function BacktestPage() {
   const [materialCount, setMaterialCount] = useState(0);
   const [maxAvailableWeeks, setMaxAvailableWeeks] = useState(0);
 
-  // ✅ VALIDASYON STATE'LERİ
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isDataValid, setIsDataValid] = useState<boolean>(true);
   const [testWindow, setTestWindow] = useState(8);
 
-  // ✅ ANALİZ STATE'LERİ
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -265,26 +264,46 @@ export default function BacktestPage() {
     severity: 'info',
   });
 
-  // ✅ KREDİ MALİYETİ
-  const { data: costData } = useQuery({
-    queryKey: ['backtest-cost'],
-    queryFn: async () => {
-      try {
-        const res = await api.get('/api/cost', {
-          params: { endpoint: '/api/backtest', method: 'POST' },
-        });
-        return res.data;
-      } catch {
-        return { cost: 15 };
-      }
-    },
-    initialData: { cost: 15 },
-    staleTime: 60000,
+  // 🆕 Dataset ID için state
+  const [activeDatasetId, setActiveDatasetId] = useState<number | null>(() => {
+    const saved = localStorage.getItem('activeDatasetId');
+    return saved ? parseInt(saved) : null;
   });
 
-  // ============================================================
-  // 📌 VERİ KONTROL FONKSİYONLARI
-  // ============================================================
+  // 🆕 Pricing Preview Hook
+  const { data: pricingPreview, isLoading: pricingLoading } = usePricingPreview(
+    '/api/backtest/batch',
+    activeDatasetId || undefined
+  );
+    
+    // 🆕 Dataset ID'yi al
+  useEffect(() => {
+    const fetchDataset = async () => {
+      if (!activeDatasetId) {
+        try {
+          const res = await api.get('/api/upload/datasets');
+          if (res.data.success && res.data.datasets?.length > 0) {
+            const firstDataset = res.data.datasets[0];
+            setActiveDatasetId(firstDataset.id);
+            localStorage.setItem('activeDatasetId', String(firstDataset.id));
+          }
+        } catch (error) {
+          console.error('❌ Dataset alınamadı:', error);
+        }
+      }
+    };
+    fetchDataset();
+  }, [activeDatasetId]);
+
+  // fetchAndLoadResult fonksiyonunu tanımla
+  const handleFetchAndLoad = (id: number) => {
+    fetchAndLoadResult(id, setResults, setPage, setSuccess, setError, setLoading);
+  };
+
+  useEffect(() => {
+    checkAndLoadAnalysis('backtest', handleFetchAndLoad);
+  }, []);
+
 
   const validateDataForBacktest = (testWindowValue: number, availableWeeks: number) => {
     const minRequired = Math.max(8, testWindowValue + 4);
@@ -350,10 +369,6 @@ export default function BacktestPage() {
     }
   };
 
-  // ============================================================
-  // 📌 SLIDER HANDLER
-  // ============================================================
-
   const handleSliderChange = (_event: Event, value: number | number[]) => {
     const newValue = Array.isArray(value) ? value[0] : value;
     setTestWindow(newValue);
@@ -366,18 +381,11 @@ export default function BacktestPage() {
     }
   };
 
-  // ============================================================
-  // 📌 EFFECTS
-  // ============================================================
-
   useEffect(() => {
     checkUploadedData();
   }, []);
 
-  // ============================================================
-  // 📌 SENKRON BACKTEST
-  // ============================================================
-
+  // 📌 SENKRON Backtest
   const backtestMutation = useMutation({
     mutationFn: async () => {
       setProgress(0);
@@ -398,6 +406,15 @@ export default function BacktestPage() {
         setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla test edildi.`);
         setTimeout(() => setSuccess(null), 5000);
         await fetchUser();
+        
+        // ✅ Yeni: credit_cost ve balance_after'i göster
+        if (data.credit_cost !== undefined) {
+          setSnackbar({
+            open: true,
+            message: `💰 ${data.credit_cost} kredi harcandı. Kalan: ${data.balance_after} kredi. Processing Score: ${data.processing_score || '-'}`,
+            severity: 'info',
+          });
+        }
       } else {
         setError(data.error || 'Backtest başarısız');
       }
@@ -416,10 +433,7 @@ export default function BacktestPage() {
     },
   });
 
-  // ============================================================
-  // 📌 ASYNC BACKTEST
-  // ============================================================
-
+  // 📌 ASYNC Backtest
   const asyncBacktestMutation = useMutation({
     mutationFn: async () => {
       setProgress(5);
@@ -434,7 +448,7 @@ export default function BacktestPage() {
       setActiveAsyncTask(data.task_id);
       setSnackbar({
         open: true,
-        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0, 8)}\n📋 ASYNC Görevler sayfasından ilerlemenizi takip edebilirsiniz.`,
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${data.task_id.slice(0, 8)}\n💰 Kredi: ${data.credit_cost || 0}, Kalan: ${data.balance_after || 0}`,
         severity: 'success',
       });
       setProgress(10);
@@ -461,10 +475,6 @@ export default function BacktestPage() {
       setProgressLabel('Hata!');
     },
   });
-
-  // ============================================================
-  // 📌 ASYNC İLERLEME KONTROL
-  // ============================================================
 
   const checkAsyncProgress = async (taskId: string) => {
     if (!taskId) return;
@@ -506,10 +516,6 @@ export default function BacktestPage() {
       setError('Async durum kontrolü başarısız');
     }
   };
-
-  // ============================================================
-  // 📌 GEÇMİŞ LİSTESİ
-  // ============================================================
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -583,10 +589,6 @@ export default function BacktestPage() {
     }
   };
 
-  // ============================================================
-  // 📌 EXCEL İNDİR
-  // ============================================================
-
   const handleExport = async () => {
     if (results.length === 0) {
       setError('Aktarılacak sonuç yok!');
@@ -613,10 +615,6 @@ export default function BacktestPage() {
     }
   };
 
-  // ============================================================
-  // 📌 PAGINATION
-  // ============================================================
-
   const handleChangePage = (_event: unknown, newPage: number) => setPage(newPage);
   const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
     setRowsPerPage(parseInt(event.target.value, 10));
@@ -625,19 +623,11 @@ export default function BacktestPage() {
 
   const paginatedResults = results.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
 
-  // ============================================================
-  // 📌 YARDIMCI FONKSİYONLAR
-  // ============================================================
-
   const getRiskColor = (value: number) => {
     if (value <= 0.2) return 'success';
     if (value <= 0.4) return 'warning';
     return 'error';
   };
-
-  // ============================================================
-  // 📌 RENDER
-  // ============================================================
 
   return (
     <Box>
@@ -657,7 +647,7 @@ export default function BacktestPage() {
         </Alert>
       </Snackbar>
 
-      {/* ✅ Hero Header */}
+      {/* Hero Header */}
       <Card
         sx={{
           mb: 3,
@@ -741,7 +731,7 @@ export default function BacktestPage() {
         </Alert>
       )}
 
-      {/* ✅ KPI KARTLARI */}
+      {/* KPI KARTLARI */}
       <Grid container spacing={1.5} sx={{ mb: 2 }}>
         <Grid size={{ xs: 6, sm: 3 }}>
           <Paper sx={{ p: 1.5, textAlign: 'center', bgcolor: '#fafcff', border: '1px solid #e8f0fe', borderRadius: 2 }}>
@@ -976,7 +966,7 @@ export default function BacktestPage() {
                 >
                   {backtestMutation.isPending
                     ? 'Test Ediliyor...'
-                    : `Testi Başlat (${costData?.cost || 15} Kredi)`}
+                    : 'Testi Başlat'}
                 </Button>
 
                 <Button
@@ -1001,7 +991,7 @@ export default function BacktestPage() {
                 >
                   {asyncBacktestMutation.isPending
                     ? 'Başlatılıyor...'
-                    : `Arka Planda Çalıştır (${costData?.cost || 15} Kredi)`}
+                    : 'Arka Planda Çalıştır'}
                 </Button>
 
                 <Button
@@ -1024,6 +1014,89 @@ export default function BacktestPage() {
                   {loading ? 'Yükleniyor...' : 'Geçmiş'}
                 </Button>
               </Stack>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Kredi Bakiyesi ve Maliyet Önizleme */}
+          <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <AccountBalanceWallet sx={{ fontSize: 20, color: '#f57c00' }} />
+                    <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                      Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
+                    </Typography>
+                  </Box>
+                </Grid>
+                
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingLoading ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Maliyet hesaplanıyor...
+                      </Typography>
+                    </Box>
+                  ) : pricingPreview && pricingPreview.estimated_credit_cost > 0 ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AttachMoney sx={{ fontSize: 18, color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }} />
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        Tahmini Maliyet: <strong style={{ color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }}>
+                          {pricingPreview.estimated_credit_cost} Kredi
+                        </strong>
+                      </Typography>
+                      {!pricingPreview.is_sufficient && (
+                        <Chip 
+                          label="Yetersiz Bakiye!" 
+                          size="small" 
+                          color="error" 
+                          sx={{ height: 20, fontSize: '0.55rem' }}
+                        />
+                      )}
+                      {pricingPreview.is_sufficient && pricingPreview.processing_score > 0 && (
+                        <Chip 
+                          label={`Score: ${pricingPreview.processing_score}`} 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ height: 18, fontSize: '0.5rem' }}
+                        />
+                      )}
+                      {pricingPreview.calculation_method === 'dataset_complexity' && (
+                        <Chip 
+                          label="🧩 Complex" 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ height: 16, fontSize: '0.45rem', color: '#9c27b0' }}
+                        />
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {activeDatasetId ? 'Analiz sonrası maliyet görünecek' : 'Dataset oluşturun'}
+                    </Typography>
+                  )}
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingPreview && pricingPreview.calculation_method === 'dataset_complexity' && pricingPreview.breakdown ? (
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block' }}>
+                        🧩 Dataset Complexity: {pricingPreview.breakdown.total || 0}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.5rem', display: 'block' }}>
+                        📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} 
+                        {pricingPreview.breakdown.relation && ` + ${pricingPreview.breakdown.relation.score} ilişki`}
+                        {pricingPreview.breakdown.lookup && ` + ${pricingPreview.breakdown.lookup.score} referans`}
+                      </Typography>
+                    </Box>
+                  ) : pricingPreview && pricingPreview.data_points > 0 ? (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block', textAlign: 'right' }}>
+                      📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} veri noktası
+                    </Typography>
+                  ) : null}
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
 
@@ -1051,7 +1124,7 @@ export default function BacktestPage() {
         </Grid>
       </Grid>
 
-      {/* ✅ 8 STRATEJİ - TANITIM KARTLARI */}
+      {/* 8 STRATEJİ - TANITIM KARTLARI */}
       <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#fafcff', border: '1px solid #e8f0fe' }}>
         <CardContent sx={{ py: 1.5, px: 2 }}>
           {/* Bilgi Kutusu */}
@@ -1203,20 +1276,6 @@ export default function BacktestPage() {
             <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#6b7280', textAlign: 'center' }}>
               💡 Backtest sırasında sekiz stratejinin tamamı test edilir. 
               En düşük hata oranına sahip strateji otomatik seçilir.
-            </Typography>
-          </Box>
-        </CardContent>
-      </Card>
-
-      {/* Kredi Bakiyesi */}
-      <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
-        <CardContent sx={{ py: 1, px: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
-              💰 Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
-              Backtest başına {costData?.cost || 15} kredi
             </Typography>
           </Box>
         </CardContent>

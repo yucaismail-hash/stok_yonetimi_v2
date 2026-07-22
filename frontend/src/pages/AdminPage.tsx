@@ -1,3 +1,6 @@
+// frontend/src/pages/AdminPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
+// 🆕 3 yeni tab eklendi: Endpoint Profilleri, Score Aralıkları, İşlem Logları
+
 import { useState, useEffect, useMemo } from 'react';
 import {
   Box,
@@ -34,6 +37,8 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Switch,
+  FormControlLabel,
 } from '@mui/material';
 import {
   Refresh,
@@ -50,9 +55,27 @@ import {
   Cancel,
   AccountBalance,
   Warning as WarningIcon,
+  Edit,
+  Delete,
+  Add,
+  Save,
+  Close,
+  Check,
 } from '@mui/icons-material';
 import { useAuth } from '../hooks/useAuth';
-import api from '../services/api';
+import api, {
+  getEndpointProfiles,
+  createEndpointProfile,
+  updateEndpointProfile,
+  deleteEndpointProfile,
+  initDefaultEndpointProfiles,
+  getScoreRanges,
+  createScoreRange,
+  updateScoreRange,
+  deleteScoreRange,
+  initDefaultScoreRanges,
+  getProcessingTransactions,
+} from '../services/api';
 
 // 📊 İşlem Tipi
 interface Transaction {
@@ -82,6 +105,55 @@ interface UserStats {
   net_credits: number;
 }
 
+// 📊 Endpoint Profili
+interface EndpointProfile {
+  id: number;
+  endpoint: string;
+  method: string;
+  base_credit: number;
+  pricing_type: string;
+  algorithm_weight: number;
+  avg_time_per_unit: number;
+  is_active: boolean;
+  description?: string;
+  version: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// 📊 Score Range
+interface ScoreRange {
+  id: number;
+  min_score: number;
+  max_score: number;
+  credit_cost: number;
+  description?: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// 📊 Processing Transaction
+interface ProcessingTransaction {
+  id: number;
+  user_id: number;
+  user_email?: string;
+  dataset_id?: number;
+  endpoint: string;
+  processing_score: number;
+  credit_cost: number;
+  balance_after: number;
+  elapsed_time_ms?: number;
+  avg_time_per_unit_ms?: number;
+  status: string;
+  created_at: string;
+  dataset?: {
+    product_count: number;
+    period_count: number;
+    data_points: number;
+  };
+}
+
 export default function AdminPage() {
   const { user } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -101,6 +173,35 @@ export default function AdminPage() {
   const [userStats, setUserStats] = useState<UserStats[]>([]);
   const [statsLoading, setStatsLoading] = useState(false);
 
+  // 🆕 YENİ STATE'LER
+  const [endpointProfiles, setEndpointProfiles] = useState<EndpointProfile[]>([]);
+  const [scoreRanges, setScoreRanges] = useState<ScoreRange[]>([]);
+  const [processingTransactions, setProcessingTransactions] = useState<ProcessingTransaction[]>([]);
+  const [profilesLoading, setProfilesLoading] = useState(false);
+  const [rangesLoading, setRangesLoading] = useState(false);
+  const [transactionsLoading, setTransactionsLoading] = useState(false);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [rangeDialogOpen, setRangeDialogOpen] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<EndpointProfile | null>(null);
+  const [editingRange, setEditingRange] = useState<ScoreRange | null>(null);
+  const [profileForm, setProfileForm] = useState<Partial<EndpointProfile>>({
+    endpoint: '',
+    method: 'POST',
+    base_credit: 1,
+    pricing_type: 'DATA_POINTS',
+    algorithm_weight: 1.0,
+    avg_time_per_unit: 0.0,
+    is_active: true,
+    description: '',
+  });
+  const [rangeForm, setRangeForm] = useState<Partial<ScoreRange>>({
+    min_score: 0,
+    max_score: 10000,
+    credit_cost: 3,
+    is_active: true,
+    description: '',
+  });
+
   // 📊 İstatistikler
   const [stats, setStats] = useState({
     total_transactions: 0,
@@ -119,6 +220,9 @@ export default function AdminPage() {
       fetchTransactions();
       fetchStats();
       fetchUserStats();
+      fetchEndpointProfiles();
+      fetchScoreRanges();
+      fetchProcessingTransactions();
     }
   }, [isAdmin]);
 
@@ -180,6 +284,180 @@ export default function AdminPage() {
     }
   };
 
+  // 🆕 ENDPOINT PROFİLLERİ
+  const fetchEndpointProfiles = async () => {
+    setProfilesLoading(true);
+    try {
+      const res = await getEndpointProfiles();
+      setEndpointProfiles(res.data || []);
+    } catch (err) {
+      console.error('❌ Profil hatası:', err);
+      setError('Endpoint profilleri yüklenemedi.');
+    } finally {
+      setProfilesLoading(false);
+    }
+  };
+
+  const handleCreateProfile = async () => {
+    try {
+      const res = await createEndpointProfile(profileForm);
+      setSuccess('✅ Profil başarıyla oluşturuldu!');
+      setProfileDialogOpen(false);
+      setProfileForm({
+        endpoint: '',
+        method: 'POST',
+        base_credit: 1,
+        pricing_type: 'DATA_POINTS',
+        algorithm_weight: 1.0,
+        avg_time_per_unit: 0.0,
+        is_active: true,
+        description: '',
+      });
+      fetchEndpointProfiles();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Profil oluşturulamadı.');
+    }
+  };
+
+  const handleUpdateProfile = async () => {
+    if (!editingProfile) return;
+    try {
+      const res = await updateEndpointProfile(editingProfile.id, profileForm);
+      setSuccess('✅ Profil başarıyla güncellendi!');
+      setProfileDialogOpen(false);
+      setEditingProfile(null);
+      setProfileForm({
+        endpoint: '',
+        method: 'POST',
+        base_credit: 1,
+        pricing_type: 'DATA_POINTS',
+        algorithm_weight: 1.0,
+        avg_time_per_unit: 0.0,
+        is_active: true,
+        description: '',
+      });
+      fetchEndpointProfiles();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Profil güncellenemedi.');
+    }
+  };
+
+  const handleDeleteProfile = async (id: number) => {
+    if (!window.confirm('Bu profili silmek istediğinize emin misiniz?')) return;
+    try {
+      await deleteEndpointProfile(id);
+      setSuccess('✅ Profil silindi!');
+      fetchEndpointProfiles();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Profil silinemedi.');
+    }
+  };
+
+  const handleInitDefaultProfiles = async () => {
+    try {
+      await initDefaultEndpointProfiles();
+      setSuccess('✅ Varsayılan profiller yüklendi!');
+      fetchEndpointProfiles();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Varsayılan profiller yüklenemedi.');
+    }
+  };
+
+  // 🆕 SCORE RANGES
+  const fetchScoreRanges = async () => {
+    setRangesLoading(true);
+    try {
+      const res = await getScoreRanges();
+      setScoreRanges(res.data || []);
+    } catch (err) {
+      console.error('❌ Aralık hatası:', err);
+      setError('Score aralıkları yüklenemedi.');
+    } finally {
+      setRangesLoading(false);
+    }
+  };
+
+  const handleCreateRange = async () => {
+    try {
+      const res = await createScoreRange(rangeForm);
+      setSuccess('✅ Aralık başarıyla oluşturuldu!');
+      setRangeDialogOpen(false);
+      setRangeForm({
+        min_score: 0,
+        max_score: 10000,
+        credit_cost: 3,
+        is_active: true,
+        description: '',
+      });
+      fetchScoreRanges();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Aralık oluşturulamadı.');
+    }
+  };
+
+  const handleUpdateRange = async () => {
+    if (!editingRange) return;
+    try {
+      const res = await updateScoreRange(editingRange.id, rangeForm);
+      setSuccess('✅ Aralık başarıyla güncellendi!');
+      setRangeDialogOpen(false);
+      setEditingRange(null);
+      setRangeForm({
+        min_score: 0,
+        max_score: 10000,
+        credit_cost: 3,
+        is_active: true,
+        description: '',
+      });
+      fetchScoreRanges();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Aralık güncellenemedi.');
+    }
+  };
+
+  const handleDeleteRange = async (id: number) => {
+    if (!window.confirm('Bu aralığı silmek istediğinize emin misiniz?')) return;
+    try {
+      await deleteScoreRange(id);
+      setSuccess('✅ Aralık silindi!');
+      fetchScoreRanges();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Aralık silinemedi.');
+    }
+  };
+
+  const handleInitDefaultRanges = async () => {
+    try {
+      await initDefaultScoreRanges();
+      setSuccess('✅ Varsayılan aralıklar yüklendi!');
+      fetchScoreRanges();
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Varsayılan aralıklar yüklenemedi.');
+    }
+  };
+
+  // 🆕 PROCESSING TRANSACTIONS
+  const fetchProcessingTransactions = async () => {
+    setTransactionsLoading(true);
+    try {
+      const res = await getProcessingTransactions(100);
+      setProcessingTransactions(res.data?.items || []);
+    } catch (err) {
+      console.error('❌ İşlem hatası:', err);
+      setError('İşlem logları yüklenemedi.');
+    } finally {
+      setTransactionsLoading(false);
+    }
+  };
+
   // 🔄 İADE İŞLEMİ
   const handleRefund = async () => {
     if (!selectedOrder) return;
@@ -192,7 +470,7 @@ export default function AdminPage() {
         order_id: selectedOrder.polar_order_id,
         refund_credits: refundAmount ? parseFloat(refundAmount) : selectedOrder.amount,
         reason: refundReason,
-        refund_type: 'money', // ✅ Tek seçenek: Para + Kredi iadesi
+        refund_type: 'money',
       };
       
       const res = await api.post('/api/polar/refund', payload);
@@ -332,7 +610,7 @@ export default function AdminPage() {
         <Button
           variant="contained"
           startIcon={loading ? <CircularProgress size={20} /> : <Refresh />}
-          onClick={() => { fetchTransactions(); fetchStats(); fetchUserStats(); }}
+          onClick={() => { fetchTransactions(); fetchStats(); fetchUserStats(); fetchEndpointProfiles(); fetchScoreRanges(); fetchProcessingTransactions(); }}
           disabled={loading}
         >
           {loading ? 'Yükleniyor...' : 'Yenile'}
@@ -467,7 +745,9 @@ export default function AdminPage() {
       <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 3 }}>
         <Tab label="📋 Tüm İşlemler" />
         <Tab label="🔄 İade İşlemleri" />
-        <Tab label="👥 Kullanıcı İstatistikleri" />
+        <Tab label="📊 Endpoint Profilleri" />
+        <Tab label="📈 Score Aralıkları" />
+        <Tab label="📋 İşlem Logları" />
       </Tabs>
 
       {/* Tab 0: Tüm İşlemler */}
@@ -502,10 +782,8 @@ export default function AdminPage() {
                         <TableCell align="center">İşlem</TableCell>
                       </TableRow>
                     </TableHead>
-                    {/* 📋 Tablo Satırı */}
                     <TableBody>
                       {paginatedTransactions.map((item) => {
-                        // ✅ İade kontrolünü burada yap
                         const isRefunded = transactions.some(t => 
                           t.polar_order_id === item.polar_order_id && 
                           t.transaction_type === 'refund'
@@ -551,8 +829,6 @@ export default function AdminPage() {
                               </Tooltip>
                             </TableCell>
                             <TableCell>{formatDate(item.created_at)}</TableCell>
-                            
-                            {/* ✅ İade Butonu - Düzeltilmiş */}
                             <TableCell align="center">
                               {item.transaction_type === 'purchase' && (
                                 !isRefunded ? (
@@ -680,60 +956,97 @@ export default function AdminPage() {
         </Card>
       )}
 
-      {/* Tab 2: Kullanıcı İstatistikleri */}
+      {/* Tab 2: Endpoint Profilleri */}
       {tabValue === 2 && (
         <Card>
           <CardContent>
-            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
-              👥 Kullanıcı Bazlı İstatistikler
-            </Typography>
-            
-            {statsLoading ? (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <CircularProgress />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                📊 Endpoint Profilleri
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" onClick={handleInitDefaultProfiles}>
+                  Varsayılanları Yükle
+                </Button>
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  startIcon={<Add />}
+                  onClick={() => { 
+                    setEditingProfile(null); 
+                    setProfileForm({
+                      endpoint: '',
+                      method: 'POST',
+                      base_credit: 1,
+                      pricing_type: 'DATA_POINTS',
+                      algorithm_weight: 1.0,
+                      avg_time_per_unit: 0.0,
+                      is_active: true,
+                      description: '',
+                    });
+                    setProfileDialogOpen(true); 
+                  }}
+                >
+                  + Ekle
+                </Button>
               </Box>
-            ) : userStats.length === 0 ? (
-              <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="body2" color="text.secondary">Kullanıcı verisi yok</Typography>
-              </Box>
+            </Box>
+            {profilesLoading ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box>
+            ) : endpointProfiles.length === 0 ? (
+              <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                Henüz endpoint profili yok. "Varsayılanları Yükle" butonuna tıklayın.
+              </Typography>
             ) : (
               <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow sx={{ bgcolor: 'grey.50' }}>
-                      <TableCell>Kullanıcı</TableCell>
-                      <TableCell align="right">Toplam Satın Alma</TableCell>
-                      <TableCell align="right">İade Sayısı</TableCell>
-                      <TableCell align="right">Net Kredi</TableCell>
-                      <TableCell align="center">Durum</TableCell>
+                      <TableCell>Endpoint</TableCell>
+                      <TableCell>Method</TableCell>
+                      <TableCell align="center">Base Credit</TableCell>
+                      <TableCell>Pricing Type</TableCell>
+                      <TableCell align="center">Weight</TableCell>
+                      <TableCell align="center">Aktif</TableCell>
+                      <TableCell align="center">İşlem</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {userStats.map((stat) => (
-                      <TableRow key={stat.user_id} hover>
+                    {endpointProfiles.map((p) => (
+                      <TableRow key={p.id} hover>
+                        <TableCell sx={{ fontSize: '0.7rem', fontFamily: 'monospace' }}>{p.endpoint}</TableCell>
+                        <TableCell>{p.method}</TableCell>
+                        <TableCell align="center">{p.base_credit}</TableCell>
                         <TableCell>
-                          <Box>
-                            <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-                              {stat.full_name || 'Bilinmiyor'}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {stat.email}
-                            </Typography>
-                          </Box>
+                          <Chip label={p.pricing_type} size="small" variant="outlined" />
                         </TableCell>
-                        <TableCell align="right">{stat.total_purchases}</TableCell>
-                        <TableCell align="right" sx={{ color: stat.total_refunds > 0 ? 'error.main' : 'text.secondary' }}>
-                          {stat.total_refunds}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                          {stat.net_credits}
+                        <TableCell align="center">{p.algorithm_weight}</TableCell>
+                        <TableCell align="center">
+                          <Chip label={p.is_active ? 'Aktif' : 'Pasif'} size="small" color={p.is_active ? 'success' : 'error'} />
                         </TableCell>
                         <TableCell align="center">
-                          <Chip 
-                            label={stat.net_credits > 0 ? 'Aktif' : 'Pasif'} 
+                          <IconButton 
                             size="small" 
-                            color={stat.net_credits > 0 ? 'success' : 'error'} 
-                          />
+                            onClick={() => { 
+                              setEditingProfile(p); 
+                              setProfileForm({
+                                endpoint: p.endpoint,
+                                method: p.method,
+                                base_credit: p.base_credit,
+                                pricing_type: p.pricing_type,
+                                algorithm_weight: p.algorithm_weight,
+                                avg_time_per_unit: p.avg_time_per_unit,
+                                is_active: p.is_active,
+                                description: p.description || '',
+                              });
+                              setProfileDialogOpen(true); 
+                            }}
+                          >
+                            <Edit fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" color="error" onClick={() => handleDeleteProfile(p.id)}>
+                            <Delete fontSize="small" />
+                          </IconButton>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -745,7 +1058,150 @@ export default function AdminPage() {
         </Card>
       )}
 
-      {/* 🔄 İADE DIALOG - Tek Seçenek: Para + Kredi İadesi */}
+      {/* Tab 3: Score Aralıkları */}
+      {tabValue === 3 && (
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                📈 Processing Score Aralıkları
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button size="small" variant="outlined" onClick={handleInitDefaultRanges}>
+                  Varsayılanları Yükle
+                </Button>
+                <Button 
+                  size="small" 
+                  variant="contained" 
+                  startIcon={<Add />}
+                  onClick={() => { 
+                    setEditingRange(null); 
+                    setRangeForm({
+                      min_score: 0,
+                      max_score: 10000,
+                      credit_cost: 3,
+                      is_active: true,
+                      description: '',
+                    });
+                    setRangeDialogOpen(true); 
+                  }}
+                >
+                  + Ekle
+                </Button>
+              </Box>
+            </Box>
+            {rangesLoading ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box>
+            ) : scoreRanges.length === 0 ? (
+              <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                Henüz score aralığı yok. "Varsayılanları Yükle" butonuna tıklayın.
+              </Typography>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.50' }}>
+                      <TableCell align="center">Min Score</TableCell>
+                      <TableCell align="center">Max Score</TableCell>
+                      <TableCell align="center">Credit Cost</TableCell>
+                      <TableCell>Description</TableCell>
+                      <TableCell align="center">Aktif</TableCell>
+                      <TableCell align="center">İşlem</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {scoreRanges.map((r) => (
+                      <TableRow key={r.id} hover>
+                        <TableCell align="center">{r.min_score.toLocaleString()}</TableCell>
+                        <TableCell align="center">{r.max_score.toLocaleString()}</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          {r.credit_cost}
+                        </TableCell>
+                        <TableCell>{r.description || '-'}</TableCell>
+                        <TableCell align="center">
+                          <Chip label={r.is_active ? 'Aktif' : 'Pasif'} size="small" color={r.is_active ? 'success' : 'error'} />
+                        </TableCell>
+                        <TableCell align="center">
+                          <IconButton 
+                            size="small" 
+                            onClick={() => { 
+                              setEditingRange(r); 
+                              setRangeForm({
+                                min_score: r.min_score,
+                                max_score: r.max_score,
+                                credit_cost: r.credit_cost,
+                                is_active: r.is_active,
+                                description: r.description || '',
+                              });
+                              setRangeDialogOpen(true); 
+                            }}
+                          >
+                            <Edit fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" color="error" onClick={() => handleDeleteRange(r.id)}>
+                            <Delete fontSize="small" />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Tab 4: İşlem Logları */}
+      {tabValue === 4 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
+              📋 İşlem Kredisi Logları
+            </Typography>
+            {transactionsLoading ? (
+              <Box sx={{ textAlign: 'center', py: 4 }}><CircularProgress /></Box>
+            ) : processingTransactions.length === 0 ? (
+              <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+                Henüz işlem logu yok.
+              </Typography>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ bgcolor: 'grey.50' }}>
+                      <TableCell>Kullanıcı</TableCell>
+                      <TableCell>Endpoint</TableCell>
+                      <TableCell align="center">Score</TableCell>
+                      <TableCell align="center">Cost</TableCell>
+                      <TableCell align="center">Bakiye</TableCell>
+                      <TableCell align="center">Süre (ms)</TableCell>
+                      <TableCell>Tarih</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {processingTransactions.map((t) => (
+                      <TableRow key={t.id} hover>
+                        <TableCell>{t.user_email || t.user_id}</TableCell>
+                        <TableCell sx={{ fontSize: '0.65rem', fontFamily: 'monospace' }}>{t.endpoint}</TableCell>
+                        <TableCell align="center">{t.processing_score}</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+                          {t.credit_cost}
+                        </TableCell>
+                        <TableCell align="center">{t.balance_after}</TableCell>
+                        <TableCell align="center">{t.elapsed_time_ms?.toFixed(0) || '-'}</TableCell>
+                        <TableCell>{formatDate(t.created_at)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 🔄 İADE DIALOG */}
       <Dialog open={refundDialogOpen} onClose={() => setRefundDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -779,7 +1235,6 @@ export default function AdminPage() {
                 <Typography variant="body2">Tarih: <strong>{formatDate(selectedOrder.created_at)}</strong></Typography>
               </Paper>
 
-              {/* ✅ Uyarı - Tek seçenek olduğu için */}
               <Alert severity="info" sx={{ mb: 2 }}>
                 💡 Bu işlem hem <strong>kredi iadesi</strong> (kullanıcı bakiyesinden düşer) 
                 hem de <strong>para iadesi</strong> (Polar üzerinden kredi kartına iade) yapacaktır.
@@ -794,13 +1249,10 @@ export default function AdminPage() {
                 sx={{ mb: 2 }}
                 helperText="Boş bırakırsanız tam iade yapılır"
                 slotProps={{
-                  input: {
-                    inputProps: { min: 1, max: selectedOrder?.amount || 0 }
-                  }
+                  htmlInput: { min: 1, max: selectedOrder?.amount || 0 }
                 }}
               />
 
-              {/* ✅ İade Nedeni Seçimi */}
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>İade Nedeni</InputLabel>
                 <Select
@@ -836,6 +1288,172 @@ export default function AdminPage() {
             startIcon={refundLoading ? <CircularProgress size={20} /> : <Cancel />}
           >
             {refundLoading ? 'İşleniyor...' : 'İade Oluştur'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 📝 PROFİL DIALOG */}
+      <Dialog open={profileDialogOpen} onClose={() => setProfileDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              {editingProfile ? '✏️ Profil Düzenle' : '➕ Yeni Profil'}
+            </Typography>
+            <IconButton onClick={() => setProfileDialogOpen(false)} size="small">
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            label="Endpoint"
+            value={profileForm.endpoint || ''}
+            onChange={(e) => setProfileForm({ ...profileForm, endpoint: e.target.value })}
+            sx={{ mt: 2 }}
+            disabled={!!editingProfile}
+            helperText={editingProfile ? 'Endpoint değiştirilemez' : 'Örn: /api/forecast/batch'}
+          />
+          <TextField
+            fullWidth
+            select
+            label="Method"
+            value={profileForm.method || 'POST'}
+            onChange={(e) => setProfileForm({ ...profileForm, method: e.target.value })}
+            sx={{ mt: 2 }}
+          >
+            <MenuItem value="POST">POST</MenuItem>
+            <MenuItem value="GET">GET</MenuItem>
+            <MenuItem value="PUT">PUT</MenuItem>
+            <MenuItem value="DELETE">DELETE</MenuItem>
+          </TextField>
+          <TextField
+            fullWidth
+            type="number"
+            label="Base Credit"
+            value={profileForm.base_credit || 1}
+            onChange={(e) => setProfileForm({ ...profileForm, base_credit: parseInt(e.target.value) || 1 })}
+            sx={{ mt: 2 }}
+            helperText="Taban kredi miktarı"
+          />
+          <TextField
+            fullWidth
+            select
+            label="Pricing Type"
+            value={profileForm.pricing_type || 'DATA_POINTS'}
+            onChange={(e) => setProfileForm({ ...profileForm, pricing_type: e.target.value })}
+            sx={{ mt: 2 }}
+          >
+            <MenuItem value="FIXED">FIXED</MenuItem>
+            <MenuItem value="DATA_POINTS">DATA_POINTS</MenuItem>
+            <MenuItem value="DATA_POINTS_ITERATION">DATA_POINTS_ITERATION</MenuItem>
+            <MenuItem value="AI_USAGE">AI_USAGE</MenuItem>
+            <MenuItem value="CUSTOM">CUSTOM</MenuItem>
+          </TextField>
+          <TextField
+            fullWidth
+            type="number"
+            label="Algorithm Weight"
+            value={profileForm.algorithm_weight || 1.0}
+            onChange={(e) => setProfileForm({ ...profileForm, algorithm_weight: parseFloat(e.target.value) || 1.0 })}
+            sx={{ mt: 2 }}
+              slotProps={{
+              htmlInput: { step: 0.1 }
+            }}
+          />
+          <TextField
+            fullWidth
+            label="Description"
+            value={profileForm.description || ''}
+            onChange={(e) => setProfileForm({ ...profileForm, description: e.target.value })}
+            sx={{ mt: 2 }}
+            multiline
+            rows={2}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={profileForm.is_active !== false}
+                onChange={(e) => setProfileForm({ ...profileForm, is_active: e.target.checked })}
+              />
+            }
+            label="Aktif"
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setProfileDialogOpen(false)}>İptal</Button>
+          <Button 
+            variant="contained" 
+            onClick={editingProfile ? handleUpdateProfile : handleCreateProfile}
+          >
+            {editingProfile ? 'Güncelle' : 'Oluştur'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 📈 RANGE DIALOG */}
+      <Dialog open={rangeDialogOpen} onClose={() => setRangeDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+              {editingRange ? '✏️ Aralık Düzenle' : '➕ Yeni Aralık'}
+            </Typography>
+            <IconButton onClick={() => setRangeDialogOpen(false)} size="small">
+              <Close />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            type="number"
+            label="Min Score"
+            value={rangeForm.min_score || 0}
+            onChange={(e) => setRangeForm({ ...rangeForm, min_score: parseInt(e.target.value) || 0 })}
+            sx={{ mt: 2 }}
+          />
+          <TextField
+            fullWidth
+            type="number"
+            label="Max Score"
+            value={rangeForm.max_score || 10000}
+            onChange={(e) => setRangeForm({ ...rangeForm, max_score: parseInt(e.target.value) || 10000 })}
+            sx={{ mt: 2 }}
+          />
+          <TextField
+            fullWidth
+            type="number"
+            label="Credit Cost"
+            value={rangeForm.credit_cost || 3}
+            onChange={(e) => setRangeForm({ ...rangeForm, credit_cost: parseInt(e.target.value) || 3 })}
+            sx={{ mt: 2 }}
+          />
+          <TextField
+            fullWidth
+            label="Description"
+            value={rangeForm.description || ''}
+            onChange={(e) => setRangeForm({ ...rangeForm, description: e.target.value })}
+            sx={{ mt: 2 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={rangeForm.is_active !== false}
+                onChange={(e) => setRangeForm({ ...rangeForm, is_active: e.target.checked })}
+              />
+            }
+            label="Aktif"
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRangeDialogOpen(false)}>İptal</Button>
+          <Button 
+            variant="contained" 
+            onClick={editingRange ? handleUpdateRange : handleCreateRange}
+          >
+            {editingRange ? 'Güncelle' : 'Oluştur'}
           </Button>
         </DialogActions>
       </Dialog>

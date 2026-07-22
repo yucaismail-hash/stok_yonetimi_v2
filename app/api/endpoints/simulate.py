@@ -17,8 +17,13 @@ import os
 from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
-
 import logging
+
+from app.api.dependencies import (
+    get_or_create_dataset_from_upload,
+    process_pricing_with_dataset,
+    get_active_dataset
+)
 
 logger = logging.getLogger(__name__)
 ai_engine = AISummaryEngine()
@@ -69,21 +74,62 @@ def update_async_task_status(db: Session, task_id: str, status: str, message: st
 @router.post("/simulate/batch")
 def simulate_batch(
     config: SimulationConfig,
-    background_tasks: BackgroundTasks,  # ✅ EKLENDİ
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Toplu Monte Carlo Simülasyonu - Cache'ten verileri alır.
-    Token maliyeti: 20 token
+    🆕 Pricing Engine ile dinamik ücretlendirme
     """
     try:
+        # 1. Cache'den verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
         
         upload_id = cached_data.get('upload_id')
         
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/simulate/batch",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Analizi çalıştır (mevcut kod)
         materials = cached_data.get('materials', [])
         if not materials:
             if isinstance(cached_data, list):
@@ -275,10 +321,7 @@ def simulate_batch(
         if not results:
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
-        # ============================================================
-        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
-        # ============================================================
-        
+        # 5. Sonuçları kaydet
         result_data = {
             'success': True,
             'total': len(results),
@@ -298,7 +341,9 @@ def simulate_batch(
                 'use_regime': config.use_regime,
                 'use_copula': config.use_copula,
                 'use_adaptive_ss': config.use_adaptive_ss,
-                'total_materials': len(results)
+                'total_materials': len(results),
+                'processing_score': pricing_response.processing_score,
+                'credit_cost': pricing_response.credit_cost
             },
             total_materials=len(results),
             task_id=None,
@@ -310,7 +355,7 @@ def simulate_batch(
         db.commit()
         db.refresh(analysis_result)
         
-        # ✅ AI Özetini arka planda oluştur
+        # AI Özetini arka planda oluştur
         background_tasks.add_task(
             generate_ai_summary_background,
             analysis_result.id,
@@ -319,10 +364,11 @@ def simulate_batch(
             current_user.billing_country or 'TR'
         )
 
-        # ✅ Trend Summary'yi arka planda yenile
+        # Trend Summary'yi arka planda yenile
         background_tasks.add_task(
             refresh_trend_summary,
-            current_user.id
+            current_user.id,
+            current_user.billing_country or 'TR'
         )
         
         return {
@@ -331,7 +377,9 @@ def simulate_batch(
             'results': results,
             'raw_materials': raw_materials,
             'config': config.dict(),
-            'token_cost': 20,
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score,
             'result_id': analysis_result.id,
             'ai_status': 'pending'
         }
@@ -341,7 +389,6 @@ def simulate_batch(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
-
 
 # ============================================================
 # 📌 SENKRON STREAMING SİMÜLASYON
@@ -601,77 +648,131 @@ async def simulate_batch_stream(
 
 @router.post("/simulate/batch/async")
 def start_async_simulation(
-    config: SimulationConfig,
+    config: SimulationConfig,  # ✅ SimulationConfig tipinde
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Async simülasyon başlatır. Hemen task_id döner."""
-    
-    cached_data = get_user_upload_data(current_user.id)
-    if not cached_data:
-        raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
-    
-    upload_id = cached_data.get('upload_id')
-    materials = cached_data.get('materials', [])
-    if not materials:
-        raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
-    
-    task_id = str(uuid.uuid4())
-    
-    # ============================================================
-    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
-    # ============================================================
-    
-    initial_data = {
-        'status': 'processing',
-        'message': 'Simülasyon başlatıldı, işleniyor...',
-        'total': len(materials),
-        'results': [],
-        'config': config.dict(),
-        'task_id': task_id,
-        'started_at': datetime.utcnow().isoformat()
-    }
-    
-    initial_record = AnalysisResult(
-        user_id=current_user.id,
-        upload_id=upload_id,
-        result_type='simulation_batch_async',
-        data=initial_data,
-        params={
-            'n_simulations': config.n_simulations,
-            'weeks': config.weeks,
-            'use_regime': config.use_regime,
-            'use_copula': config.use_copula,
-            'use_adaptive_ss': config.use_adaptive_ss,
-            'total_materials': len(materials)
-        },
-        total_materials=len(materials),
-        task_id=task_id,
-        status='processing',
-        progress=0,
-        message='Başlatıldı...',
-        expires_at=datetime.utcnow() + timedelta(days=15)
-    )
-    db.add(initial_record)
-    db.commit()
-    
-    background_tasks.add_task(
-        run_async_simulation_job,
-        task_id=task_id,
-        user_id=current_user.id,
-        upload_id=upload_id,
-        config=config,
-        db=db
-    )
-    
-    return {
-        "task_id": task_id,
-        "status": "started",
-        "message": "Simülasyon arka planda başlatıldı.",
-        "token_cost": 20
-    }
-
+    """
+    Async simülasyon başlatır. Hemen task_id döner.
+    🆕 Pricing Engine ile dinamik ücretlendirme
+    """
+    try:
+        # 1. Cache'den verileri al
+        cached_data = get_user_upload_data(current_user.id)
+        if not cached_data:
+            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
+        materials = cached_data.get('materials', [])
+        if not materials:
+            raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
+        
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme (Async'de hemen düş)
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/simulate/batch/async",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Task ID oluştur
+        task_id = str(uuid.uuid4())
+        
+        # 5. Initial record'u kaydet
+        initial_data = {
+            'status': 'processing',
+            'message': 'Simülasyon başlatıldı, işleniyor...',
+            'total': len(materials),
+            'results': [],
+            'config': config.dict(),
+            'task_id': task_id,
+            'started_at': datetime.utcnow().isoformat(),
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score
+        }
+        
+        initial_record = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='simulation_batch_async',
+            data=initial_data,
+            params={
+                'n_simulations': config.n_simulations,
+                'weeks': config.weeks,
+                'use_regime': config.use_regime,
+                'use_copula': config.use_copula,
+                'use_adaptive_ss': config.use_adaptive_ss,
+                'total_materials': len(materials),
+                'credit_cost': pricing_response.credit_cost,
+                'processing_score': pricing_response.processing_score
+            },
+            total_materials=len(materials),
+            task_id=task_id,
+            status='processing',
+            progress=0,
+            message='Başlatıldı...',
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(initial_record)
+        db.commit()
+        
+        # 6. Async job'u arka planda başlat
+        background_tasks.add_task(
+            run_async_simulation_job,
+            task_id=task_id,
+            user_id=current_user.id,
+            upload_id=upload_id,
+            config=config,
+            db=db
+        )
+        
+        return {
+            "task_id": task_id,
+            "status": "started",
+            "message": "Simülasyon arka planda başlatıldı.",
+            "credit_cost": pricing_response.credit_cost,
+            "balance_after": pricing_response.balance_after,
+            "processing_score": pricing_response.processing_score
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ============================================================
 # 📌 ASYNC SİMÜLASYON JOB

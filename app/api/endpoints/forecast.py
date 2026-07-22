@@ -1,5 +1,3 @@
-# app/api/endpoints/forecast.py - TAM DOSYA (AI ENTEGRASYONLU)
-
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -14,15 +12,20 @@ from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.forecast import DemandForecaster
 from app.analysis.pattern import AdvancedDemandAnalyzer
+from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
+from app.services.llm_service import get_llm_service
 from app.auth import get_current_user
 from app.api.endpoints.upload import get_user_upload_data
 from datetime import datetime, timedelta
 import numpy as np
 import logging
 
-# 🆕 AI ENTEGRASYONU
-from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
-from app.services.llm_service import get_llm_service
+from app.api.dependencies import (
+    get_or_create_dataset_from_upload,
+    process_pricing_with_dataset,
+    get_active_dataset
+)
+from app.schemas.credit import PricingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -160,16 +163,56 @@ def batch_forecast(
 ):
     """
     Toplu forecast analizi - Pattern ile zenginleştirilmiş
-    Token maliyeti: 8 token
+    🆕 Pricing Engine ile dinamik ücretlendirme
     """
     try:
+        # 1. Cache'den verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
         
         upload_id = cached_data.get('upload_id')
-        file_name = cached_data.get('file_name')
         
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/forecast/batch",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Analizi çalıştır (mevcut kod)
         materials = cached_data.get('materials', [])
         if not materials:
             raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
@@ -181,17 +224,14 @@ def batch_forecast(
                 if len(historical) < 4:
                     continue
                 
-                # ✅ Pattern analizi
                 pattern, pattern_stats = pattern_analyzer.analyze_demand_pattern(historical)
                 
-                # ✅ Pattern ile zenginleştirilmiş forecast
                 forecast_result = forecaster.forecast(
                     historical_data=historical,
                     horizon=request.horizon,
                     model_type=request.model_type
                 )
                 
-                # Model karşılaştırması
                 model_comparison = {}
                 for model_name in ['holt_winters', 'arima', 'simple']:
                     try:
@@ -215,7 +255,6 @@ def batch_forecast(
                 trend_percent = ((historical[-1] - historical[0]) / historical[0] * 100) if historical[0] > 0 else 0
                 trend_direction = 'Artış' if trend_percent > 0 else 'Azalış'
                 
-                # ✅ Pattern bilgilerini model_params'e ekle
                 model_params = {}
                 if forecast_result.get('model_used') == 'holt_winters':
                     model_params = {
@@ -237,7 +276,6 @@ def batch_forecast(
                 if 'selection_info' in forecast_result:
                     model_params.update(forecast_result['selection_info'])
                 
-                # ✅ Pattern bilgilerini ekle
                 model_params['pattern'] = pattern
                 model_params['pattern_label'] = get_pattern_label(pattern)
                 model_params['pattern_color'] = get_pattern_color(pattern)
@@ -280,10 +318,7 @@ def batch_forecast(
         if not results:
             raise HTTPException(status_code=400, detail="Hiçbir malzeme için tahmin yapılamadı!")
         
-        # ============================================================
-        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
-        # ============================================================
-        
+        # 5. Sonuçları kaydet
         result_data = {
             'success': True,
             'total': len(results),
@@ -302,7 +337,9 @@ def batch_forecast(
                 'horizon': request.horizon,
                 'model_type': request.model_type,
                 'total_materials': len(results),
-                'pattern_analysis': True
+                'pattern_analysis': True,
+                'processing_score': pricing_response.processing_score,
+                'credit_cost': pricing_response.credit_cost
             },
             total_materials=len(results),
             task_id=None,
@@ -331,15 +368,16 @@ def batch_forecast(
         db.commit()
         db.refresh(analysis_result)
         
-        # 🆕 AI Özetini arka planda oluştur
+        # AI Özetini arka planda oluştur
         background_tasks.add_task(
             generate_ai_summary_background,
             analysis_result.id,
             'forecast_batch',
-            current_user.id            
+            current_user.id,
+            current_user.billing_country or 'TR'
         )
 
-        # ✅ Trend Summary'yi arka planda yenile
+        # Trend Summary'yi arka planda yenile
         background_tasks.add_task(
             refresh_trend_summary,
             current_user.id,
@@ -350,10 +388,12 @@ def batch_forecast(
             'success': True,
             'total': len(results),
             'results': results,
-            'token_cost': 8,
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score,
             'result_id': analysis_result.id,
             'pattern_analysis': True,
-            'ai_status': 'pending'  # AI özeti başlatıldı
+            'ai_status': 'pending'
         }
         
     except HTTPException:
@@ -362,84 +402,137 @@ def batch_forecast(
         db.rollback()
         raise HTTPException(status_code=400, detail=str(e))
 
-
 # ============================================================
 # 📌 ASYNC FORECAST
 # ============================================================
 
 @router.post("/forecast/batch/async")
 def start_async_forecast(
-    request: ForecastRequest,
+    request: ForecastRequest,  # ✅ ForecastRequest tipinde
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Async forecast - Pattern ile zenginleştirilmiş"""
-    
-    cached_data = get_user_upload_data(current_user.id)
-    if not cached_data:
-        raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
-    
-    upload_id = cached_data.get('upload_id')
-    materials = cached_data.get('materials', [])
-    if not materials:
-        raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
-    
-    task_id = str(uuid.uuid4())
-    
-    # ============================================================
-    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
-    # ============================================================
-    
-    initial_data = {
-        'status': 'processing',
-        'message': 'Forecast analizi başlatıldı...',
-        'total': len(materials),
-        'results': [],
-        'horizon': request.horizon,
-        'model_type': request.model_type,
-        'task_id': task_id,
-        'pattern_analysis': True,
-        'started_at': datetime.utcnow().isoformat()
-    }
-    
-    initial_record = AnalysisResult(
-        user_id=current_user.id,
-        upload_id=upload_id,
-        result_type='forecast_batch_async',
-        data=initial_data,
-        params={
+    """
+    Async forecast - Pattern ile zenginleştirilmiş
+    🆕 Pricing Engine ile dinamik ücretlendirme
+    """
+    try:
+        # 1. Cache'den verileri al
+        cached_data = get_user_upload_data(current_user.id)
+        if not cached_data:
+            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
+        materials = cached_data.get('materials', [])
+        if not materials:
+            raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
+        
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme (Async'de hemen düş)
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/forecast/batch/async",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Task ID oluştur
+        task_id = str(uuid.uuid4())
+        
+        # 5. Initial record'u kaydet
+        initial_data = {
+            'status': 'processing',
+            'message': 'Forecast analizi başlatıldı...',
+            'total': len(materials),
+            'results': [],
             'horizon': request.horizon,
             'model_type': request.model_type,
-            'total_materials': len(materials),
-            'pattern_analysis': True
-        },
-        total_materials=len(materials),
-        task_id=task_id,
-        status='processing',
-        progress=0,
-        message='Başlatıldı...',
-        expires_at=datetime.utcnow() + timedelta(days=15)
-    )
-    db.add(initial_record)
-    db.commit()
-    
-    background_tasks.add_task(
-        run_async_forecast_job,
-        task_id=task_id,
-        user_id=current_user.id,
-        upload_id=upload_id,
-        request=request,
-        db=db
-    )
-    
-    return {
-        "task_id": task_id,
-        "status": "started",
-        "message": "Forecast analizi arka planda başlatıldı.",
-        "token_cost": 8
-    }
-
+            'task_id': task_id,
+            'pattern_analysis': True,
+            'started_at': datetime.utcnow().isoformat(),
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score
+        }
+        
+        initial_record = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='forecast_batch_async',
+            data=initial_data,
+            params={
+                'horizon': request.horizon,
+                'model_type': request.model_type,
+                'total_materials': len(materials),
+                'pattern_analysis': True,
+                'credit_cost': pricing_response.credit_cost,
+                'processing_score': pricing_response.processing_score
+            },
+            total_materials=len(materials),
+            task_id=task_id,
+            status='processing',
+            progress=0,
+            message='Başlatıldı...',
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(initial_record)
+        db.commit()
+        
+        # 6. Async job'u arka planda başlat
+        background_tasks.add_task(
+            run_async_forecast_job,
+            task_id=task_id,
+            user_id=current_user.id,
+            upload_id=upload_id,
+            request=request,
+            db=db
+        )
+        
+        return {
+            "task_id": task_id,
+            "status": "started",
+            "message": "Forecast analizi arka planda başlatıldı.",
+            "credit_cost": pricing_response.credit_cost,
+            "balance_after": pricing_response.balance_after,
+            "processing_score": pricing_response.processing_score
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
 # ============================================================
 # 📌 ASYNC FORECAST JOB

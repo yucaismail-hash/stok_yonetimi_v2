@@ -21,6 +21,12 @@ from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
 import logging
 
+from app.api.dependencies import (
+    get_or_create_dataset_from_upload,
+    process_pricing_with_dataset,
+    get_active_dataset
+)
+
 logger = logging.getLogger(__name__)
 ai_engine = AISummaryEngine()
 router = APIRouter()
@@ -78,15 +84,70 @@ def analyze_suppliers_batch(
 ):
     """
     Toplu Tedarikçi Analizi - Cache'ten verileri alır.
-    Token maliyeti: 5 token
+    🆕 Pricing Engine ile dinamik ücretlendirme
     """
     try:
+        # 1. Cache'den verileri al
         cached_data = get_user_upload_data(current_user.id)
         if not cached_data:
             raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
         
         upload_id = cached_data.get('upload_id')
         
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+
+        # 🆕 Dataset Complexity Score'u hesapla (debug için)
+        from app.models import EndpointProfile
+        endpoint_profile = db.query(EndpointProfile).filter(
+            EndpointProfile.endpoint == "/api/supplier/batch",
+            EndpointProfile.is_active == True
+        ).first()
+
+        if endpoint_profile and endpoint_profile.dataset_config:
+            dcs_score, breakdown = builder.get_dataset_complexity_score(
+                dataset, 
+                endpoint_profile.dataset_config
+            )
+            print(f"🔍 Tedarikçi DCS: {dcs_score}, breakdown: {breakdown}")
+        
+        # 3. Pricing Engine ile ücretlendirme
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/supplier/batch",
+            dataset_id=dataset.id,
+            user_id=current_user.id
+        )
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Analizi çalıştır (mevcut kod)
         suppliers = cached_data.get('suppliers', {})
         supplier_mapping = cached_data.get('supplier_mapping', {})
         materials = cached_data.get('materials', [])
@@ -183,10 +244,7 @@ def analyze_suppliers_batch(
         if not supplier_results:
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
-        # ============================================================
-        # 📌 TEK KAYIT: analysis_results (Senkron - task_id NULL)
-        # ============================================================
-        
+        # 5. Sonuçları kaydet
         result_data = {
             'suppliers': supplier_results,
             'recommendations': recommendations,
@@ -199,7 +257,11 @@ def analyze_suppliers_batch(
             upload_id=upload_id,
             result_type='supplier_batch',
             data=result_data,
-            params={'total_suppliers': len(supplier_results)},
+            params={
+                'total_suppliers': len(supplier_results),
+                'processing_score': pricing_response.processing_score,
+                'credit_cost': pricing_response.credit_cost
+            },
             total_materials=len(supplier_results),
             task_id=None,
             status=None,
@@ -210,15 +272,16 @@ def analyze_suppliers_batch(
         db.commit()
         db.refresh(analysis_result)
         
-        # ✅ AI Özetini arka planda oluştur
+        # AI Özetini arka planda oluştur
         background_tasks.add_task(
             generate_ai_summary_background,
             analysis_result.id,
             'supplier_batch',
-            current_user.id
+            current_user.id,
+            current_user.billing_country or 'TR'
         )
 
-        # ✅ Trend Summary'yi arka planda yenile
+        # Trend Summary'yi arka planda yenile
         background_tasks.add_task(
             refresh_trend_summary,
             current_user.id,
@@ -231,9 +294,11 @@ def analyze_suppliers_batch(
             'suppliers': supplier_results,
             'recommendations': recommendations,
             'has_suppliers': True,
-            'token_cost': 5,
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score,
             'result_id': analysis_result.id,
-            'ai_status': 'pending'  # ✅ EKLE
+            'ai_status': 'pending'
         }
         
     except HTTPException:
@@ -242,7 +307,6 @@ def analyze_suppliers_batch(
         db.rollback()
         print(f"❌ Tedarikçi analiz hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
-
 
 # ============================================================
 # 📌 SENKRON TEDARİKÇİ KONTROL
@@ -303,73 +367,129 @@ def get_supplier_risk(supplier_id: str):
 
 @router.post("/supplier/batch/async")
 def start_async_supplier_analysis(
-    background_tasks: BackgroundTasks,
+    background_tasks: BackgroundTasks,  # ✅ Request parametresi YOK
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Async tedarikçi analizi başlatır. Hemen task_id döner."""
-    
-    cached_data = get_user_upload_data(current_user.id)
-    if not cached_data:
-        raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
-    
-    upload_id = cached_data.get('upload_id')
-    suppliers = cached_data.get('suppliers', {})
-    supplier_mapping = cached_data.get('supplier_mapping', {})
-    
-    if not suppliers or not supplier_mapping:
-        raise HTTPException(
-            status_code=400, 
-            detail="Tedarikçi verisi bulunamadı. Lütfen Excel'de 'Tedarikciler' ve 'Malzeme_Tedarikciler' sheet'lerini ekleyin."
+    """
+    Async tedarikçi analizi başlatır. Hemen task_id döner.
+    🆕 Pricing Engine ile dinamik ücretlendirme
+    """
+    try:
+        # 1. Cache'den verileri al
+        cached_data = get_user_upload_data(current_user.id)
+        if not cached_data:
+            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        
+        upload_id = cached_data.get('upload_id')
+        suppliers = cached_data.get('suppliers', {})
+        supplier_mapping = cached_data.get('supplier_mapping', {})
+        
+        if not suppliers or not supplier_mapping:
+            raise HTTPException(
+                status_code=400, 
+                detail="Tedarikçi verisi bulunamadı. Lütfen Excel'de 'Tedarikciler' ve 'Malzeme_Tedarikciler' sheet'lerini ekleyin."
+            )
+        
+        # 2. Dataset'i al veya oluştur
+        from app.services.dataset_builder import DatasetBuilder
+        builder = DatasetBuilder(db)
+        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
+        
+        if not dataset:
+            dataset = builder.build_from_cache(
+                user_id=current_user.id,
+                cached_data=cached_data,
+                upload_id=upload_id,
+                source_type="excel",
+                source_name=cached_data.get('file_name', 'unknown.xlsx')
+            )
+        
+        # 3. Pricing Engine ile ücretlendirme (Async'de hemen düş)
+        from app.services.pricing_engine import PricingEngine
+        from app.schemas.credit import PricingRequest
+        
+        pricing_engine = PricingEngine(db)
+        pricing_request = PricingRequest(
+            endpoint="/api/supplier/batch/async",
+            dataset_id=dataset.id,
+            user_id=current_user.id
         )
-    
-    task_id = str(uuid.uuid4())
-    
-    # ============================================================
-    # 📌 TEK KAYIT: analysis_results (Async - task_id dolu)
-    # ============================================================
-    
-    initial_data = {
-        'status': 'processing',
-        'message': 'Tedarikçi analizi başlatıldı, işleniyor...',
-        'total': len(suppliers),
-        'total_suppliers': len(suppliers),
-        'results': [],
-        'task_id': task_id,
-        'started_at': datetime.utcnow().isoformat()
-    }
-    
-    initial_record = AnalysisResult(
-        user_id=current_user.id,
-        upload_id=upload_id,
-        result_type='supplier_batch_async',
-        data=initial_data,
-        params={'total_suppliers': len(suppliers)},
-        total_materials=len(suppliers),
-        task_id=task_id,
-        status='processing',
-        progress=0,
-        message='Başlatıldı...',
-        expires_at=datetime.utcnow() + timedelta(days=15)
-    )
-    db.add(initial_record)
-    db.commit()
-    
-    background_tasks.add_task(
-        run_async_supplier_job,
-        task_id=task_id,
-        user_id=current_user.id,
-        upload_id=upload_id,
-        db=db
-    )
-    
-    return {
-        "task_id": task_id,
-        "status": "started",
-        "message": "Tedarikçi analizi arka planda başlatıldı.",
-        "token_cost": 5
-    }
-
+        
+        pricing_response = pricing_engine.process_request(pricing_request)
+        
+        if not pricing_response.is_sufficient:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Yetersiz kredi! Gerekli: {pricing_response.credit_cost}, Mevcut: {pricing_response.balance_before}"
+            )
+        
+        if not pricing_response.success:
+            raise HTTPException(
+                status_code=400,
+                detail=pricing_response.message or "Pricing işlemi başarısız"
+            )
+        
+        # 4. Task ID oluştur
+        task_id = str(uuid.uuid4())
+        
+        # 5. Initial record'u kaydet
+        initial_data = {
+            'status': 'processing',
+            'message': 'Tedarikçi analizi başlatıldı, işleniyor...',
+            'total': len(suppliers),
+            'total_suppliers': len(suppliers),
+            'results': [],
+            'task_id': task_id,
+            'started_at': datetime.utcnow().isoformat(),
+            'credit_cost': pricing_response.credit_cost,
+            'balance_after': pricing_response.balance_after,
+            'processing_score': pricing_response.processing_score
+        }
+        
+        initial_record = AnalysisResult(
+            user_id=current_user.id,
+            upload_id=upload_id,
+            result_type='supplier_batch_async',
+            data=initial_data,
+            params={
+                'total_suppliers': len(suppliers),
+                'credit_cost': pricing_response.credit_cost,
+                'processing_score': pricing_response.processing_score
+            },
+            total_materials=len(suppliers),
+            task_id=task_id,
+            status='processing',
+            progress=0,
+            message='Başlatıldı...',
+            expires_at=datetime.utcnow() + timedelta(days=15)
+        )
+        db.add(initial_record)
+        db.commit()
+        
+        # 6. Async job'u arka planda başlat
+        background_tasks.add_task(
+            run_async_supplier_job,
+            task_id=task_id,
+            user_id=current_user.id,
+            upload_id=upload_id,
+            db=db
+        )
+        
+        return {
+            "task_id": task_id,
+            "status": "started",
+            "message": "Tedarikçi analizi arka planda başlatıldı.",
+            "credit_cost": pricing_response.credit_cost,
+            "balance_after": pricing_response.balance_after,
+            "processing_score": pricing_response.processing_score
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
 
 def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Session):
     """Async tedarikçi analizi işini gerçekleştirir."""
