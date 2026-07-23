@@ -12,14 +12,14 @@ const api = axios.create({
 
 // 📌 İstekleri logla
 api.interceptors.request.use((config) => {
-  console.log(`📤 API İSTEK: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
+  //console.log(`📤 API İSTEK: ${config.method?.toUpperCase()} ${config.baseURL}${config.url}`);
   return config;
 });
 
 // 📌 Cevabı logla
 api.interceptors.response.use(
   (response) => {
-    console.log(`📥 API CEVAP: ${response.status} ${response.config.url}`);
+    //console.log(`📥 API CEVAP: ${response.status} ${response.config.url}`);
     return response;
   },
   (error) => {
@@ -61,7 +61,7 @@ api.interceptors.request.use((config) => {
   
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
-    console.log('✅ Token eklendi:', token.substring(0, 20) + '...');
+    //console.log('✅ Token eklendi:', token.substring(0, 20) + '...');
   } else {
     console.log('⚠️ Token bulunamadı!');
   }
@@ -120,4 +120,9 @@ export const getProcessingTransactions = (limit: number = 100, offset: number = 
 
 export const getUserProcessingTransactions = (userId: number, limit: number = 50, offset: number = 0) => {
   return api.get(`/admin/processing-transactions/user/${userId}`, { params: { limit, offset } });
+};
+
+// ----- DASHBOARD CHANGE -----
+export const getDashboardChanges = () => {
+  return api.get('/api/dashboard/change');
 };

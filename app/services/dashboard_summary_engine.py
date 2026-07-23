@@ -1,8 +1,6 @@
-# app/services/dashboard_summary_engine.py
+# app/services/dashboard_summary_engine.py - GÜNCELLENMİŞ
 """
 Dashboard Summary Engine - Tüm analiz sonuçlarını özetler.
-Her modül kendi priority'sini hesaplar.
-Dashboard sadece özetleri toplar ve karşılaştırır.
 """
 
 import logging
@@ -11,6 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models import User, AnalysisResult, AnalysisDataset, UserMaterial
+from app.schemas.dashboard import DashboardSummary, AlertItem
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +17,6 @@ logger = logging.getLogger(__name__)
 class DashboardSummaryEngine:
     """
     Dashboard Summary Engine - Tüm analiz sonuçlarını özetler.
-    
-    Görevleri:
-    1. Her modülün son başarılı analizini getir
-    2. Her modülden business summary çıkar
-    3. Her modülün priority skorunu al
-    4. Tek bir dashboard modeli oluştur
     """
     
     def __init__(self, db: Session, user_id: int):
@@ -33,19 +26,6 @@ class DashboardSummaryEngine:
     def get_dashboard_summary(self) -> Dict[str, Any]:
         """
         Tüm analiz sonuçlarını toplar ve özetler.
-        
-        Returns:
-            {
-                "modules": {
-                    "forecast": {...},
-                    "safety_stock": {...},
-                    ...
-                },
-                "top_priority_module": "forecast",
-                "top_priority": 95,
-                "summary": "Genel özet",
-                "updated_at": "2026-07-22T11:34:55"
-            }
         """
         modules = {
             'forecast': self._get_forecast_summary,
@@ -87,11 +67,108 @@ class DashboardSummaryEngine:
             'updated_at': datetime.utcnow().isoformat()
         }
     
+    def get_all_alerts(self) -> List[Dict[str, Any]]:
+        """Tüm modüllerin attention'larını toplar. critical_items ve ai_comment ile zenginleştirir."""
+        summary = self.get_dashboard_summary()
+        alerts = []
+        
+        modules = summary.get('modules', {})
+        if not modules:
+            return alerts
+        
+        for module_key, module_data in modules.items():
+            if not module_data:
+                continue
+            
+            attention_list = module_data.get('attention', [])
+            if not attention_list:
+                continue
+            
+            priority = module_data.get('priority', 0)
+            severity = self._get_severity(priority)
+            page = module_data.get('target_page', '/dashboard')
+            analysis_id = module_data.get('analysis_id')
+            analysis_type = module_data.get('analysis_type', module_key)
+            dataset_id = module_data.get('dataset_id')
+            
+            # ✅ critical_items'i al
+            critical_items = module_data.get('critical_items', [])
+            
+            # ✅ AI comment'i al (varsa)
+            ai_comment = module_data.get('ai_comment', '')
+            
+            # Eğer critical_items yoksa ve safety_stock ise, results'dan çıkar
+            if not critical_items and module_key == 'safety_stock':
+                # Safety Stock sonuçlarından kritikleri çıkar
+                critical_items = self._get_safety_stock_critical_items(module_data)
+            
+            for idx, attention_text in enumerate(attention_list):
+                alerts.append({
+                    'id': f"{module_key}_{idx}",
+                    'severity': severity,
+                    'title': attention_text[:100],
+                    'description': module_data.get('summary', '')[:200],
+                    'action_label': 'İncele →',
+                    'action_path': page,
+                    'priority': priority,
+                    'analysis_id': analysis_id,
+                    'analysis_type': analysis_type,
+                    'dataset_id': dataset_id,
+                    'critical_items': critical_items[:10],  # Max 10 kritik
+                    'ai_comment': ai_comment or self._generate_ai_comment(module_key, module_data)
+                })
+        
+        alerts.sort(key=lambda x: x.get('priority', 0), reverse=True)
+        return alerts[:10]
+    
+    def _get_safety_stock_critical_items(self, module_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Safety Stock'dan kritik ürünleri çıkarır."""
+        critical_items = module_data.get('critical_items', [])
+        if critical_items:
+            return critical_items
+        
+        # Fallback: dashboard_summary içindeki critical_items
+        return module_data.get('critical_items', [])
+
+    def _generate_ai_comment(self, module_key: str, module_data: Dict[str, Any]) -> str:
+        """Modül verisine göre AI yorumu oluşturur."""
+        if module_key == 'safety_stock':
+            critical_count = module_data.get('critical_count', 0)
+            if critical_count > 0:
+                return f"{critical_count} kritik ürün tespit edildi. Stok seviyeleri hızlıca gözden geçirilmeli ve acil siparişler oluşturulmalıdır."
+            return "Mevcut stok seviyeleri güvenli aralıkta."
+        
+        elif module_key == 'supplier':
+            high_risk = module_data.get('high_risk_count', 0)
+            if high_risk > 0:
+                return f"{high_risk} tedarikçi yüksek risk taşıyor. Alternatif tedarikçi değerlendirilmeli."
+            return "Tedarikçi riskleri kontrol altında."
+        
+        elif module_key == 'forecast':
+            trend_up = module_data.get('trend_up', 0)
+            trend_down = module_data.get('trend_down', 0)
+            if trend_up > trend_down:
+                return f"Talep artış trendi var. Stok seviyeleri artırılmalı."
+            elif trend_down > trend_up:
+                return f"Talep azalış trendi var. Stok seviyeleri gözden geçirilmeli."
+            return "Talep trendi dengeli."
+        
+        return "Analiz sonuçları değerlendirilmeli."
+
+    def _get_severity(self, priority: int) -> str:
+        if priority >= 90:
+            return 'critical'
+        elif priority >= 70:
+            return 'warning'
+        elif priority >= 40:
+            return 'info'
+        return 'info'
+    
     def _get_forecast_summary(self) -> Optional[Dict[str, Any]]:
         """Forecast özetini çıkar."""
         last_result = self.db.query(AnalysisResult).filter(
             AnalysisResult.user_id == self.user_id,
-            AnalysisResult.result_type.like('forecast_batch%'),
+            AnalysisResult.result_type.in_(['forecast_batch', 'forecast_batch_async']),
             AnalysisResult.status.in_(['completed', None])
         ).order_by(
             AnalysisResult.created_at.desc()
@@ -101,43 +178,28 @@ class DashboardSummaryEngine:
             return None
         
         data = last_result.data or {}
+        
+        # ✅ Önce dashboard_summary alanını kontrol et
+        if 'dashboard_summary' in data:
+            return data['dashboard_summary']
+        
+        # ⏳ FALLBACK: Eski veri için manuel
         results = data.get('results', [])
-        
-        # Priority hesapla
-        priority = self._calculate_forecast_priority(last_result, results)
-        
-        # Summary oluştur
-        total_items = len(results)
-        if total_items == 0:
+        if not results:
             return None
         
-        # Trend analizi
-        trend_up = sum(1 for r in results if r.get('trend_direction') == 'Artış')
-        trend_down = sum(1 for r in results if r.get('trend_direction') == 'Azalış')
-        
-        if trend_up > trend_down:
-            trend_text = f"{trend_up} üründe artış bekleniyor"
-        else:
-            trend_text = f"{trend_down} üründe azalış bekleniyor"
-        
-        return {
-            'priority': priority,
-            'summary': f"Talep {trend_text}. {total_items} ürün analiz edildi.",
-            'analysis_id': last_result.id,
-            'page': '/forecast',
-            'analysis_type': 'forecast',
-            'dataset_id': last_result.upload_id,
-            'total_items': total_items,
-            'trend_up': trend_up,
-            'trend_down': trend_down,
-            'created_at': last_result.created_at.isoformat()
-        }
+        from app.services.dashboard_summary_builder import build_forecast_dashboard_summary
+        return build_forecast_dashboard_summary(
+            results=results,
+            analysis_id=last_result.id,
+            dataset_id=last_result.upload_id
+        )
     
     def _get_safety_stock_summary(self) -> Optional[Dict[str, Any]]:
         """Safety Stock özetini çıkar."""
         last_result = self.db.query(AnalysisResult).filter(
             AnalysisResult.user_id == self.user_id,
-            AnalysisResult.result_type.like('safety_stock_batch%'),
+            AnalysisResult.result_type.in_(['safety_stock_batch', 'safety_stock_batch_async']),
             AnalysisResult.status.in_(['completed', None])
         ).order_by(
             AnalysisResult.created_at.desc()
@@ -147,46 +209,27 @@ class DashboardSummaryEngine:
             return None
         
         data = last_result.data or {}
+        
+        if 'dashboard_summary' in data:
+            return data['dashboard_summary']
+        
         results = data.get('results', [])
+        if not results:
+            return None
         
-        # Priority hesapla
-        priority = self._calculate_safety_stock_priority(last_result, results)
-        
-        # Kritik ürünleri bul
-        critical = []
-        for r in results:
-            if r.get('risk_level') == 'Yüksek':
-                critical.append({
-                    'code': r.get('material_code', ''),
-                    'risk': r.get('risk_score', 0),
-                    'ss': r.get('hybrid_ss', 0)
-                })
-        
-        # Summary oluştur
-        if critical:
-            top_critical = critical[0]
-            summary = f"{len(critical)} kritik ürün. En riskli: {top_critical.get('code', 'Bilinmiyor')}"
-        else:
-            summary = f"{len(results)} ürün analiz edildi, kritik ürün yok."
-        
-        return {
-            'priority': priority,
-            'summary': summary,
-            'analysis_id': last_result.id,
-            'page': '/safety-stock',
-            'analysis_type': 'safety_stock',
-            'dataset_id': last_result.upload_id,
-            'total_items': len(results),
-            'critical_count': len(critical),
-            'critical_items': critical[:5],
-            'created_at': last_result.created_at.isoformat()
-        }
+        from app.services.dashboard_summary_builder import build_safety_stock_dashboard_summary
+        return build_safety_stock_dashboard_summary(
+            results=results,
+            analysis_id=last_result.id,
+            dataset_id=last_result.upload_id,
+            service_level=data.get('service_level', 0.95)
+        )
     
     def _get_supplier_summary(self) -> Optional[Dict[str, Any]]:
         """Supplier özetini çıkar."""
         last_result = self.db.query(AnalysisResult).filter(
             AnalysisResult.user_id == self.user_id,
-            AnalysisResult.result_type.like('supplier_batch%'),
+            AnalysisResult.result_type.in_(['supplier_batch', 'supplier_batch_async']),
             AnalysisResult.status.in_(['completed', None])
         ).order_by(
             AnalysisResult.created_at.desc()
@@ -196,41 +239,26 @@ class DashboardSummaryEngine:
             return None
         
         data = last_result.data or {}
-        suppliers = data.get('suppliers', [])
         
-        # Priority hesapla
-        priority = self._calculate_supplier_priority(last_result, suppliers)
+        if 'dashboard_summary' in data:
+            return data['dashboard_summary']
         
-        # Riskli tedarikçileri bul
-        high_risk = []
-        for s in suppliers:
-            if s.get('risk_level') == 'YÜKSEK':
-                high_risk.append(s.get('name', 'Bilinmiyor'))
+        suppliers = data.get('suppliers', data.get('results', []))
+        if not suppliers:
+            return None
         
-        # Summary oluştur
-        if high_risk:
-            summary = f"{len(high_risk)} tedarikçi yüksek riskli. İlk: {high_risk[0]}"
-        else:
-            summary = f"{len(suppliers)} tedarikçi analiz edildi."
-        
-        return {
-            'priority': priority,
-            'summary': summary,
-            'analysis_id': last_result.id,
-            'page': '/supplier',
-            'analysis_type': 'supplier',
-            'dataset_id': last_result.upload_id,
-            'total_items': len(suppliers),
-            'high_risk_count': len(high_risk),
-            'high_risk_suppliers': high_risk[:5],
-            'created_at': last_result.created_at.isoformat()
-        }
+        from app.services.dashboard_summary_builder import build_supplier_dashboard_summary
+        return build_supplier_dashboard_summary(
+            suppliers=suppliers,
+            analysis_id=last_result.id,
+            dataset_id=last_result.upload_id
+        )
     
     def _get_simulation_summary(self) -> Optional[Dict[str, Any]]:
         """Simulation özetini çıkar."""
         last_result = self.db.query(AnalysisResult).filter(
             AnalysisResult.user_id == self.user_id,
-            AnalysisResult.result_type.like('simulation_batch%'),
+            AnalysisResult.result_type.in_(['simulation_batch', 'simulation_batch_async']),
             AnalysisResult.status.in_(['completed', None])
         ).order_by(
             AnalysisResult.created_at.desc()
@@ -240,41 +268,27 @@ class DashboardSummaryEngine:
             return None
         
         data = last_result.data or {}
+        
+        if 'dashboard_summary' in data:
+            return data['dashboard_summary']
+        
         results = data.get('results', [])
+        if not results:
+            return None
         
-        # Priority hesapla
-        priority = self._calculate_simulation_priority(last_result, results)
-        
-        # Ortalama servis seviyesi
-        avg_service = 0
-        if results:
-            avg_service = sum(r.get('service_level', 0) for r in results) / len(results)
-        
-        # Potansiyel tasarruf
-        saving_potential = 0
-        if results:
-            high_risk_products = [r for r in results if r.get('tail_risk', 0) > 0.4]
-            if high_risk_products:
-                saving_potential = len(high_risk_products) * 2
-        
-        return {
-            'priority': priority,
-            'summary': f"Ortalama servis: %{avg_service:.1f}. {len(results)} ürün simüle edildi.",
-            'analysis_id': last_result.id,
-            'page': '/simulation',
-            'analysis_type': 'simulation',
-            'dataset_id': last_result.upload_id,
-            'total_items': len(results),
-            'avg_service_level': round(avg_service, 1),
-            'saving_potential': saving_potential,
-            'created_at': last_result.created_at.isoformat()
-        }
+        from app.services.dashboard_summary_builder import build_simulation_dashboard_summary
+        return build_simulation_dashboard_summary(
+            results=results,
+            analysis_id=last_result.id,
+            dataset_id=last_result.upload_id,
+            config=data.get('config', {})
+        )
     
     def _get_backtest_summary(self) -> Optional[Dict[str, Any]]:
         """Backtest özetini çıkar."""
         last_result = self.db.query(AnalysisResult).filter(
             AnalysisResult.user_id == self.user_id,
-            AnalysisResult.result_type.like('backtest_batch%'),
+            AnalysisResult.result_type.in_(['backtest_batch', 'backtest_batch_async']),
             AnalysisResult.status.in_(['completed', None])
         ).order_by(
             AnalysisResult.created_at.desc()
@@ -284,141 +298,21 @@ class DashboardSummaryEngine:
             return None
         
         data = last_result.data or {}
+        
+        if 'dashboard_summary' in data:
+            return data['dashboard_summary']
+        
         results = data.get('results', [])
+        if not results:
+            return None
         
-        # Priority hesapla
-        priority = self._calculate_backtest_priority(last_result, results)
-        
-        # Ortalama servis seviyesi
-        avg_service = 0
-        if results:
-            avg_service = sum(r.get('service_level', 0) for r in results) / len(results)
-        
-        return {
-            'priority': priority,
-            'summary': f"Ortalama servis: %{avg_service:.1f}. {len(results)} ürün test edildi.",
-            'analysis_id': last_result.id,
-            'page': '/backtest',
-            'analysis_type': 'backtest',
-            'dataset_id': last_result.upload_id,
-            'total_items': len(results),
-            'avg_service_level': round(avg_service, 1),
-            'created_at': last_result.created_at.isoformat()
-        }
-    
-    # ============================================================
-    # 📌 PRIORITY HESAPLAMA FONKSİYONLARI
-    # ============================================================
-    
-    def _calculate_forecast_priority(self, result: AnalysisResult, results: list) -> int:
-        """Forecast priority hesapla."""
-        priority = 40  # Base
-        
-        # 1. Analiz yaşı
-        days_ago = (datetime.utcnow() - result.created_at).days
-        if days_ago > 30:
-            priority += 30
-        elif days_ago > 14:
-            priority += 15
-        
-        # 2. Trend değişimi
-        if results:
-            trend_up = sum(1 for r in results if r.get('trend_direction') == 'Artış')
-            trend_down = sum(1 for r in results if r.get('trend_direction') == 'Azalış')
-            if trend_up > 0 and trend_down > 0:
-                priority += 10
-            elif abs(trend_up - trend_down) > len(results) * 0.6:
-                priority += 15
-        
-        # 3. Outlier varlığı
-        for r in results:
-            if r.get('outlier_info', {}).get('has_outliers', False):
-                priority += 10
-                break
-        
-        return min(100, priority)
-    
-    def _calculate_safety_stock_priority(self, result: AnalysisResult, results: list) -> int:
-        """Safety Stock priority hesapla."""
-        priority = 40
-        
-        # 1. Kritik ürün sayısı
-        critical = [r for r in results if r.get('risk_level') == 'Yüksek']
-        critical_count = len(critical)
-        
-        if critical_count > 20:
-            priority += 50
-        elif critical_count > 10:
-            priority += 35
-        elif critical_count > 5:
-            priority += 20
-        elif critical_count > 0:
-            priority += 10
-        
-        # 2. Sıfır talep oranı
-        zero_demand = [r for r in results if r.get('zero_ratio', 0) > 0.5]
-        if zero_demand:
-            priority += min(15, len(zero_demand) * 2)
-        
-        return min(100, priority)
-    
-    def _calculate_supplier_priority(self, result: AnalysisResult, suppliers: list) -> int:
-        """Supplier priority hesapla."""
-        priority = 40
-        
-        # 1. Yüksek riskli tedarikçi sayısı
-        high_risk = [s for s in suppliers if s.get('risk_level') == 'YÜKSEK']
-        if len(high_risk) > 5:
-            priority += 45
-        elif len(high_risk) > 3:
-            priority += 30
-        elif len(high_risk) > 0:
-            priority += 15
-        
-        # 2. Düşük performans
-        low_perf = [s for s in suppliers if s.get('performance_level') == 'KÖTÜ']
-        if low_perf:
-            priority += min(15, len(low_perf) * 3)
-        
-        return min(100, priority)
-    
-    def _calculate_simulation_priority(self, result: AnalysisResult, results: list) -> int:
-        """Simulation priority hesapla."""
-        priority = 30
-        
-        # 1. Analiz yaşı
-        days_ago = (datetime.utcnow() - result.created_at).days
-        if days_ago > 60:
-            priority += 25
-        elif days_ago > 30:
-            priority += 15
-        
-        # 2. Yüksek tail risk
-        if results:
-            high_risk = [r for r in results if r.get('tail_risk', 0) > 0.5]
-            if high_risk:
-                priority += min(20, len(high_risk) * 2)
-        
-        return min(100, priority)
-    
-    def _calculate_backtest_priority(self, result: AnalysisResult, results: list) -> int:
-        """Backtest priority hesapla."""
-        priority = 20
-        
-        # 1. Analiz yaşı
-        days_ago = (datetime.utcnow() - result.created_at).days
-        if days_ago > 90:
-            priority += 20
-        elif days_ago > 45:
-            priority += 10
-        
-        # 2. Düşük servis seviyesi
-        if results:
-            low_service = [r for r in results if r.get('service_level', 0) < 0.85]
-            if low_service:
-                priority += min(15, len(low_service) * 2)
-        
-        return min(100, priority)
+        from app.services.dashboard_summary_builder import build_backtest_dashboard_summary
+        return build_backtest_dashboard_summary(
+            results=results,
+            analysis_id=last_result.id,
+            dataset_id=last_result.upload_id,
+            test_window=data.get('test_window', 8)
+        )
     
     def _generate_overall_summary(self, modules: dict, top_module: str) -> str:
         """Genel özet oluştur."""
@@ -439,5 +333,4 @@ class DashboardSummaryEngine:
 
 
 def get_dashboard_summary_engine(db: Session, user_id: int) -> DashboardSummaryEngine:
-    """DashboardSummaryEngine instance'ı oluşturur."""
     return DashboardSummaryEngine(db, user_id)

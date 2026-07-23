@@ -49,6 +49,5 @@ export const getUser = async (token: string) => {
   const res = await axios.get(`${API_BASE}/auth/me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  console.log('🔍 getUser cevabı:', res.data);
   return res.data;
 };

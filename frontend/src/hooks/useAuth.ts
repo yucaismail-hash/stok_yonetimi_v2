@@ -69,7 +69,6 @@ export const useAuth = create<AuthState>()(
         try {
           const data = await apiLogin(email, password);
           const userData = await getUser(data.access_token);
-          console.log('👤 Login sonrası user:', userData);
           set({
             token: data.access_token,
             user: userData,
@@ -162,7 +161,6 @@ export const useAuth = create<AuthState>()(
         try {
           const userData = await getUser(token);
           set({ user: userData });
-          console.log('🔄 Kullanıcı bilgileri yenilendi:', userData);
         } catch (err: unknown) {
           console.error('❌ Kullanıcı bilgisi yenilenemedi:', err);
           if (err && typeof err === 'object' && 'response' in err) {

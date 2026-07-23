@@ -20,6 +20,14 @@ from datetime import datetime, timedelta
 import numpy as np
 import logging
 
+from app.services.dashboard_summary_builder import (
+    build_forecast_dashboard_summary,
+    build_safety_stock_dashboard_summary,
+    build_simulation_dashboard_summary,
+    build_backtest_dashboard_summary,
+    build_supplier_dashboard_summary
+)
+
 from app.api.dependencies import (
     get_or_create_dataset_from_upload,
     process_pricing_with_dataset,
@@ -319,6 +327,7 @@ def batch_forecast(
             raise HTTPException(status_code=400, detail="Hiçbir malzeme için tahmin yapılamadı!")
         
         # 5. Sonuçları kaydet
+        # ✅ 1. result_data'yı hazırla (dashboard_summary OLMADAN)
         result_data = {
             'success': True,
             'total': len(results),
@@ -328,11 +337,12 @@ def batch_forecast(
             'pattern_analysis': True
         }
         
+        # ✅ 2. AnalysisResult'u oluştur (data ile birlikte)
         analysis_result = AnalysisResult(
             user_id=current_user.id,
             upload_id=upload_id,
             result_type='forecast_batch',
-            data=result_data,
+            data=result_data,  # dashboard_summary yok
             params={
                 'horizon': request.horizon,
                 'model_type': request.model_type,
@@ -347,7 +357,24 @@ def batch_forecast(
             progress=100,
             expires_at=datetime.utcnow() + timedelta(days=15)
         )
+        
+        # ✅ 3. Kaydet ve ID al
         db.add(analysis_result)
+        db.commit()
+        db.refresh(analysis_result)  # ← ID burada
+        
+        # ✅ 4. ŞİMDİ dashboard_summary oluştur (analysis_result.id hazır)
+        dashboard_summary = build_forecast_dashboard_summary(
+            results=results,
+            analysis_id=analysis_result.id,
+            dataset_id=dataset.id,
+            horizon=request.horizon
+        )
+        
+        # ✅ 5. dashboard_summary'yi ekle ve güncelle
+        result_data['dashboard_summary'] = dashboard_summary
+        analysis_result.data = result_data
+        db.commit()
         
         # Öğrenme verilerini güncelle
         if results:
@@ -367,6 +394,7 @@ def batch_forecast(
         
         db.commit()
         db.refresh(analysis_result)
+        
         
         # AI Özetini arka planda oluştur
         background_tasks.add_task(
@@ -668,12 +696,13 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
         # ============================================================
         
+                        # ✅ 1. result_data hazırla (dashboard_summary YOK)
         result_data = {
             'success': True,
             'total': len(results),
-            'results': results,
-            'horizon': request.horizon,
-            'model_type': request.model_type,
+            'results': results,                         # ← Forecast'a özel
+            'horizon': request.horizon,                 # ← Forecast'a özel
+            'model_type': request.model_type,           # ← Forecast'a özel
             'task_id': task_id,
             'status': 'completed',
             'message': 'Forecast analizi tamamlandı!',
@@ -681,17 +710,35 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
             'completed_at': datetime.utcnow().isoformat()
         }
         
-        # ✅ Önce ana kaydı güncelle
-        db.query(AnalysisResult).filter(
+        # ✅ 2. Mevcut kaydı al
+        existing = db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({
-            'data': result_data,
-            'status': 'completed',
-            'progress': 100,
-            'message': 'Tamamlandı!',
-            'total_materials': len(results),
-            'updated_at': datetime.utcnow()
-        })
+        ).first()
+        
+        if existing:
+            # ✅ 3. dashboard_summary oluştur
+            dashboard_summary = build_forecast_dashboard_summary(
+                results=results,
+                analysis_id=existing.id,
+                dataset_id=0,
+                horizon=request.horizon
+            )
+            
+            # ✅ 4. dashboard_summary'yi ekle
+            result_data['dashboard_summary'] = dashboard_summary
+            
+            # ✅ 5. Güncelle
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'data': result_data,
+                'status': 'completed',
+                'progress': 100,
+                'message': 'Tamamlandı!',
+                'total_materials': len(results),
+                'updated_at': datetime.utcnow()
+            })
+        db.commit()              
         
         # Öğrenme verilerini güncelle
         if results:

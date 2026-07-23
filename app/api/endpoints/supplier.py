@@ -27,6 +27,14 @@ from app.api.dependencies import (
     get_active_dataset
 )
 
+from app.services.dashboard_summary_builder import (
+    build_forecast_dashboard_summary,
+    build_safety_stock_dashboard_summary,
+    build_simulation_dashboard_summary,
+    build_backtest_dashboard_summary,
+    build_supplier_dashboard_summary
+)
+
 logger = logging.getLogger(__name__)
 ai_engine = AISummaryEngine()
 router = APIRouter()
@@ -245,6 +253,7 @@ def analyze_suppliers_batch(
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
         # 5. Sonuçları kaydet
+        # ✅ 1. result_data
         result_data = {
             'suppliers': supplier_results,
             'recommendations': recommendations,
@@ -252,6 +261,7 @@ def analyze_suppliers_batch(
             'has_suppliers': True
         }
         
+        # ✅ 2. AnalysisResult oluştur
         analysis_result = AnalysisResult(
             user_id=current_user.id,
             upload_id=upload_id,
@@ -268,9 +278,23 @@ def analyze_suppliers_batch(
             progress=100,
             expires_at=datetime.utcnow() + timedelta(days=15)
         )
+        
+        # ✅ 3. Kaydet ve ID al
         db.add(analysis_result)
         db.commit()
         db.refresh(analysis_result)
+        
+        # ✅ 4. dashboard_summary oluştur
+        dashboard_summary = build_supplier_dashboard_summary(
+            suppliers=supplier_results,
+            analysis_id=analysis_result.id,
+            dataset_id=dataset.id
+        )
+        
+        # ✅ 5. Güncelle
+        result_data['dashboard_summary'] = dashboard_summary
+        analysis_result.data = result_data
+        db.commit()
         
         # AI Özetini arka planda oluştur
         background_tasks.add_task(
@@ -591,13 +615,13 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
         # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
         # ============================================================
         
+        # ✅ 1. result_data hazırla (dashboard_summary YOK)
         result_data = {
             'success': True,
-            'total': len(supplier_results),  # ✅ supplier_results kullan
-            'results': supplier_results,
-            'total_suppliers': len(supplier_results),
-            'suppliers': supplier_results,
-            'recommendations': recommendations,
+            'total': len(supplier_results),
+            'suppliers': supplier_results,              # ← Supplier'a özel
+            'recommendations': recommendations,         # ← Supplier'a özel
+            'total_suppliers': len(supplier_results),   # ← Supplier'a özel
             'has_suppliers': True,
             'task_id': task_id,
             'status': 'completed',
@@ -605,17 +629,34 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             'completed_at': datetime.utcnow().isoformat()
         }
         
-        db.query(AnalysisResult).filter(
+        # ✅ 2. Mevcut kaydı al
+        existing = db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({
-            'data': result_data,
-            'status': 'completed',
-            'progress': 100,
-            'message': 'Tamamlandı!',
-            'total_materials': len(supplier_results),  # ✅ supplier_results kullan
-            'updated_at': datetime.utcnow()
-        })
-        db.commit()
+        ).first()
+        
+        if existing:
+            # ✅ 3. dashboard_summary oluştur
+            dashboard_summary = build_supplier_dashboard_summary(
+                suppliers=supplier_results,             # ← supplier_results kullan
+                analysis_id=existing.id,
+                dataset_id=0
+            )
+            
+            # ✅ 4. dashboard_summary'yi ekle
+            result_data['dashboard_summary'] = dashboard_summary
+            
+            # ✅ 5. Güncelle
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'data': result_data,
+                'status': 'completed',
+                'progress': 100,
+                'message': 'Tamamlandı!',
+                'total_materials': len(supplier_results),
+                'updated_at': datetime.utcnow()
+            })
+            db.commit()
         
         # ✅ Sonucu tekrar al (ID için)
         result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()

@@ -19,6 +19,13 @@ from app.api.dependencies import (
     process_pricing_with_dataset,
     get_active_dataset
 )
+from app.services.dashboard_summary_builder import (
+    build_forecast_dashboard_summary,
+    build_safety_stock_dashboard_summary,
+    build_simulation_dashboard_summary,
+    build_backtest_dashboard_summary,
+    build_supplier_dashboard_summary
+)
 
 logger = logging.getLogger(__name__)
 ai_engine = AISummaryEngine()
@@ -331,6 +338,7 @@ def run_backtest_batch(
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi! Lütfen verilerinizi kontrol edin.")
         
         # 5. Sonuçları kaydet
+        # ✅ 1. result_data
         result_data = {
             'success': True,
             'total': len(results),
@@ -339,6 +347,7 @@ def run_backtest_batch(
             'strategies_tested': strategies_to_test
         }
         
+        # ✅ 2. AnalysisResult oluştur
         analysis_result = AnalysisResult(
             user_id=current_user.id,
             upload_id=upload_id,
@@ -357,9 +366,24 @@ def run_backtest_batch(
             progress=100,
             expires_at=datetime.utcnow() + timedelta(days=15)
         )
+        
+        # ✅ 3. Kaydet ve ID al
         db.add(analysis_result)
         db.commit()
         db.refresh(analysis_result)
+        
+        # ✅ 4. dashboard_summary oluştur
+        dashboard_summary = build_backtest_dashboard_summary(
+            results=results,
+            analysis_id=analysis_result.id,
+            dataset_id=dataset.id,
+            test_window=test_window
+        )
+        
+        # ✅ 5. Güncelle
+        result_data['dashboard_summary'] = dashboard_summary
+        analysis_result.data = result_data
+        db.commit()
         
         # AI Özetini arka planda oluştur
         background_tasks.add_task(
@@ -702,30 +726,48 @@ def run_async_backtest_job(task_id: str, user_id: int, upload_id: str, request: 
         # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
         # ============================================================
         
+        # ✅ 1. result_data hazırla (dashboard_summary YOK)
         result_data = {
             'success': True,
             'total': len(results),
-            'results': results,
-            'test_window': test_window,
-            'strategies_tested': strategies_to_test,
+            'results': results,                         # ← Backtest'a özel
+            'test_window': test_window,                 # ← Backtest'a özel
+            'strategies_tested': strategies_to_test,    # ← Backtest'a özel
             'task_id': task_id,
             'status': 'completed',
             'message': 'Backtest tamamlandı!',
             'completed_at': datetime.utcnow().isoformat()
         }
         
-        db.query(AnalysisResult).filter(
+        # ✅ 2. Mevcut kaydı al
+        existing = db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({
-            'data': result_data,
-            'status': 'completed',
-            'progress': 100,
-            'message': 'Tamamlandı!',
-            'total_materials': len(results),
-            'updated_at': datetime.utcnow()
-        })
+        ).first()
         
-        db.commit()
+        if existing:
+            # ✅ 3. dashboard_summary oluştur
+            dashboard_summary = build_backtest_dashboard_summary(
+                results=results,
+                analysis_id=existing.id,
+                dataset_id=0,
+                test_window=test_window
+            )
+            
+            # ✅ 4. dashboard_summary'yi ekle
+            result_data['dashboard_summary'] = dashboard_summary
+            
+            # ✅ 5. Güncelle
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'data': result_data,
+                'status': 'completed',
+                'progress': 100,
+                'message': 'Tamamlandı!',
+                'total_materials': len(results),
+                'updated_at': datetime.utcnow()
+            })
+            db.commit()
         
         # Bildirim oluştur
         try:

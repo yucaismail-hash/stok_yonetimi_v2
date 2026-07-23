@@ -22,6 +22,14 @@ from app.api.dependencies import (
     get_active_dataset
 )
 
+from app.services.dashboard_summary_builder import (
+    build_forecast_dashboard_summary,
+    build_safety_stock_dashboard_summary,
+    build_simulation_dashboard_summary,
+    build_backtest_dashboard_summary,
+    build_supplier_dashboard_summary
+)
+
 # ✅ LOGGER
 logger = logging.getLogger(__name__)
 
@@ -491,6 +499,7 @@ def calculate_safety_stock_batch(
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
         # 5. Sonuçları kaydet
+                # ✅ 1. result_data
         result_data = {
             'success': True,
             'total': len(results),
@@ -501,6 +510,7 @@ def calculate_safety_stock_batch(
             'ai_analysis': True
         }
         
+        # ✅ 2. AnalysisResult oluştur (dashboard_summary yok)
         analysis_result = AnalysisResult(
             user_id=current_user.id,
             upload_id=upload_id,
@@ -520,7 +530,24 @@ def calculate_safety_stock_batch(
             progress=100,
             expires_at=datetime.utcnow() + timedelta(days=15)
         )
+        
+        # ✅ 3. Kaydet ve ID al
         db.add(analysis_result)
+        db.commit()
+        db.refresh(analysis_result)
+        
+        # ✅ 4. dashboard_summary oluştur
+        dashboard_summary = build_safety_stock_dashboard_summary(
+            results=results,
+            analysis_id=analysis_result.id,
+            dataset_id=dataset.id,
+            service_level=service_level
+        )
+        
+        # ✅ 5. Güncelle
+        result_data['dashboard_summary'] = dashboard_summary
+        analysis_result.data = result_data
+        db.commit()
         
         if results:
             from app.api.endpoints.learning import update_learning_from_pattern
@@ -826,29 +853,50 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
         # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
         # ============================================================
         
+        # ✅ 1. result_data hazırla (dashboard_summary YOK)
         result_data = {
             'success': True,
             'total': len(results),
-            'results': results,
-            'service_level': service_level,
+            'results': results,                         # ← Safety Stock'a özel
+            'service_level': service_level,             # ← Safety Stock'a özel
             'task_id': task_id,
             'status': 'completed',
             'message': 'Emniyet stoğu analizi tamamlandı!',
             'pattern_analysis': True,
-            'abc_xyz_analysis': True,
+            'abc_xyz_analysis': True,                   # ← Safety Stock'a özel
             'completed_at': datetime.utcnow().isoformat()
         }
         
-        db.query(AnalysisResult).filter(
+        # ✅ 2. Mevcut kaydı al
+        existing = db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
-        ).update({
-            'data': result_data,
-            'status': 'completed',
-            'progress': 100,
-            'message': 'Tamamlandı!',
-            'total_materials': len(results),
-            'updated_at': datetime.utcnow()
-        })
+        ).first()
+        
+        if existing:
+            # ✅ 3. dashboard_summary oluştur
+            dashboard_summary = build_safety_stock_dashboard_summary(
+                results=results,
+                analysis_id=existing.id,
+                dataset_id=0,
+                service_level=service_level
+            )
+            
+            # ✅ 4. dashboard_summary'yi ekle
+            result_data['dashboard_summary'] = dashboard_summary
+            
+            # ✅ 5. Güncelle
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'data': result_data,
+                'status': 'completed',
+                'progress': 100,
+                'message': 'Tamamlandı!',
+                'total_materials': len(results),
+                'updated_at': datetime.utcnow()
+            })
+                     
+        db.commit()
         
         # Öğrenme verilerini güncelle
         if results:
