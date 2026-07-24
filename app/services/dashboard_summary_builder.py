@@ -293,29 +293,42 @@ def build_simulation_dashboard_summary(
     # Priority hesapla
     priority = 30  # Base
     
-    if high_risk_count > total_items * 0.3:
+    if high_risk_count > total_items * 0.3 and total_items > 0:
         priority += 40
-    elif high_risk_count > total_items * 0.1:
+    elif high_risk_count > total_items * 0.1 and total_items > 0:
         priority += 20
     elif high_risk_count > 0:
         priority += 10
     
-    if avg_service < 85:
+    if avg_service < 85 and total_items > 0:
         priority += 20
-    elif avg_service < 90:
+    elif avg_service < 90 and total_items > 0:
         priority += 10
     
     priority = min(100, max(0, priority))
     
-    # Summary
-    summary = f"Ortalama servis: %{avg_service:.1f}. {total_items} ürün simüle edildi."
+    # ✅ Summary - TOTAL_ITEMS'i göster
+    if total_items > 0:
+        summary = f"Ortalama servis: %{avg_service:.1f}. {total_items} ürün simüle edildi."
+    else:
+        summary = "Henüz simülasyon sonucu yok. Yeni bir simülasyon çalıştırın."
     
     # Attention
     attention = []
     if high_risk_count > 0:
         attention.append(f"{high_risk_count} ürün yüksek tail risk taşıyor.")
-    if avg_service < 85:
+    if avg_service < 85 and total_items > 0:
         attention.append(f"Servis seviyesi düşük (%{avg_service:.1f}).")
+    
+    # ✅ Critical items (simülasyon için riskli ürünler)
+    critical_items = []
+    for r in results[:5]:
+        if r.get('tail_risk', 0) > 0.5:
+            critical_items.append({
+                'code': r.get('material_code', ''),
+                'tail_risk': r.get('tail_risk', 0),
+                'service_level': r.get('service_level', 0),
+            })
     
     return {
         'priority': priority,
@@ -333,7 +346,9 @@ def build_simulation_dashboard_summary(
             'avg_service_level': avg_service,
             'high_risk_count': high_risk_count
         },
-        'avg_service_level': avg_service
+        'avg_service_level': avg_service,
+        'total_items': total_items,  # ✅ EKLENDI
+        'critical_items': critical_items,  # ✅ EKLENDI
     }
 
 

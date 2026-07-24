@@ -1201,6 +1201,39 @@ export default function AdminPage() {
         </Card>
       )}
 
+      {/* Tab 5: Validation Rules */}
+      <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 3 }}>
+        <Tab label="📋 Tüm İşlemler" />
+        <Tab label="🔄 İade İşlemleri" />
+        <Tab label="📊 Endpoint Profilleri" />
+        <Tab label="📈 Score Aralıkları" />
+        <Tab label="📋 İşlem Logları" />
+        <Tab label="⚙️ Validation Rules" />  // ✅ YENİ
+      </Tabs>
+
+      // Tab 5: Validation Rules
+      {tabValue === 5 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>
+              ⚙️ Validation Rules
+            </Typography>
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Bu alan şu anda geliştirme aşamasındadır. Yakında eklenecektir.
+            </Alert>
+            <Typography variant="body2" color="text.secondary">
+              • Validation Rules (Kolon kontrolleri, veri tipi kontrolleri)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              • Analysis Impact Rules (Hangi alan hangi analizi etkiler)
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              • Normalization Rules (Akıllı veri standardizasyonu)
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
+
       {/* 🔄 İADE DIALOG */}
       <Dialog open={refundDialogOpen} onClose={() => setRefundDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>

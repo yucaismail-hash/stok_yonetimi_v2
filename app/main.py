@@ -11,7 +11,7 @@ from app.api.endpoints import (notifications, tasks, upload,
                                forecast, simulate, report, pattern, 
                                safety_stock, backtest, supplier, learning, 
                                export, payment, profile, sectors, cost,
-                                 pricing, polar, dashboard)
+                                 pricing, polar, dashboard, import_wizard)
 
 from app.auth import auth_router
 from app.admin import router as admin_router
@@ -69,6 +69,8 @@ async def token_middleware(request: Request, call_next):
         r"^/admin/processing-transactions",
         # ✅ Pricing Engine preview endpoint'i
         r"^/api/pricing/preview",
+        
+        r"^/api/import-wizard",  # ✅ YENİ
     ]
     
     path = request.url.path
@@ -228,7 +230,7 @@ app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(polar.router, prefix="/api", tags=["polar"])
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
 app.include_router(pricing.router, prefix="/api", tags=["pricing"])
-
+app.include_router(import_wizard.router, prefix="/api", tags=["import-wizard"])
 
 # ============================================
 # Public Endpoint'ler (Success / Cancel)

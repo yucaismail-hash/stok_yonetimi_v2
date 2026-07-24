@@ -11,9 +11,21 @@ from app.models import (
     TokenHistory, 
     CreditPackage, 
     CreditTransaction,
-    Notification
+    Notification,ValidationRule, 
+    AnalysisImpactRule, NormalizationRule
 )
 from app.auth import get_current_user
+
+
+from app.auth import get_current_user, get_current_user_optional
+from app.schemas.admin import (
+    ValidationRuleCreate,
+    ValidationRuleUpdate,
+    AnalysisImpactRuleCreate,
+    AnalysisImpactRuleUpdate,
+    NormalizationRuleCreate,
+    NormalizationRuleUpdate,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1142,3 +1154,528 @@ async def get_user_processing_transactions(
         "total": len(transactions),
         "items": transactions
     }
+
+
+# app/api/endpoints/admin.py - TAM DOSYA (GÜNCELLENMİŞ)
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+from app.database import get_db
+from app.models import (
+    User, 
+    CreditTransaction, 
+    CreditPackage,
+    ValidationRule,
+    AnalysisImpactRule,
+    NormalizationRule,
+)
+
+
+# ============================================================
+# 📌 MEVCUT ADMIN ENDPOINT'LER (KORUNUYOR)
+# ============================================================
+
+def require_admin(current_user: User = Depends(get_current_user)):
+    """Admin yetkisi kontrolü"""
+    if current_user.email not in ['admin@stok.com', 'admin@admin.com']:
+        raise HTTPException(status_code=403, detail="Admin yetkisi gerekli")
+    return current_user
+
+
+@router.get("/credit-transactions")
+async def get_credit_transactions(
+    limit: int = 100,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Tüm kredi işlemlerini getir"""
+    transactions = db.query(CreditTransaction).order_by(
+        CreditTransaction.created_at.desc()
+    ).offset(offset).limit(limit).all()
+    
+    total = db.query(CreditTransaction).count()
+    
+    # Kullanıcı bilgilerini ekle
+    result = []
+    for t in transactions:
+        user = db.query(User).filter(User.id == t.user_id).first()
+        result.append({
+            **t.__dict__,
+            'user': {
+                'email': user.email if user else None,
+                'full_name': user.full_name if user else None,
+                'token_balance': user.token_balance if user else 0
+            }
+        })
+    
+    return {
+        'items': result,
+        'total': total,
+        'limit': limit,
+        'offset': offset
+    }
+
+
+@router.get("/dashboard/stats")
+async def get_admin_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Admin dashboard istatistikleri"""
+    total_users = db.query(User).count()
+    total_transactions = db.query(CreditTransaction).count()
+    
+    purchases = db.query(CreditTransaction).filter(
+        CreditTransaction.transaction_type == 'purchase'
+    ).all()
+    
+    refunds = db.query(CreditTransaction).filter(
+        CreditTransaction.transaction_type == 'refund'
+    ).all()
+    
+    total_credits_sold = sum(t.amount for t in purchases) if purchases else 0
+    total_refunds = len(refunds)
+    total_revenue = sum(t.price for t in purchases if t.price) if purchases else 0
+    
+    return {
+        'credit_sales': {
+            'total_transactions': total_transactions,
+            'total_credits_sold': total_credits_sold,
+            'total_refunds': total_refunds,
+            'total_revenue': total_revenue,
+        },
+        'users': {
+            'total': total_users,
+        }
+    }
+
+
+@router.get("/users/stats")
+async def get_user_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Kullanıcı bazlı istatistikler"""
+    users = db.query(User).all()
+    result = []
+    
+    for user in users:
+        purchases = db.query(CreditTransaction).filter(
+            CreditTransaction.user_id == user.id,
+            CreditTransaction.transaction_type == 'purchase'
+        ).all()
+        
+        refunds = db.query(CreditTransaction).filter(
+            CreditTransaction.user_id == user.id,
+            CreditTransaction.transaction_type == 'refund'
+        ).all()
+        
+        result.append({
+            'user_id': user.id,
+            'email': user.email,
+            'full_name': user.full_name,
+            'total_purchases': len(purchases),
+            'total_refunds': len(refunds),
+            'net_credits': sum(t.amount for t in purchases) - sum(t.amount for t in refunds) if purchases else 0,
+        })
+    
+    return result
+
+
+# ============================================================
+# 🆕 VALIDATION RULES ENDPOINT'LERİ
+# ============================================================
+
+# ----- ValidationRule -----
+
+@router.get("/validation-rules")
+async def get_validation_rules(
+    is_active: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Tüm validasyon kurallarını getir"""
+    query = db.query(ValidationRule)
+    if is_active is not None:
+        query = query.filter(ValidationRule.is_active == is_active)
+    return query.order_by(ValidationRule.created_at.desc()).all()
+
+
+@router.post("/validation-rules")
+async def create_validation_rule(
+    rule: ValidationRuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Yeni validasyon kuralı oluştur"""
+    new_rule = ValidationRule(**rule.dict())
+    db.add(new_rule)
+    db.commit()
+    db.refresh(new_rule)
+    return new_rule
+
+
+@router.put("/validation-rules/{rule_id}")
+async def update_validation_rule(
+    rule_id: int,
+    rule: ValidationRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Validasyon kuralını güncelle"""
+    db_rule = db.query(ValidationRule).filter(ValidationRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    
+    for key, value in rule.dict(exclude_unset=True).items():
+        setattr(db_rule, key, value)
+    
+    db.commit()
+    db.refresh(db_rule)
+    return db_rule
+
+
+@router.delete("/validation-rules/{rule_id}")
+async def delete_validation_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Validasyon kuralını sil"""
+    db_rule = db.query(ValidationRule).filter(ValidationRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    
+    db.delete(db_rule)
+    db.commit()
+    return {"success": True}
+
+
+@router.post("/validation-rules/init-defaults")
+async def init_default_validation_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Varsayılan validasyon kurallarını oluştur"""
+    defaults = [
+        # Kolon kontrolleri
+        {
+            'rule_type': 'column_check',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Ürün Kodu',
+            'rule_config': {'required': True},
+            'severity': 'error',
+            'description': 'Ürün Kodu kolonu zorunludur'
+        },
+        {
+            'rule_type': 'column_check',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Ürün Adı',
+            'rule_config': {'required': True},
+            'severity': 'warning',
+            'description': 'Ürün Adı kolonu önerilir'
+        },
+        {
+            'rule_type': 'column_check',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Ürün Grubu',
+            'rule_config': {'required': False},
+            'severity': 'warning',
+            'description': 'Ürün Grubu kolonu önerilir (AI öğrenmesi için)'
+        },
+        {
+            'rule_type': 'column_check',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Tedarik Süresi (Gün)',
+            'rule_config': {'required': True},
+            'severity': 'error',
+            'description': 'Tedarik Süresi kolonu zorunludur'
+        },
+        # Veri tipi kontrolleri
+        {
+            'rule_type': 'data_type',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Tedarik Süresi (Gün)',
+            'rule_config': {'type': 'number', 'min': 0},
+            'severity': 'error',
+            'description': 'Tedarik Süresi pozitif sayı olmalıdır'
+        },
+        # İş kuralı kontrolleri
+        {
+            'rule_type': 'business_rule',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Birim Maliyet (TL)',
+            'rule_config': {'min': 0},
+            'severity': 'warning',
+            'description': 'Birim Maliyet negatif olamaz'
+        },
+        {
+            'rule_type': 'business_rule',
+            'table_name': 'Temel_Veriler',
+            'column_name': 'Stok Tutma Oranı (%)',
+            'rule_config': {'min': 0, 'max': 100},
+            'severity': 'warning',
+            'description': 'Stok Tutma Oranı 0-100 arasında olmalıdır'
+        },
+    ]
+    
+    for rule_data in defaults:
+        existing = db.query(ValidationRule).filter(
+            ValidationRule.rule_type == rule_data['rule_type'],
+            ValidationRule.table_name == rule_data['table_name'],
+            ValidationRule.column_name == rule_data['column_name']
+        ).first()
+        
+        if not existing:
+            new_rule = ValidationRule(**rule_data)
+            db.add(new_rule)
+    
+    db.commit()
+    return {"success": True, "message": "Varsayılan kurallar oluşturuldu"}
+
+
+# ============================================================
+# 🆕 ANALYSIS IMPACT RULES ENDPOINT'LERİ
+# ============================================================
+
+@router.get("/analysis-impact-rules")
+async def get_analysis_impact_rules(
+    analysis_type: Optional[str] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Tüm analiz etki kurallarını getir"""
+    query = db.query(AnalysisImpactRule)
+    if analysis_type:
+        query = query.filter(AnalysisImpactRule.analysis_type == analysis_type)
+    return query.order_by(AnalysisImpactRule.analysis_type).all()
+
+
+@router.post("/analysis-impact-rules")
+async def create_analysis_impact_rule(
+    rule: AnalysisImpactRuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Yeni analiz etki kuralı oluştur"""
+    new_rule = AnalysisImpactRule(**rule.dict())
+    db.add(new_rule)
+    db.commit()
+    db.refresh(new_rule)
+    return new_rule
+
+
+@router.put("/analysis-impact-rules/{rule_id}")
+async def update_analysis_impact_rule(
+    rule_id: int,
+    rule: AnalysisImpactRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Analiz etki kuralını güncelle"""
+    db_rule = db.query(AnalysisImpactRule).filter(AnalysisImpactRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    
+    for key, value in rule.dict(exclude_unset=True).items():
+        setattr(db_rule, key, value)
+    
+    db.commit()
+    db.refresh(db_rule)
+    return db_rule
+
+
+@router.delete("/analysis-impact-rules/{rule_id}")
+async def delete_analysis_impact_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Analiz etki kuralını sil"""
+    db_rule = db.query(AnalysisImpactRule).filter(AnalysisImpactRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    
+    db.delete(db_rule)
+    db.commit()
+    return {"success": True}
+
+
+@router.post("/analysis-impact-rules/init-defaults")
+async def init_default_analysis_impact_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Varsayılan analiz etki kurallarını oluştur"""
+    defaults = [
+        # Forecast
+        {'analysis_type': 'forecast', 'field_name': 'Ürün Kodu', 'importance': 'critical', 'min_weeks_required': 12},
+        {'analysis_type': 'forecast', 'field_name': 'W1-Wn', 'importance': 'critical', 'min_weeks_required': 12},
+        {'analysis_type': 'forecast', 'field_name': 'Ürün Grubu', 'importance': 'recommended', 'min_weeks_required': None},
+        # Safety Stock
+        {'analysis_type': 'safety_stock', 'field_name': 'Ürün Kodu', 'importance': 'critical', 'min_weeks_required': 8},
+        {'analysis_type': 'safety_stock', 'field_name': 'W1-Wn', 'importance': 'critical', 'min_weeks_required': 8},
+        {'analysis_type': 'safety_stock', 'field_name': 'Tedarik Süresi (Gün)', 'importance': 'critical', 'min_weeks_required': None},
+        {'analysis_type': 'safety_stock', 'field_name': 'Dönem Başı Stok', 'importance': 'recommended', 'min_weeks_required': None},
+        {'analysis_type': 'safety_stock', 'field_name': 'Birim Maliyet (TL)', 'importance': 'recommended', 'min_weeks_required': None},
+        # Supplier
+        {'analysis_type': 'supplier', 'field_name': 'Tedarikçi Kodu', 'importance': 'critical', 'min_weeks_required': None},
+        {'analysis_type': 'supplier', 'field_name': 'Zamanında Teslim Oranı (%)', 'importance': 'critical', 'min_weeks_required': None},
+        {'analysis_type': 'supplier', 'field_name': 'Ortalama Teslim Süresi (Gün)', 'importance': 'critical', 'min_weeks_required': None},
+        # Simulation
+        {'analysis_type': 'simulation', 'field_name': 'Ürün Kodu', 'importance': 'critical', 'min_weeks_required': 4},
+        {'analysis_type': 'simulation', 'field_name': 'W1-Wn', 'importance': 'critical', 'min_weeks_required': 4},
+        {'analysis_type': 'simulation', 'field_name': 'Tedarik Süresi (Gün)', 'importance': 'critical', 'min_weeks_required': None},
+        {'analysis_type': 'simulation', 'field_name': 'Birim Maliyet (TL)', 'importance': 'recommended', 'min_weeks_required': None},
+        # Backtest
+        {'analysis_type': 'backtest', 'field_name': 'Ürün Kodu', 'importance': 'critical', 'min_weeks_required': 4},
+        {'analysis_type': 'backtest', 'field_name': 'W1-Wn', 'importance': 'critical', 'min_weeks_required': 4},
+    ]
+    
+    for rule_data in defaults:
+        existing = db.query(AnalysisImpactRule).filter(
+            AnalysisImpactRule.analysis_type == rule_data['analysis_type'],
+            AnalysisImpactRule.field_name == rule_data['field_name']
+        ).first()
+        
+        if not existing:
+            new_rule = AnalysisImpactRule(**rule_data)
+            db.add(new_rule)
+    
+    db.commit()
+    return {"success": True, "message": "Varsayılan analiz etki kuralları oluşturuldu"}
+
+
+# ============================================================
+# 🆕 NORMALIZATION RULES ENDPOINT'LERİ
+# ============================================================
+
+@router.get("/normalization-rules")
+async def get_normalization_rules(
+    is_active: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Tüm normalizasyon kurallarını getir"""
+    query = db.query(NormalizationRule)
+    if is_active is not None:
+        query = query.filter(NormalizationRule.is_active == is_active)
+    return query.order_by(NormalizationRule.rule_name).all()
+
+
+@router.post("/normalization-rules")
+async def create_normalization_rule(
+    rule: NormalizationRuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Yeni normalizasyon kuralı oluştur"""
+    new_rule = NormalizationRule(**rule.dict())
+    db.add(new_rule)
+    db.commit()
+    db.refresh(new_rule)
+    return new_rule
+
+
+@router.put("/normalization-rules/{rule_id}")
+async def update_normalization_rule(
+    rule_id: int,
+    rule: NormalizationRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Normalizasyon kuralını güncelle"""
+    db_rule = db.query(NormalizationRule).filter(NormalizationRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    
+    for key, value in rule.dict(exclude_unset=True).items():
+        setattr(db_rule, key, value)
+    
+    db.commit()
+    db.refresh(db_rule)
+    return db_rule
+
+
+@router.delete("/normalization-rules/{rule_id}")
+async def delete_normalization_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Normalizasyon kuralını sil"""
+    db_rule = db.query(NormalizationRule).filter(NormalizationRule.id == rule_id).first()
+    if not db_rule:
+        raise HTTPException(status_code=404, detail="Kural bulunamadı")
+    
+    db.delete(db_rule)
+    db.commit()
+    return {"success": True}
+
+
+@router.post("/normalization-rules/init-defaults")
+async def init_default_normalization_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin)
+):
+    """Varsayılan normalizasyon kurallarını oluştur"""
+    defaults = [
+        {
+            'rule_name': 'trim_whitespace',
+            'pattern': r'^\s+|\s+$',
+            'replacement': '',
+            'confidence_threshold': 0.95,
+            'description': 'Baştaki ve sondaki boşlukları temizle'
+        },
+        {
+            'rule_name': 'collapse_spaces',
+            'pattern': r'\s+',
+            'replacement': ' ',
+            'confidence_threshold': 0.95,
+            'description': 'Çoklu boşlukları tek boşluğa çevir'
+        },
+        {
+            'rule_name': 'remove_tabs',
+            'pattern': r'\t',
+            'replacement': ' ',
+            'confidence_threshold': 0.95,
+            'description': 'TAB karakterlerini boşluk ile değiştir'
+        },
+        {
+            'rule_name': 'normalize_number_dot',
+            'pattern': r'^(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)$',
+            'replacement': None,
+            'confidence_threshold': 0.9,
+            'description': '10.000,00 → 10000 formatına çevir'
+        },
+        {
+            'rule_name': 'normalize_number_comma',
+            'pattern': r'^(\d+,\d{2})$',
+            'replacement': None,
+            'confidence_threshold': 0.9,
+            'description': '10000,00 → 10000.00 formatına çevir'
+        },
+        {
+            'rule_name': 'uppercase_code',
+            'pattern': r'^([a-zA-Z0-9_-]+)$',
+            'replacement': None,
+            'confidence_threshold': 0.8,
+            'description': 'Ürün kodlarını büyük harfe çevir'
+        },
+    ]
+    
+    for rule_data in defaults:
+        existing = db.query(NormalizationRule).filter(
+            NormalizationRule.rule_name == rule_data['rule_name']
+        ).first()
+        
+        if not existing:
+            new_rule = NormalizationRule(**rule_data)
+            db.add(new_rule)
+    
+    db.commit()
+    return {"success": True, "message": "Varsayılan normalizasyon kuralları oluşturuldu"}

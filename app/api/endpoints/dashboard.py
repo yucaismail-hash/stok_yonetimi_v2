@@ -127,6 +127,8 @@ async def get_dashboard_recommendation(
         'dashboard_summary': dashboard_summary
     }
 
+# app/api/endpoints/dashboard.py - get_ai_dashboard_recommendation (DÜZELTİLMİŞ)
+
 @router.get("/dashboard/ai-recommendation")
 async def get_ai_dashboard_recommendation(
     db: Session = Depends(get_db),
@@ -148,37 +150,48 @@ async def get_ai_dashboard_recommendation(
             'message': 'Henüz yeterli analiz verisi yok.'
         }
     
+    # ✅ AI açıklaması oluştur
     llm = get_llm_service()
     
+    # ✅ Prompt'u zenginleştir
     prompt = f"""
 You are a senior Supply Chain Consultant providing a brief executive recommendation.
 
 **Selected Action:**
 - Analysis: {recommendation['analysis']}
-- Priority: {recommendation['priority']}
+- Priority: {recommendation['priority']} ({recommendation.get('priority_label', '')})
 - Title: {recommendation['title']}
 - Reason: {recommendation['reason']}
 - Expected Benefit: {recommendation['expected_benefit']}
+- Target Page: {recommendation['target_page']}
 
 **Dashboard Summary:**
 {_format_dashboard_summary(dashboard_summary)}
 
-Write a concise 2-3 sentence executive recommendation.
+Write a concise 2-3 sentence executive recommendation that:
+1. States what should be done
+2. Explains why it's important
+3. Mentions the expected benefit
+
+Keep the tone professional, clear, and actionable.
 """
     
-    # ✅ generate() direkt string döndürüyor
-    ai_explanation = llm.generate(prompt, temperature=0.3, max_tokens=150)
+    try:
+        ai_response = llm.generate(prompt, temperature=0.3, max_tokens=200)
+    except Exception as e:
+        print(f"❌ AI açıklama hatası: {e}")
+        ai_response = f"{recommendation['title']} öneriliyor. {recommendation['reason']}"
     
     return {
         'success': True,
         'has_recommendation': True,
         'recommendation': recommendation,
-        'ai_explanation': ai_explanation,
+        'ai_explanation': ai_response,
         'target_page': recommendation['target_page'],
         'analysis_id': recommendation['analysis_id'],
         'analysis_type': recommendation['analysis_type'],
         'dataset_id': recommendation['dataset_id'],
-    }
+    } 
 
 # ============================================================
 # 🆕 /alerts ENDPOINT'İ

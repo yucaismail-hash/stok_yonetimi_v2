@@ -72,3 +72,28 @@ export interface ActionDialogData {
   target_page: string;
   dataset_id?: number | null;
 }
+
+export interface Recommendation {
+  analysis: string;
+  priority: number;
+  priority_label?: string;  // ✅ EKLENDİ
+  title: string;
+  reason: string;
+  expected_benefit: string;
+  target_page: string;
+  analysis_id: number | null;
+  analysis_type: string;
+  dataset_id: string | null;
+}
+
+export interface AIRecommendationResponse {
+  success: boolean;
+  has_recommendation: boolean;
+  message?: string;
+  recommendation?: Recommendation;
+  ai_explanation?: string;
+  target_page?: string;
+  analysis_id?: number;
+  analysis_type?: string;
+  dataset_id?: string;
+}

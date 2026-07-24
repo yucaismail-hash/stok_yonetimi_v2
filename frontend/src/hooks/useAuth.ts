@@ -1,4 +1,4 @@
-// frontend/src/hooks/useAuth.ts
+// frontend/src/hooks/useAuth.ts - GÜNCELLENMİŞ
 
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -54,6 +54,7 @@ interface AuthState {
   updateUser: (userData: Partial<User>) => void;
   refreshToken: () => Promise<boolean>;
   refreshUser: () => Promise<void>;
+  _lastRefresh: number;
 }
 
 export const useAuth = create<AuthState>()(
@@ -63,6 +64,7 @@ export const useAuth = create<AuthState>()(
       token: null,
       isLoading: false,
       error: null,
+      _lastRefresh: 0,
 
       login: async (email, password) => {
         set({ isLoading: true, error: null });
@@ -73,6 +75,7 @@ export const useAuth = create<AuthState>()(
             token: data.access_token,
             user: userData,
             isLoading: false,
+            _lastRefresh: Date.now(),
           });
           return true;
         } catch (err: unknown) {
@@ -94,7 +97,6 @@ export const useAuth = create<AuthState>()(
         }
       },
 
-      // ✅ GÜNCELLENMİŞ register fonksiyonu
       register: async (params: RegisterParams) => {
         set({ isLoading: true, error: null });
         try {
@@ -136,8 +138,9 @@ export const useAuth = create<AuthState>()(
       },
 
       logout: () => {
-        set({ user: null, token: null, error: null });
+        set({ user: null, token: null, error: null, _lastRefresh: 0 });
         localStorage.removeItem('auth-storage');
+        sessionStorage.removeItem('lastUserRefresh');
       },
 
       fetchUser: async () => {
@@ -145,22 +148,31 @@ export const useAuth = create<AuthState>()(
         if (token) {
           try {
             const user = await getUser(token);
-            set({ user });
+            set({ user, _lastRefresh: Date.now() });
           } catch {
             get().logout();
           }
         }
       },
 
+      // ✅ OPTİMİZE EDİLMİŞ refreshUser
       refreshUser: async () => {
-        const { token } = get();
+        const { token, _lastRefresh } = get();
+        
         if (!token) {
           set({ user: null });
           return;
         }
+        
+        // ✅ 5 dakika içinde refresh olduysa tekrar etme
+        const now = Date.now();
+        if (_lastRefresh && (now - _lastRefresh) < 300000) {
+          return;
+        }
+        
         try {
           const userData = await getUser(token);
-          set({ user: userData });
+          set({ user: userData, _lastRefresh: now });
         } catch (err: unknown) {
           console.error('❌ Kullanıcı bilgisi yenilenemedi:', err);
           if (err && typeof err === 'object' && 'response' in err) {
@@ -186,7 +198,7 @@ export const useAuth = create<AuthState>()(
         if (!token) return false;
         try {
           const userData = await getUser(token);
-          set({ user: userData });
+          set({ user: userData, _lastRefresh: Date.now() });
           return true;
         } catch (err: unknown) {
           console.error('Token yenileme hatası:', err);
@@ -199,12 +211,13 @@ export const useAuth = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         token: state.token,
+        _lastRefresh: state._lastRefresh,
       }),
     }
   )
 );
 
-// Token süresi dolduğunda otomatik yenileme için interceptor
+// Token interceptor (mevcut haliyle kalabilir)
 api.interceptors.response.use(
   (response) => response,
   async (error) => {

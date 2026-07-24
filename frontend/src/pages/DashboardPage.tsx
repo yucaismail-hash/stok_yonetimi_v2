@@ -1,4 +1,4 @@
-// frontend/src/pages/DashboardPage.tsx - TAM VE GÜNCEL (FINAL)
+// frontend/src/pages/DashboardPage.tsx - TAM VE GÜNCEL (IMPORT WIZARD ENTEGRE)
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
@@ -23,9 +23,9 @@ import {
   Stack,
   Skeleton,
   Tooltip,
-  Stepper,      // ✅ EKLENDİ
-  Step,         // ✅ EKLENDİ
-  StepLabel, 
+  Stepper,
+  Step,
+  StepLabel,
   Drawer,
   Dialog,
   DialogTitle,
@@ -72,6 +72,9 @@ import {
   ActionDialogData,
   CriticalItem,
 } from '../types/dashboard';
+
+// ✅ Import Wizard
+import ImportWizard from '../components/ImportWizard';
 
 // ============================================================
 // 📌 INTERFACES
@@ -168,7 +171,7 @@ interface AIRecommendationResponse {
   success: boolean;
   has_recommendation: boolean;
   message?: string;
-  recommendation?: Recommendation;
+  recommendation?: Recommendation & { priority_label?: string };
   ai_explanation?: string;
   target_page?: string;
   analysis_id?: number;
@@ -668,8 +671,19 @@ const AIStrategicRecommendation = ({
 
   const rec = data.recommendation;
   const priorityColor = getPriorityColor(rec.priority);
-  const priorityLabel = getPriorityLabel(rec.priority);
+  const priorityLabel = rec.priority_label || getPriorityLabel(rec.priority);
   const colorHex = getPriorityColorHex(rec.priority);
+
+  // ✅ Navigasyon handler
+  const handleNavigate = () => {
+    console.log('🔍 AI Öneri Navigasyon:', {
+      targetPage: rec.target_page,
+      analysisId: rec.analysis_id,
+      analysisType: rec.analysis_type,
+      datasetId: rec.dataset_id,
+    });
+    onAction(rec.target_page, rec.analysis_id, rec.analysis_type, rec.dataset_id);
+  };
 
   return (
     <Card sx={{
@@ -724,7 +738,7 @@ const AIStrategicRecommendation = ({
                 variant="contained"
                 size="small"
                 endIcon={<ArrowForward sx={{ fontSize: 16 }} />}
-                onClick={() => onAction(rec.target_page, rec.analysis_id, rec.analysis_type, rec.dataset_id)}
+                onClick={handleNavigate}
                 sx={{
                   bgcolor: colorHex,
                   '&:hover': { bgcolor: colorHex, opacity: 0.85 },
@@ -737,6 +751,11 @@ const AIStrategicRecommendation = ({
               >
                 📊 Analizi Aç
               </Button>
+              {rec.analysis_type && (
+                <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#9e9e9e' }}>
+                  İlgili analiz: {rec.analysis_type}
+                </Typography>
+              )}
             </Box>
           </Box>
         </Box>
@@ -1734,311 +1753,10 @@ const AttentionRequired = ({
 };
 
 // ============================================================
-// 📌 IMPORT WIZARD DIALOG
+// 📌 IMPORT WIZARD DIALOG (ESKİ) - KALDIR
 // ============================================================
 
-const ImportWizardDialog = ({
-  open,
-  onClose,
-  onComplete,
-  initialFile,
-}: {
-  open: boolean;
-  onClose: () => void;
-  onComplete: () => void;
-  initialFile?: File | null;
-}) => {
-  const [activeStep, setActiveStep] = useState(0);
-  const [selectedFile, setSelectedFile] = useState<File | null>(initialFile || null);
-  const [processing, setProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [statusMessage, setStatusMessage] = useState('');
-  const [validationResult, setValidationResult] = useState<any>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-
-  const steps = ['Dosya Seç', 'Doğrulama', 'Önizleme', 'İşleniyor', 'Tamamlandı'];
-
-  useEffect(() => {
-    if (initialFile && open) {
-      setSelectedFile(initialFile);
-      setTimeout(() => {
-        setValidationResult({
-          sheets: ['Temel_Veriler', 'Malzeme_Tedarikciler', 'Tedarikciler'],
-          columns: 12,
-          rows: 100,
-          missingValues: 3,
-          productCount: 5342,
-        });
-        setActiveStep(2);
-      }, 1500);
-    }
-  }, [initialFile, open]);
-
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
-    setUploadError(null);
-    setActiveStep(1);
-    setTimeout(() => {
-      setValidationResult({
-        sheets: ['Temel_Veriler', 'Malzeme_Tedarikciler', 'Tedarikciler'],
-        columns: 12,
-        rows: 100,
-        missingValues: 3,
-        productCount: 5342,
-      });
-      setActiveStep(2);
-    }, 1500);
-  };
-
-  const handleNext = async () => {
-    if (activeStep === 2) {
-      setActiveStep(3);
-      setProcessing(true);
-      setProgress(0);
-      
-      const statuses = [
-        'Excel okunuyor...',
-        'Veriler doğrulanıyor...',
-        'Dataset oluşturuluyor...',
-        'AI analiz için hazırlanıyor...',
-        'Veritabanına kaydediliyor...',
-      ];
-      
-      try {
-        const formData = new FormData();
-        if (selectedFile) {
-          formData.append('file', selectedFile);
-        }
-        
-        const uploadPromise = api.post('/api/upload?mode=quick', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setProgress(Math.min(80, percent));
-            }
-          },
-        });
-        
-        statuses.forEach((msg, idx) => {
-          setTimeout(() => {
-            setStatusMessage(msg);
-            if (idx < statuses.length - 1) {
-              setProgress(((idx + 1) / statuses.length) * 80);
-            }
-          }, (idx + 1) * 1000);
-        });
-        
-        const response = await uploadPromise;
-        
-        if (response.data.success) {
-          setProgress(95);
-          setStatusMessage('Dataset oluşturuluyor...');
-          
-          try {
-            const datasetRes = await buildDataset();
-            if (datasetRes.data.success) {
-              setProgress(100);
-              setStatusMessage('Tamamlandı!');
-              setProcessing(false);
-              setActiveStep(4);
-              onComplete();
-            }
-          } catch (datasetErr) {
-            console.error('❌ Dataset oluşturma hatası:', datasetErr);
-            setProgress(100);
-            setStatusMessage('Tamamlandı!');
-            setProcessing(false);
-            setActiveStep(4);
-            onComplete();
-          }
-        } else {
-          setUploadError(response.data.error || 'Yükleme başarısız.');
-          setActiveStep(0);
-          setProcessing(false);
-        }
-      } catch (err: any) {
-        console.error('❌ Upload hatası:', err);
-        setUploadError(err.response?.data?.detail || 'Yükleme sırasında hata oluştu.');
-        setActiveStep(0);
-        setProcessing(false);
-      }
-    }
-  };
-
-  const handleClose = () => {
-    if (!processing) {
-      onClose();
-      setTimeout(() => {
-        setActiveStep(0);
-        setSelectedFile(null);
-        setProgress(0);
-        setStatusMessage('');
-        setUploadError(null);
-        setValidationResult(null);
-      }, 300);
-    }
-  };
-
-  const getStepContent = (step: number) => {
-    switch (step) {
-      case 0:
-        return (
-          <Box sx={{ textAlign: 'center', py: 3 }}>
-            {uploadError && (
-              <Alert severity="error" sx={{ mb: 2 }} onClose={() => setUploadError(null)}>
-                {uploadError}
-              </Alert>
-            )}
-            <UploadArea
-              onClick={() => document.getElementById('wizard-file-input')?.click()}
-              sx={{ minHeight: 120, mx: 'auto', maxWidth: 400 }}
-            >
-              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                <CloudUpload sx={{ fontSize: 48, color: '#1f4e79' }} />
-                <Typography variant="body1" sx={{ fontWeight: 500, color: '#1f4e79' }}>
-                  Excel dosyasını sürükleyin veya tıklayın
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  .xlsx, .xls - Maksimum 50 MB
-                </Typography>
-              </Box>
-            </UploadArea>
-            <VisuallyHiddenInput
-              id="wizard-file-input"
-              type="file"
-              accept=".xlsx,.xls"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileSelect(e.target.files[0]);
-                }
-              }}
-            />
-          </Box>
-        );
-      case 1:
-        return (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <CircularProgress size={48} />
-            <Typography variant="body1" sx={{ mt: 2, fontWeight: 500 }}>
-              Dosya doğrulanıyor...
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {selectedFile?.name}
-            </Typography>
-          </Box>
-        );
-      case 2:
-        return (
-          <Box sx={{ py: 1 }}>
-            <Alert severity="success" sx={{ mb: 2 }}>
-              Dosya başarıyla doğrulandı!
-            </Alert>
-            <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
-                <Typography variant="caption" color="text.secondary">Çalışma Sayfaları</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{validationResult?.sheets?.length || 0}</Typography>
-              </Paper>
-              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
-                <Typography variant="caption" color="text.secondary">Ürün Sayısı</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{validationResult?.productCount || 0}</Typography>
-              </Paper>
-              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
-                <Typography variant="caption" color="text.secondary">Kolon Sayısı</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{validationResult?.columns || 0}</Typography>
-              </Paper>
-              <Paper sx={{ p: 1.5, bgcolor: '#f8faff', border: '1px solid #e8f0fe' }}>
-                <Typography variant="caption" color="text.secondary">Eksik Veri</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, color: validationResult?.missingValues > 0 ? '#ed6c02' : '#2e7d32' }}>
-                  {validationResult?.missingValues || 0}
-                </Typography>
-              </Paper>
-            </Box>
-            <Box sx={{ mt: 2, p: 2, bgcolor: '#f0f7ff', borderRadius: 2 }}>
-              <Typography variant="caption" color="text.secondary">Sayfalar</Typography>
-              <Box sx={{ display: 'flex', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
-                {validationResult?.sheets?.map((sheet: string) => (
-                  <Chip key={sheet} label={sheet} size="small" variant="outlined" />
-                ))}
-              </Box>
-            </Box>
-          </Box>
-        );
-      case 3:
-        return (
-          <Box sx={{ py: 3 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <CircularProgress variant="determinate" value={progress} size={48} />
-              <Box>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>{statusMessage || 'İşleniyor...'}</Typography>
-                <Typography variant="caption" color="text.secondary">%{Math.round(progress)} tamamlandı</Typography>
-              </Box>
-            </Box>
-            <LinearProgress variant="determinate" value={progress} sx={{ height: 6, borderRadius: 3 }} />
-          </Box>
-        );
-      case 4:
-        return (
-          <Box sx={{ textAlign: 'center', py: 4 }}>
-            <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
-            <Typography variant="h6" sx={{ fontWeight: 700, color: 'success.main' }}>
-              🎉 İşlem Tamamlandı!
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Dataset başarıyla oluşturuldu. Analizler için hazırsınız.
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-              {selectedFile?.name} - {validationResult?.productCount || 0} ürün
-            </Typography>
-          </Box>
-        );
-      default:
-        return null;
-    }
-  };
-
-  return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', pb: 1.5 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ fontWeight: 700, color: '#1f4e79' }}>
-            📥 Veri Yükleme Sihirbazı
-          </Typography>
-          {!processing && activeStep !== 4 && (
-            <IconButton onClick={handleClose} size="small">
-              <Close />
-            </IconButton>
-          )}
-        </Box>
-        <Stepper activeStep={activeStep} sx={{ mt: 2 }}>
-          {steps.map((label) => (
-            <Step key={label}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
-      </DialogTitle>
-      <DialogContent sx={{ py: 2, minHeight: 280 }}>
-        {getStepContent(activeStep)}
-      </DialogContent>
-      <DialogActions sx={{ borderTop: '1px solid #f0f0f0', pt: 1.5 }}>
-        {activeStep === 4 ? (
-          <Button variant="contained" onClick={handleClose} sx={{ borderRadius: 2, textTransform: 'none' }}>
-            Dashboard'a Dön
-          </Button>
-        ) : activeStep === 2 ? (
-          <Button variant="contained" onClick={handleNext} disabled={processing} sx={{ borderRadius: 2, textTransform: 'none' }}>
-            {processing ? 'İşleniyor...' : 'İleri →'}
-          </Button>
-        ) : activeStep === 0 ? (
-          <Button onClick={handleClose} sx={{ borderRadius: 2, textTransform: 'none' }}>
-            İptal
-          </Button>
-        ) : null}
-      </DialogActions>
-    </Dialog>
-  );
-};
+// ❌ Eski ImportWizardDialog kaldırıldı, yerine yeni ImportWizard kullanılıyor
 
 // ============================================================
 // 📌 ANA DASHBOARD COMPONENT
@@ -2087,10 +1805,12 @@ export default function DashboardPage() {
 
   // 📌 UI State'leri
   const [executiveDrawerOpen, setExecutiveDrawerOpen] = useState(false);
+  
+  // ✅ YENİ - Import Wizard State
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardFile, setWizardFile] = useState<File | null>(null);
 
-  // 📌 Ref'ler - sonsuz döngüyü önlemek için
+  // 📌 Ref'ler
   const dataLoadedRef = useRef(false);
   const initialLoadDoneRef = useRef(false);
 
@@ -2101,8 +1821,8 @@ export default function DashboardPage() {
     queryKey: ['dashboard-all', user?.id],
     queryFn: fetchAllDashboardData,
     enabled: !!user,
-    staleTime: 120000,  // 2 dakika boyunca yeniden çekme
-    gcTime: 300000,     // 5 dakika cache'te tut
+    staleTime: 120000,
+    gcTime: 300000,
     retry: 1,
   });
 
@@ -2114,12 +1834,10 @@ export default function DashboardPage() {
   }, [hasDataset, datasetStatus.status, allActivities.length, historyItems.length]);
 
   // ============================================================
-  // 📌 CALLBACK'LER (OPTİMİZE EDİLMİŞ)
+  // 📌 CALLBACK'LER
   // ============================================================
 
-  // ✅ Dataset Status - Promise.all ile tek seferde al
   const fetchDatasetStatus = useCallback(async () => {
-    // Zaten yüklenmişse ve veri varsa tekrar yükleme
     if (dataLoadedRef.current && hasDataset) {
       return;
     }
@@ -2204,9 +1922,7 @@ export default function DashboardPage() {
     }
   }, [hasDataset]);
 
-  // ✅ AI Executive Summary
   const fetchAIExecutiveSummary = useCallback(async () => {
-    // Zaten yüklendiyse tekrar yükleme
     if (aiExecutive && aiExecutive.has_recommendation) {
       return;
     }
@@ -2327,16 +2043,6 @@ export default function DashboardPage() {
   // ✅ Dashboard verilerini useQuery'den al
   useEffect(() => {
     if (dashboardData) {
-      // Summary
-      if (dashboardData.summary?.data) {
-        // Dashboard summary zaten useQuery'den geliyor
-      }
-      
-      // AI Recommendation
-      if (dashboardData.aiRecommendation) {
-        // AI Recommendation zaten useQuery'den geliyor
-      }
-      
       // Alerts
       if (dashboardData.alerts?.alerts) {
         const items: AlertItem[] = dashboardData.alerts.alerts.map((alert: any) => ({
@@ -2366,7 +2072,6 @@ export default function DashboardPage() {
     }
   }, [dashboardData]);
 
-  // ✅ History
   const fetchHistory = useCallback(async () => {
     if (dataLoadedRef.current) return;
     
@@ -2384,7 +2089,6 @@ export default function DashboardPage() {
     }
   }, []);
 
-  // ✅ Activities
   const fetchActivities = useCallback(async () => {
     if (dataLoadedRef.current && allActivities.length > 0) return;
     
@@ -2425,7 +2129,6 @@ export default function DashboardPage() {
     }
   }, [allActivities.length]);
 
-  // ✅ Tüm verileri yükle - SADECE BİR KERE
   const loadAllData = useCallback(async () => {
     if (dataLoadedRef.current) return;
     
@@ -2446,7 +2149,7 @@ export default function DashboardPage() {
   }, [fetchDatasetStatus, fetchAIExecutiveSummary, fetchActivities, fetchHistory]);
 
   // ============================================================
-  // 📌 useEffect - Sadece ilk mount'ta
+  // 📌 useEffect
   // ============================================================
   useEffect(() => {
     if (user && !initialLoadDoneRef.current) {
@@ -2455,10 +2158,8 @@ export default function DashboardPage() {
     }
   }, [user, loadAllData]);
 
-  // 📌 Upload başarılı olduğunda yenile
   useEffect(() => {
     if (uploadSuccess) {
-      // Sadece gerekli olanları yenile
       fetchDatasetStatus();
       fetchAIExecutiveSummary();
       refetchDashboard();
@@ -2469,19 +2170,37 @@ export default function DashboardPage() {
   // ============================================================
   // 📌 NAVIGATION HANDLERS
   // ============================================================
+
   const handleNavigateWithContext = (
     targetPage: string,
     analysisId: number | null,
     analysisType: string,
     datasetId: string | null
   ) => {
+    console.log('🔍 Navigasyon:', { targetPage, analysisId, analysisType, datasetId });
+    
+    if (!targetPage || targetPage === '/dashboard' || targetPage === '') {
+      console.warn('⚠️ Geçersiz targetPage, analiz türüne göre yönlendiriliyor');
+      const defaultPages: Record<string, string> = {
+        'forecast': '/forecast',
+        'safety_stock': '/safety-stock',
+        'supplier': '/supplier',
+        'simulation': '/simulation',
+        'backtest': '/backtest',
+      };
+      targetPage = defaultPages[analysisType] || '/dashboard';
+    }
+    
     if (analysisId) {
       sessionStorage.setItem('loadAnalysisId', String(analysisId));
       sessionStorage.setItem('loadAnalysisType', analysisType);
       if (datasetId) {
-        sessionStorage.setItem('loadDatasetId', datasetId);
+        sessionStorage.setItem('loadDatasetId', String(datasetId));
       }
+    } else {
+      console.warn('⚠️ analysis_id yok, sadece sayfaya yönlendiriliyor');
     }
+    
     window.location.href = targetPage;
   };
 
@@ -2546,7 +2265,7 @@ export default function DashboardPage() {
   };
 
   // ============================================================
-  // 📌 WIZARD
+  // 📌 IMPORT WIZARD HANDLERS
   // ============================================================
   const handleOpenWizard = (file?: File) => {
     if (file) {
@@ -2557,14 +2276,14 @@ export default function DashboardPage() {
     setWizardOpen(true);
   };
 
-  const handleWizardComplete = () => {
+  const handleWizardComplete = (datasetId: number) => {
     setWizardOpen(false);
     setWizardFile(null);
-    // Sadece gerekli olanları yenile
+    setSuccessMessage('✅ Dataset başarıyla oluşturuldu!');
+    // Verileri yenile
     fetchDatasetStatus();
     fetchAIExecutiveSummary();
     refetchDashboard();
-    setSuccessMessage('✅ Veri başarıyla yüklendi ve Dataset oluşturuldu!');
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
@@ -2581,7 +2300,7 @@ export default function DashboardPage() {
   // ============================================================
   const userName = user?.full_name || user?.email?.split('@')[0] || 'Kullanıcı';
 
-  // ✅ Dashboard verilerini useQuery'den al
+  // Dashboard verilerini useQuery'den al
   const dashboardSummaryData = dashboardData?.summary;
   const aiRecommendationData = dashboardData?.aiRecommendation;
   const summaryLoading = dashboardLoading;
@@ -2601,15 +2320,14 @@ export default function DashboardPage() {
         </Alert>
       )}
 
-      {/* Import Wizard */}
-      <ImportWizardDialog
+      {/* ✅ YENİ IMPORT WIZARD */}
+      <ImportWizard
         open={wizardOpen}
         onClose={() => {
           setWizardOpen(false);
           setWizardFile(null);
         }}
         onComplete={handleWizardComplete}
-        initialFile={wizardFile}
       />
 
       {/* Executive Summary Drawer */}
@@ -2707,4 +2425,3 @@ export default function DashboardPage() {
     </Box>
   );
 }
-

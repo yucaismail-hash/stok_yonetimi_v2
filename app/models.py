@@ -445,3 +445,69 @@ class EndpointProfile(Base):
     # Metadata
     description = Column(String, nullable=True)
     version = Column(String, default="1.0")
+
+# app/models.py - DOSYA SONUNA EKLE
+
+# ============================================================
+# 🆕 SMART IMPORT ENGINE - VALIDATION MODELS
+# ============================================================
+
+class ValidationRule(Base):
+    """Veri doğrulama kuralları - Admin panelinden yönetilir"""
+    __tablename__ = "validation_rules"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rule_type = Column(String, nullable=False, index=True)  # column_check, data_type, business_rule, consistency
+    table_name = Column(String, nullable=True)  # Temel_Veriler, Tedarikciler, Malzeme_Tedarikciler
+    column_name = Column(String, nullable=True)
+    rule_config = Column(JSONB, nullable=False, default={})
+    severity = Column(String, default="warning")  # error, warning, info
+    is_active = Column(Boolean, default=True)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class AnalysisImpactRule(Base):
+    """Analiz etki kuralları - Hangi alan hangi analizi etkiler"""
+    __tablename__ = "analysis_impact_rules"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    analysis_type = Column(String, nullable=False, index=True)  # forecast, safety_stock, supplier, simulation, backtest
+    field_name = Column(String, nullable=False)
+    importance = Column(String, nullable=False)  # critical, recommended, optional, not_used
+    description = Column(String, nullable=True)
+    min_weeks_required = Column(Integer, nullable=True)  # Forecast için 12, Safety Stock için 8, vb.
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class NormalizationRule(Base):
+    """Akıllı veri standardizasyonu kuralları"""
+    __tablename__ = "normalization_rules"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rule_name = Column(String, nullable=False)
+    pattern = Column(String, nullable=False)  # regex pattern
+    replacement = Column(String, nullable=True)
+    confidence_threshold = Column(Float, default=0.8)  # 0-1 arası, bu eşiğin altı otomatik düzeltilmez
+    is_active = Column(Boolean, default=True)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ValidationResult(Base):
+    """Import Wizard sonuçları - Geçici olarak saklanır"""
+    __tablename__ = "validation_results"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    upload_id = Column(String, nullable=False, index=True)
+    step = Column(Integer, default=1)  # 1-6 arası
+    result_data = Column(JSONB, nullable=False, default={})
+    status = Column(String, default="in_progress")  # in_progress, completed, failed
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)  # 24 saat sonra temizlenir

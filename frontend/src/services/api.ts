@@ -126,3 +126,23 @@ export const getUserProcessingTransactions = (userId: number, limit: number = 50
 export const getDashboardChanges = () => {
   return api.get('/api/dashboard/change');
 };
+
+// ============================================================
+// 🆕 IMPORT WIZARD SERVİSLERİ
+// ============================================================
+
+export const validateExcel = (file: File) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post('/api/import-wizard/validate', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const getValidationResult = (uploadId: string) => {
+  return api.get(`/api/import-wizard/result/${uploadId}`);
+};
+
+export const applyNormalization = (uploadId: string) => {
+  return api.post(`/api/import-wizard/apply-normalization`, { upload_id: uploadId });
+};
