@@ -163,6 +163,22 @@ export default function Step4Normalization({
     return <Alert severity="info">Henüz veri standardizasyonu yapılmadı.</Alert>;
   }
 
+  // ============================================================
+  // ✅ errors array'ini filtrele - duplicate'leri temizle
+  // ============================================================
+  const getUniqueErrors = (errors: any[]) => {
+    if (!errors) return [];
+    const seen = new Set();
+    return errors.filter(err => {
+      const key = `${err.sheet}_${err.row}_${err.column}_${err.value}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const uniqueErrors = getUniqueErrors(data?.errors || []);
+
     // ✅ Eğer data varsa ama changes/suggestions/errors boşsa bilgi ver
   const hasNoChanges = !data.changes || data.changes.length === 0;
   const hasNoSuggestions = !data.suggestions || data.suggestions.length === 0;
@@ -402,10 +418,9 @@ export default function Step4Normalization({
                 </TableRow>
               </TableHead>
               <TableBody>
-                {(errors || []).slice(0, 20).map((error, idx) => {
+                {(uniqueErrors || []).slice(0, 20).map((error, idx) => {
                   const key = `${error.sheet}_${error.row}_${error.column}`;
                   const currentValue = corrections[key] || '';
-                  
                   return (
                     <TableRow key={idx}>
                       <TableCell sx={{ fontSize: '0.6rem' }}>{error.sheet}</TableCell>

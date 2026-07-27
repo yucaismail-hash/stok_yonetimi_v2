@@ -150,6 +150,8 @@ async def validate_excel(
     print(f"🔍 Veri kalitesi skoru: %{data_quality.get('summary', {}).get('score', 0):.1f}")
     print(f"🔍 can_proceed: {data_quality.get('can_proceed', True)}")
     
+# app/api/endpoints/import_wizard.py - /validate endpoint'i
+
     # ============================================================
     # 5. Normalization Engine
     # ============================================================
@@ -159,9 +161,18 @@ async def validate_excel(
     # ============================================================
     # ✅ Validation hatalarını normalization sonucuna ekle
     # ============================================================
-    # Data type errors
+    
+    # Opsiyonel alanları al
+    optional_fields = []
+    for sheet_name in OPTIONAL_FIELDS:
+        optional_fields.extend(OPTIONAL_FIELDS.get(sheet_name, []))
+    
+    # 1. Data type errors
     data_type_errors = data_quality.get('data_type_errors', [])
     for err in data_type_errors:
+        field = err.get('canonical_field')
+        if field in optional_fields:
+            continue
         normalization_result['errors'].append({
             'sheet': err.get('sheet', ''),
             'row': err.get('row', ''),
@@ -174,9 +185,12 @@ async def validate_excel(
         })
         normalization_result['total_errors'] += 1
     
-    # Business rule errors
+    # 2. Business rule errors
     business_rule_errors = data_quality.get('business_rule_errors', [])
     for err in business_rule_errors:
+        field = err.get('canonical_field')
+        if field in optional_fields:
+            continue
         normalization_result['errors'].append({
             'sheet': err.get('sheet', ''),
             'row': err.get('row', ''),
@@ -190,7 +204,7 @@ async def validate_excel(
         })
         normalization_result['total_errors'] += 1
     
-    # Structural errors (critical olanları ekle)
+    # 3. Structural errors (critical olanlar)
     structural_errors = data_quality.get('structural_errors', [])
     for err in structural_errors:
         if err.get('severity') == 'critical':
