@@ -56,6 +56,16 @@ async def validate_excel(
             )
         
         sheets = read_result['data']
+
+        # ✅ DEBUG: sheets içinde 'materials' var mı?
+        print("🔍 sheets keys:", list(sheets.keys()))
+        
+        if 'materials' in sheets:
+            materials = sheets['materials']
+            if materials and isinstance(materials, list) and len(materials) > 0:
+                print(f"🔍 materials ilk satır: {materials[0]}")
+                print(f"🔍 materials ilk satır keys: {list(materials[0].keys()) if isinstance(materials[0], dict) else 'NOT DICT'}")
+                print(f"🔍 Ürün Kodu (code): {materials[0].get('code', 'BULUNAMADI!') if isinstance(materials[0], dict) else 'BULUNAMADI!'}")
         
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Dosya okuma hatası: {str(e)}")

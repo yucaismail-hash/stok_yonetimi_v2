@@ -91,6 +91,7 @@ class ValidationEngine:
     def _normalize_sheets(self, sheets: Dict[str, Any]) -> Dict[str, List[Dict]]:
         """
         ExcelReader'dan gelen veriyi standart formata çevirir.
+        Başlık satırını otomatik filtreler.
         """
         normalized = {}
         
@@ -105,16 +106,14 @@ class ValidationEngine:
             
             # ✅ ÖZEL DURUM: supplier_mapping (Malzeme_Tedarikciler)
             if key == 'supplier_mapping' and isinstance(data, dict):
-                # data: {'ürün_kodu': [{'supplier_id': '...', 'share': ...}, ...]}
                 for product_code, supplier_list in data.items():
                     if isinstance(supplier_list, list):
                         for item in supplier_list:
                             if isinstance(item, dict):
-                                # Ürün Kodu'nu da ekle
                                 new_row = {
                                     'Ürün Kodu': product_code,
                                     'Tedarikçi Kodu': item.get('supplier_id', ''),
-                                    'Tedarik Payı (%)': item.get('share', 0) * 100,  # 0.7 -> 70
+                                    'Tedarik Payı (%)': item.get('share', 0) * 100,
                                     'Açık Sipariş': item.get('open_qty', 0),
                                     'Planlanan Teslim Tarihi': item.get('planned_due', ''),
                                 }
@@ -125,7 +124,6 @@ class ValidationEngine:
             
             # ✅ ÖZEL DURUM: suppliers (Tedarikciler)
             if key == 'suppliers' and isinstance(data, dict):
-                # data: {'SUP001': {'name': '...', 'factor': ..., 'ontime_rate': ...}}
                 for supplier_code, supplier_data in data.items():
                     if isinstance(supplier_data, dict):
                         new_row = {
@@ -141,7 +139,57 @@ class ValidationEngine:
                 normalized[sheet_name] = rows
                 continue
             
-            # ✅ NORMAL DURUM: materials (Temel_Veriler) veya diğerleri
+            # ✅ NORMAL DURUM: materials (Temel_Veriler) - Başlık satırını filtrele
+            if key == 'materials' and isinstance(data, list):
+                print(f"🔍 materials: {len(data)} satır (ham)")
+                
+                clean_rows = []
+                skip_count = 0
+                
+                # İlk satırı kontrol et - başlık mı?
+                if data and isinstance(data[0], dict):
+                    first_row = data[0]
+                    first_row_keys = list(first_row.keys())
+                    
+                    # Başlık satırı tespiti:
+                    # 1. 'code' anahtarı yoksa
+                    # 2. 'code' değeri 'Ürün Kodu' veya 'code' ise
+                    # 3. 'code' değeri boş veya None ise
+                    is_header_row = (
+                        'code' not in first_row_keys or
+                        first_row.get('code') == 'Ürün Kodu' or
+                        first_row.get('code') == 'code' or
+                        first_row.get('code') == '' or
+                        first_row.get('code') is None
+                    )
+                    
+                    if is_header_row:
+                        skip_count += 1
+                        print(f"⚠️ Başlık satırı atlandı (keys: {first_row_keys})")
+                        data = data[1:]  # İlk satırı atla
+                
+                # Kalan satırları işle
+                for row in data:
+                    if isinstance(row, dict):
+                        code = row.get('code', '')
+                        
+                        # Boş veya geçersiz satır mı?
+                        if code is None or code == '' or code == 0 or code == '0':
+                            print(f"⚠️ Boş satır atlandı (code: {code})")
+                            continue
+                        
+                        # Kolon isimlerini Türkçe'ye çevir
+                        new_row = {}
+                        for col_key, value in row.items():
+                            turkish_key = self.COLUMN_MAPPING.get(col_key, col_key)
+                            new_row[turkish_key] = value
+                        clean_rows.append(new_row)
+                
+                normalized[sheet_name] = clean_rows
+                print(f"🔍 Temel_Veriler: {len(clean_rows)} satır ({skip_count} başlık filtrelendi)")
+                continue
+            
+            # ✅ DİĞER SHEET'LER için genel işlem
             if isinstance(data, dict):
                 if 'data' in data and isinstance(data['data'], list):
                     rows = data['data']
@@ -158,7 +206,7 @@ class ValidationEngine:
             elif isinstance(data, list):
                 rows = data
             
-            # Kolon isimlerini Türkçe'ye çevir (materials için)
+            # Kolon isimlerini Türkçe'ye çevir
             clean_rows = []
             for row in rows:
                 if isinstance(row, dict):
@@ -261,13 +309,13 @@ class ValidationEngine:
     # ============================================================
     
     def validate_data_quality(self, sheets: Dict[str, Any]) -> Dict[str, Any]:
-        """Veri kalitesi kontrolü - Business Rule Engine eklendi"""
+        """Veri kalitesi kontrolü - KRİTİK ALANLAR SATIR BAZLI KONTROL"""
         results = {
             'column_checks': [],
             'structural_checks': [],
             'missing_data': [],
             'data_type_errors': [],
-            'business_rule_errors': [],  # ✅ YENİ
+            'business_rule_errors': [],
             'summary': {},
             'score': 100,
             'can_proceed': True,
@@ -295,16 +343,42 @@ class ValidationEngine:
                 results['structural_checks'].append({
                     'sheet': required,
                     'status': 'error',
-                    'message': f"'{required}' sheet'i bulunamadı. Veri yüklenemedi.",
+                    'message': f"'{required}' sheet'i bulunamadı.",
                     'type': 'structural'
                 })
+        
+        # 📌 TEMEL_VERILER için özel kontrol
+        temel_veriler = normalized.get('Temel_Veriler', [])
+        print(f"🔍 Toplam {len(temel_veriler)} satır kontrol ediliyor...")
+        empty_count = 0
+        for idx, row in enumerate(temel_veriler):
+            if isinstance(row, dict):
+                code = row.get('Ürün Kodu', '')
+                if code is None or code == '' or code == 0 or (isinstance(code, str) and code.strip() == ''):
+                    empty_count += 1
+                    print(f"❌ {idx+1}. satırda Ürün Kodu BOŞ! (Diğer alanlar: {list(row.keys())})")
+                    results['missing_data'].append({
+                        'sheet': 'Temel_Veriler',
+                        'row': idx + 1,
+                        'column': 'Ürün Kodu',
+                        'value': code,
+                        'severity': 'error',
+                        'message': f"Ürün Kodu {idx+1}. satırda BOŞ!",
+                        'recommendation': 'Ürün Kodu alanını doldurun.'
+                    })
+                    results['can_proceed'] = False
+        
+        print(f"🔍 Toplam {empty_count} satırda Ürün Kodu boş!")
+
+        critical_columns = ['Ürün Kodu', 'Tedarik Süresi (Gün)']
+        missing_critical_rows = 0
         
         for sheet_name, rows in normalized.items():
             if not rows:
                 results['structural_checks'].append({
                     'sheet': sheet_name,
                     'status': 'error',
-                    'message': f"'{sheet_name}' sheet'i tamamen boş. Veri içermiyor.",
+                    'message': f"'{sheet_name}' sheet'i tamamen boş.",
                     'type': 'structural'
                 })
                 results['can_proceed'] = False
@@ -324,22 +398,55 @@ class ValidationEngine:
                     'message': f"{col} kolonu mevcut." if exists else f"{col} kolonu bulunamadı."
                 })
                 
-                if not exists and col in ['Ürün Kodu', 'Tedarik Süresi (Gün)']:
+                if not exists and col in critical_columns:
                     results['can_proceed'] = False
             
-            # Satır bazlı eksik veri
+            # 📌 SATIR BAZLI KRİTİK ALAN KONTROLÜ
             for idx, row in enumerate(rows):
                 if not isinstance(row, dict):
                     continue
+                
+                # Kritik alanlar: Ürün Kodu ve Tedarik Süresi (Gün)
+                for col in critical_columns:
+                    if col in row:
+                        value = row.get(col)
+                        # Boş mu kontrol et (None, '', 0, '0')
+                        is_empty = (
+                            value is None or 
+                            value == '' or 
+                            value == 0 or 
+                            value == '0' or
+                            (isinstance(value, str) and value.strip() == '')
+                        )
+                        if is_empty:
+                            missing_critical_rows += 1
+                            results['missing_data'].append({
+                                'sheet': sheet_name,
+                                'row': idx + 1,
+                                'column': col,
+                                'value': value,
+                                'severity': 'error',
+                                'message': f"{col} alanı {idx+1}. satırda boş!",
+                                'recommendation': f"{col} alanını doldurun."
+                            })
+                            results['can_proceed'] = False
+                            results['score'] = max(0, results['score'] - 10)  # Her hata -10 puan
+                
+                # Diğer alanlar için uyarı
                 for col in required_columns:
-                    if col in row and (row[col] is None or row[col] == '' or row[col] == 0):
-                        results['missing_data'].append({
-                            'sheet': sheet_name,
-                            'row': idx + 1,
-                            'column': col,
-                            'value': row.get(col),
-                            'message': f"{col} alanı {idx+1}. satırda boş."
-                        })
+                    if col not in critical_columns and col in row:
+                        value = row.get(col)
+                        if value is None or value == '':
+                            results['missing_data'].append({
+                                'sheet': sheet_name,
+                                'row': idx + 1,
+                                'column': col,
+                                'value': value,
+                                'severity': 'warning',
+                                'message': f"{col} alanı {idx+1}. satırda boş.",
+                                'recommendation': f"{col} alanını doldurmanız önerilir."
+                            })
+                            results['score'] = max(0, results['score'] - 2)
             
             # ✅ Business Rule Kontrolleri
             for idx, row in enumerate(rows):
@@ -469,30 +576,33 @@ class ValidationEngine:
         # Score hesapla
         total_checks = len(results['column_checks'])
         failed_checks = sum(1 for c in results['column_checks'] if c['status'] == 'error')
-        business_errors = len(results['business_rule_errors'])
+        missing_errors = len([m for m in results['missing_data'] if m.get('severity') == 'error'])
+        missing_warnings = len([m for m in results['missing_data'] if m.get('severity') == 'warning'])
         
-        if total_checks == 0:
-            results['score'] = 0
-            results['summary'] = {
-                'total_checks': 0,
-                'passed': 0,
-                'failed': 0,
-                'score': 0,
-                'business_errors': business_errors,
-                'error': 'Hiç kontrol yapılamadı (sheet veya kolon bulunamadı)'
-            }
-        else:
-            # Business rule hataları da score'u etkiler
-            business_penalty = min(20, business_errors * 5)
-            base_score = 100 - (failed_checks / total_checks * 100)
-            results['score'] = max(0, round(base_score - business_penalty, 1))
-            results['summary'] = {
-                'total_checks': total_checks,
-                'passed': total_checks - failed_checks,
-                'failed': failed_checks,
-                'business_errors': business_errors,
-                'score': results['score']
-            }
+        # Eğer kritik alanlarda eksik varsa skor ciddi düşer
+        if missing_critical_rows > 0:
+            # Her kritik satır hatası -15 puan, max 100
+            penalty = min(90, missing_critical_rows * 15)
+            results['score'] = max(0, 100 - penalty)
+        
+        # Eğer kolon eksik varsa skor düşer
+        if total_checks > 0:
+            column_penalty = (failed_checks / total_checks * 100) * 0.5
+            results['score'] = max(0, results['score'] - column_penalty)
+        
+        # Eğer uyarı varsa skor hafif düşer
+        results['score'] = max(0, results['score'] - (missing_warnings * 2))
+        
+        results['summary'] = {
+            'total_checks': total_checks,
+            'passed': total_checks - failed_checks,
+            'failed': failed_checks,
+            'business_errors': len(results['business_rule_errors']),
+            'missing_errors': missing_errors,
+            'missing_warnings': missing_warnings,
+            'missing_critical_rows': missing_critical_rows,
+            'score': round(results['score'], 1)
+        }
         
         return results
 
@@ -602,7 +712,7 @@ class ValidationEngine:
     # ============================================================
     # STEP 5: Analysis Impact Assessment
     # ============================================================
-    
+     
     def analyze_impact(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Analysis Impact Assessment Engine
