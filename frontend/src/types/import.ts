@@ -22,6 +22,7 @@ export interface SheetCheck {
   missing: string[];
   results: SheetCheckResult[];
   summary: string;
+  can_proceed?: boolean; // ✅ EKLENDI - Dataset Gate için
 }
 
 export interface DataQualitySummary {
@@ -29,8 +30,14 @@ export interface DataQualitySummary {
   passed: number;
   failed: number;
   score: number;
-  business_errors?: number;  // ✅ EKLENDI
+  business_errors?: number;
   error?: string;
+  // ✅ YENİ ALANLAR
+  total_structural?: number;
+  total_missing?: number;
+  total_type_errors?: number;
+  total_business?: number;
+  total_suggestions?: number;
 }
 
 export interface ColumnCheck {
@@ -41,6 +48,24 @@ export interface ColumnCheck {
   message: string;
 }
 
+// ✅ YENİ: ValidationError tipi (detaylı hata raporlaması için)
+export interface ValidationError {
+  sheet: string;
+  row?: number;
+  column?: string;
+  canonical_field?: string;
+  type: string;
+  severity: 'info' | 'warning' | 'critical';
+  message: string;
+  original_value?: any;
+  expected_type?: string;
+  coverage_percentage?: number;
+  missing_rows_list?: number[];
+  rows?: number[];
+  auto_fixable: boolean;
+  requires_user_action: boolean;
+}
+
 export interface DataQualityResult {
   column_checks: ColumnCheck[];
   structural_checks: any[];
@@ -49,6 +74,10 @@ export interface DataQualityResult {
   business_rule_errors: any[];
   summary: DataQualitySummary;
   score: number;
+  can_proceed?: boolean; // ✅ EKLENDI - Dataset Gate için
+  // ✅ YENİ ALANLAR (validation_engine'den gelen)
+  structural_errors?: ValidationError[];
+  normalization_suggestions?: ValidationError[];
 }
 
 export interface NormalizationChange {
@@ -57,6 +86,9 @@ export interface NormalizationChange {
   original: string;
   new: string;
   confidence: number;
+  row?: number; // ✅ EKLENDI - satır numarası için
+  canonical_field?: string; // ✅ EKLENDI
+  reason?: string; // ✅ EKLENDI
 }
 
 export interface NormalizationSuggestion {
@@ -65,13 +97,22 @@ export interface NormalizationSuggestion {
   original: string;
   suggestion: string;
   confidence: number;
+  row?: number; // ✅ EKLENDI
+  canonical_field?: string; // ✅ EKLENDI
+  message?: string; // ✅ EKLENDI
 }
+
+// frontend/src/types/import.ts - NormalizationError GÜNCELLENDİ
 
 export interface NormalizationError {
   sheet: string;
   column: string;
-  value: string;
+  value: string;           // mevcut değer
+  original_value?: string; // alternatif
   message: string;
+  row?: number;
+  canonical_field?: string;
+  original?: string;       // bazı durumlar için
 }
 
 export interface NormalizationResult {
@@ -90,14 +131,19 @@ export interface ImpactItem {
   status: string;
   message: string;
   recommendation?: string;
+  // ✅ YENİ ALANLAR (detaylı impact için)
+  problem?: string;
+  reason?: string;
+  affected_analyses?: string[];
+  expected_result?: string;
 }
 
 export interface AnalysisImpact {
   analysis_scores: Record<string, number>;
   analysis_results: Record<string, ImpactItem[]>;
-  detailed_impacts?: any[];        // ✅ YENİ
+  detailed_impacts?: any[];
   ai_comment: string;
-  ai_recommendation?: string;      // ✅ YENİ - AI Önerisi
+  ai_recommendation?: string;
   overall_score: number;
 }
 
@@ -110,13 +156,32 @@ export interface ValidationSummary {
   summary: string;
 }
 
+// ✅ VALIDATION RESPONSE - GÜNCELLENDİ
 export interface ValidationResponse {
   success: boolean;
   upload_id: string;
+  can_proceed?: boolean; // ✅ EKLENDI - Dataset Gate için
   file_info: FileInfo;
   sheet_check: SheetCheck;
   data_quality: DataQualityResult;
-  normalization: NormalizationResult;
+  normalization: NormalizationResult | null;
   impact: AnalysisImpact;
-  summary: ValidationSummary;
+  summary: ValidationSummary | string; // hem nesne hem string olabilir
+  dataset_id?: number; // ✅ EKLENDI - oluşturulduysa
+  error?: string; // ✅ EKLENDI - hata mesajı için
+}
+
+// ✅ RE-VALIDATION RESPONSE
+export interface ReValidationResponse {
+  success: boolean;
+  validation_data: ValidationResponse;
+  error?: string;
+}
+
+// ✅ DATASET CREATE RESPONSE
+export interface DatasetCreateResponse {
+  success: boolean;
+  dataset_id: number;
+  message?: string;
+  error?: string;
 }

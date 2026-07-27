@@ -144,5 +144,17 @@ export const getValidationResult = (uploadId: string) => {
 };
 
 export const applyNormalization = (uploadId: string) => {
-  return api.post(`/api/import-wizard/apply-normalization`, { upload_id: uploadId });
+  return api.post(`/api/import-wizard/normalize`, { upload_id: uploadId });
+};
+
+export const createDataset = (uploadId: string) => {
+  return api.post(`/api/import-wizard/apply-dataset`, { upload_id: uploadId });
+};
+
+// ✅ reValidate fonksiyonu eklendi
+export const reValidate = (uploadId: string, corrections: any) => {
+  return api.post(`/api/import-wizard/re-validate`, { 
+    upload_id: uploadId,
+    corrections: corrections 
+  });
 };

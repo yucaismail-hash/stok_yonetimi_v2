@@ -1,494 +1,815 @@
+# app/utils/excel_reader.py
+"""
+Excel Reader - Excel dosyasını okur, başlık satırını tespit eder,
+verileri canonical formata dönüştürür.
+"""
+
 import pandas as pd
-import numpy as np
-from typing import Dict, List, Any, Tuple
+import logging
+from typing import Dict, Any, List, Optional, Union
 import re
+import unicodedata
+
+logger = logging.getLogger(__name__)
+
 
 class ExcelReader:
-    """Excel dosyasından veri okuma ve işleme - Güncel başlık desteği ile"""
-    
+    """
+    Excel dosyasını okur ve sheet'leri ayrı ayrı döndürür.
+    Başlık satırını otomatik tespit eder.
+    """
+
     def __init__(self):
-        # ✅ ZORUNLU SÜTUNLAR (Yeni başlıklarla birlikte)
-        self.required_columns = [
-            'Malzeme_Kodu', 'Ürün Kodu',  # Her ikisi de kabul edilir
-            'Mal_Grubu', 'Ürün Grubu',
-            'Termin_Suresi', 'Tedarik Süresi (Gün)',
-            'Tedarik_Parti_Büyüklügü', 'Sipariş Parti Büyüklüğü'
-        ]
-        
-        # ✅ SÜTUN EŞLEŞTİRME (Eski + Yeni başlıklar)
-        self.column_mapping = {
-            # Ürün Kodu
-            "Malzeme_Kodu": "code",
-            "Ürün Kodu": "code",
-            
-            # Ürün Adı
-            "Malzeme_Aciklama": "description",
-            "Ürün Adı": "description",
-            
-            # Ürün Grubu
-            "Mal_Grubu": "group",
-            "Ürün Grubu": "group",
-            
-            # Dönem Başı Stok
-            "Donem_Basi_Stok": "initial_stock",
-            "Dönem Başı Stok": "initial_stock",
-            
-            # Tedarik Süresi
-            "Termin_Suresi": "lead_time_days",
-            "Tedarik Süresi (Gün)": "lead_time_days",
-            "Tedarik Süresi": "lead_time_days",
-            
-            # Sipariş Parti Büyüklüğü
-            "Tedarik_Parti_Büyüklügü": "eoq",
-            "Sipariş Parti Büyüklüğü": "eoq",
-            "Parti Büyüklüğü": "eoq",
-            
-            # Birim Maliyet
-            "Birim_Maliyet": "unit_cost",
-            "Birim Maliyet (TL)": "unit_cost",
-            
-            # Stok Tutma Oranı
-            "Stok_Tutma_Oranı": "holding_rate",
-            "Stok Tutma Oranı (%)": "holding_rate",
-            "Stok Tutma Oranı": "holding_rate",
-            
-            # Stok Tükenme Maliyeti
-            "Stok_Tukenme_Maliyeti": "shortage_cost",
-            "Stok Tükenme Maliyeti": "shortage_cost",
-            
-            # Tedarikçi Sayfası
-            "Tedarikci_Kodu": "supplier_id",
-            "Tedarikçi Kodu": "supplier_id",
-            
-            "Tedarikci_Adi": "name",
-            "Tedarikçi Adı": "name",
-            
-            "Supplier_Factor": "factor",
-            "Tedarikçi Faktörü": "factor",
-            
-            "OnTimeRate": "ontime_rate",
-            "Zamanında Teslim Oranı (%)": "ontime_rate",
-            "Zamanında Teslim Oranı": "ontime_rate",
-            
-            "LT_Ortalama_Gun": "lt_mean",
-            "Ortalama Teslim Süresi (Gün)": "lt_mean",
-            "Ortalama Teslim Süresi": "lt_mean",
-            
-            "LT_Std_Gun": "lt_std",
-            "Teslim Süresi Standart Sapması": "lt_std",
-            "Teslim Süresi Std Sapma": "lt_std",
-            
-            # Ürün-Tedarikçi Eşleştirme
-            "Pay": "share",
-            "Tedarik Payı (%)": "share",
-            "Tedarik Payı": "share",
-            
-            "Acik_Bakiye": "open_qty",
-            "Açık Sipariş": "open_qty",
-            
-            "Planli_Termin": "planned_due",
-            "Planlanan Teslim Tarihi": "planned_due",
+        # Sheet adı eşleştirmesi (Excel'deki isim -> internal key)
+        self.sheet_mapping = {
+            'Temel_Veriler': 'materials',
+            'Tedarikciler': 'suppliers',
+            'Malzeme_Tedarikciler': 'supplier_mapping',
         }
         
-        self.min_weeks = 12
-        self.max_weeks = 156  # 3 yıl
+        # Kolon eşleştirme (normalize edilmiş anahtar -> hedef)
+        self.column_mapping = {
+            # Temel_Veriler
+            'urun kodu': 'Ürün Kodu',
+            'ürün kodu': 'Ürün Kodu',
+            'product code': 'Ürün Kodu',
+            'product_code': 'Ürün Kodu',
+            'productcode': 'Ürün Kodu',
+            'kod': 'Ürün Kodu',
+            'code': 'Ürün Kodu',
+            
+            'urun adi': 'Ürün Adı',
+            'ürün adı': 'Ürün Adı',
+            'product name': 'Ürün Adı',
+            'product_name': 'Ürün Adı',
+            'aciklama': 'Ürün Adı',
+            'description': 'Ürün Adı',
+            
+            'urun grubu': 'Ürün Grubu',
+            'ürün grubu': 'Ürün Grubu',
+            'product group': 'Ürün Grubu',
+            'group': 'Ürün Grubu',
+            
+            'donem basi stok': 'Dönem Başı Stok',
+            'dönem başı stok': 'Dönem Başı Stok',
+            'initial stock': 'Dönem Başı Stok',
+            'initial_stock': 'Dönem Başı Stok',
+            'baslangic stok': 'Dönem Başı Stok',
+            'başlangıç stok': 'Dönem Başı Stok',
+            
+            'tedarik suresi (gun)': 'Tedarik Süresi (Gün)',
+            'tedarik süresi (gün)': 'Tedarik Süresi (Gün)',
+            'tedarik suresi': 'Tedarik Süresi (Gün)',
+            'tedarik süresi': 'Tedarik Süresi (Gün)',
+            'lead time': 'Tedarik Süresi (Gün)',
+            'lead_time': 'Tedarik Süresi (Gün)',
+            'teslim suresi': 'Tedarik Süresi (Gün)',
+            'teslim süresi': 'Tedarik Süresi (Gün)',
+            
+            'siparis parti buyuklugu': 'Sipariş Parti Büyüklüğü',
+            'sipariş parti büyüklüğü': 'Sipariş Parti Büyüklüğü',
+            'eoq': 'Sipariş Parti Büyüklüğü',
+            'parti buyuklugu': 'Sipariş Parti Büyüklüğü',
+            'parti büyüklüğü': 'Sipariş Parti Büyüklüğü',
+            'moq': 'Sipariş Parti Büyüklüğü',
+            
+            'birim maliyet (tl)': 'Birim Maliyet (TL)',
+            'birim maliyet': 'Birim Maliyet (TL)',
+            'unit cost': 'Birim Maliyet (TL)',
+            'unit_cost': 'Birim Maliyet (TL)',
+            'maliyet': 'Birim Maliyet (TL)',
+            'cost': 'Birim Maliyet (TL)',
+            
+            'stok tutma orani (%)': 'Stok Tutma Oranı (%)',
+            'stok tutma oranı (%)': 'Stok Tutma Oranı (%)',
+            'holding rate': 'Stok Tutma Oranı (%)',
+            'holding_rate': 'Stok Tutma Oranı (%)',
+            'tutma orani': 'Stok Tutma Oranı (%)',
+            'tutma oranı': 'Stok Tutma Oranı (%)',
+            
+            'stok tukenme maliyeti': 'Stok Tükenme Maliyeti',
+            'stok tükenme maliyeti': 'Stok Tükenme Maliyeti',
+            'shortage cost': 'Stok Tükenme Maliyeti',
+            'shortage_cost': 'Stok Tükenme Maliyeti',
+            'tukenme maliyeti': 'Stok Tükenme Maliyeti',
+            'tükenme maliyeti': 'Stok Tükenme Maliyeti',
+            
+            # Tedarikciler
+            'tedarikci kodu': 'Tedarikçi Kodu',
+            'tedarikçi kodu': 'Tedarikçi Kodu',
+            'supplier code': 'Tedarikçi Kodu',
+            'supplier_code': 'Tedarikçi Kodu',
+            'supplier id': 'Tedarikçi Kodu',
+            'supplier_id': 'Tedarikçi Kodu',
+            
+            'tedarikci adi': 'Tedarikçi Adı',
+            'tedarikçi adı': 'Tedarikçi Adı',
+            'supplier name': 'Tedarikçi Adı',
+            'supplier_name': 'Tedarikçi Adı',
+            'tedarikci': 'Tedarikçi Adı',
+            'supplier': 'Tedarikçi Adı',
+            
+            'tedarikci faktoru': 'Tedarikçi Faktörü',
+            'tedarikçi faktörü': 'Tedarikçi Faktörü',
+            'supplier factor': 'Tedarikçi Faktörü',
+            'factor': 'Tedarikçi Faktörü',
+            
+            'zamaninda teslim orani (%)': 'Zamanında Teslim Oranı (%)',
+            'zamanında teslim oranı (%)': 'Zamanında Teslim Oranı (%)',
+            'ontime rate': 'Zamanında Teslim Oranı (%)',
+            'ontime_rate': 'Zamanında Teslim Oranı (%)',
+            'teslim orani': 'Zamanında Teslim Oranı (%)',
+            'teslim oranı': 'Zamanında Teslim Oranı (%)',
+            
+            'ortalama teslim suresi (gun)': 'Ortalama Teslim Süresi (Gün)',
+            'ortalama teslim süresi (gün)': 'Ortalama Teslim Süresi (Gün)',
+            'average lead time': 'Ortalama Teslim Süresi (Gün)',
+            'lt_mean': 'Ortalama Teslim Süresi (Gün)',
+            'ortalama teslim': 'Ortalama Teslim Süresi (Gün)',
+            
+            'teslim suresi standart sapmasi': 'Teslim Süresi Standart Sapması',
+            'teslim süresi standart sapması': 'Teslim Süresi Standart Sapması',
+            'lead time std': 'Teslim Süresi Standart Sapması',
+            'lt_std': 'Teslim Süresi Standart Sapması',
+            'standart sapma': 'Teslim Süresi Standart Sapması',
+            
+            # Malzeme_Tedarikciler
+            'tedarik payi (%)': 'Tedarik Payı (%)',
+            'tedarik payı (%)': 'Tedarik Payı (%)',
+            'supplier share': 'Tedarik Payı (%)',
+            'share': 'Tedarik Payı (%)',
+            'pay': 'Tedarik Payı (%)',
+            
+            'acik siparis': 'Açık Sipariş',
+            'açık sipariş': 'Açık Sipariş',
+            'open order': 'Açık Sipariş',
+            'open_qty': 'Açık Sipariş',
+            'open qty': 'Açık Sipariş',
+            
+            'planlanan teslim tarihi': 'Planlanan Teslim Tarihi',
+            'planned delivery': 'Planlanan Teslim Tarihi',
+            'planned_due': 'Planlanan Teslim Tarihi',
+            'teslim tarihi': 'Planlanan Teslim Tarihi',
+        }
         
-    def _get_column(self, row: pd.Series, *possible_names) -> Any:
+        # Anahtar kelimeler (başlık satırı tespiti için)
+        self.header_keywords = [
+            'ürün kodu', 'tedarikçi kodu', 'ürün adı', 'tedarikçi adı',
+            'dönem başı stok', 'tedarik süresi', 'sipariş parti büyüklüğü',
+            'birim maliyet', 'stok tutma oranı', 'stok tükenme maliyeti',
+            'zamanında teslim oranı', 'ortalama teslim süresi',
+            'tedarik payı', 'açık sipariş', 'planlanan teslim tarihi',
+            'w1', 'w2', 'w3', 'w4', 'w5', 'w6', 'w7', 'w8', 'w9',
+            'w10', 'w11', 'w12', 'w13', 'w14', 'w15', 'w16'
+        ]
+
+    def _normalize_text(self, text: str) -> str:
         """
-        Birden fazla olası sütun adından ilk bulunanı döndürür.
+        Metni normalize eder:
+        - Küçük harfe çevir
+        - Türkçe karakterleri normalleştir
+        - Gereksiz boşlukları temizle
+        - Parantez içindekileri temizle (opsiyonel)
         """
-        for name in possible_names:
-            if name in row.index and not pd.isna(row.get(name)):
-                return row.get(name)
-        return None
+        if not text:
+            return ''
         
+        # Küçük harfe çevir
+        text = text.lower().strip()
+        
+        # Unicode normalizasyonu (ç, ğ, ı, ö, ş, ü -> c, g, i, o, s, u)
+        text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
+        
+        # Parantez içindekileri temizle (örnek: "Tedarik Süresi (Gün)" -> "tedarik suresi")
+        text = re.sub(r'\([^)]*\)', '', text).strip()
+        
+        # Birden fazla boşluğu tek boşluğa çevir
+        text = re.sub(r'\s+', ' ', text)
+        
+        return text
+
+    def _find_matching_column(self, header: str, target: str) -> bool:
+        """
+        Bir başlığın hedef kolonla eşleşip eşleşmediğini kontrol eder.
+        """
+        if not header or not target:
+            return False
+        
+        # Normalize et
+        header_norm = self._normalize_text(str(header))
+        target_norm = self._normalize_text(target)
+        
+        # Tam eşleşme
+        if header_norm == target_norm:
+            return True
+        
+        # Biri diğerini içeriyor mu?
+        if target_norm in header_norm or header_norm in target_norm:
+            return True
+        
+        return False
+
     def read_file(self, file_path: str) -> Dict[str, Any]:
         """
-        Excel dosyasını oku ve tüm sheet'leri işle
-        Dönüş: {'success': bool, 'data': {...}, 'errors': [...], 'warnings': [...], 'summary': {...}}
+        Excel dosyasını okur ve tüm sheet'leri döndürür.
+        
+        Returns:
+            {
+                'success': True,
+                'data': {
+                    'materials': [...],
+                    'suppliers': {...},
+                    'supplier_mapping': {...}
+                },
+                'sheet_names': [...]
+            }
         """
         try:
-            sheets = pd.read_excel(file_path, sheet_name=None, header=0)
+            # Tüm sheet'leri oku (header=None ile ham veri)
+            excel_data = pd.read_excel(file_path, sheet_name=None, header=None)
             
-            result = {
-                'success': False,
-                'data': {},
-                'errors': [],
-                'warnings': [],
-                'summary': {}
-            }
+            result = {}
+            sheet_names = []
             
-            # 1. Sheet kontrolü (eski ve yeni isimlerle)
-            main_sheet_name = None
-            possible_main_sheets = ['Temel_Veriler', 'Ürün Verileri', 'Urun Verileri']
-            for sheet_name in possible_main_sheets:
-                if sheet_name in sheets:
-                    main_sheet_name = sheet_name
-                    break
-            
-            if not main_sheet_name:
-                result['errors'].append(
-                    "❌ 'Temel_Veriler' veya 'Ürün Verileri' sheet'i bulunamadı!"
-                )
-                return result
-            
-            df_main = sheets[main_sheet_name]
-            
-            # 2. Zorunlu sütun kontrolü (eski veya yeni başlıklardan biri yeterli)
-            found_columns = set(df_main.columns)
-            required_found = []
-            missing_required = []
-            
-            # Malzeme Kodu kontrolü
-            if 'Malzeme_Kodu' in found_columns or 'Ürün Kodu' in found_columns:
-                required_found.append('Malzeme_Kodu/Ürün Kodu')
-            else:
-                missing_required.append('Malzeme_Kodu veya Ürün Kodu')
-            
-            # Malzeme Grubu kontrolü
-            if 'Mal_Grubu' in found_columns or 'Ürün Grubu' in found_columns:
-                required_found.append('Mal_Grubu/Ürün Grubu')
-            else:
-                missing_required.append('Mal_Grubu veya Ürün Grubu')
-            
-            # Tedarik Süresi kontrolü
-            if 'Termin_Suresi' in found_columns or 'Tedarik Süresi (Gün)' in found_columns or 'Tedarik Süresi' in found_columns:
-                required_found.append('Termin_Suresi/Tedarik Süresi')
-            else:
-                missing_required.append('Termin_Suresi veya Tedarik Süresi')
-            
-            # Parti Büyüklüğü kontrolü
-            if 'Tedarik_Parti_Büyüklügü' in found_columns or 'Sipariş Parti Büyüklüğü' in found_columns or 'Parti Büyüklüğü' in found_columns:
-                required_found.append('Tedarik_Parti_Büyüklügü/Sipariş Parti Büyüklüğü')
-            else:
-                missing_required.append('Tedarik_Parti_Büyüklügü veya Sipariş Parti Büyüklüğü')
-            
-            if missing_required:
-                result['errors'].append(f"❌ Eksik zorunlu sütunlar: {', '.join(missing_required)}")
-                return result
-            
-            # 3. W sütunlarını tespit et (W1, W2, ... W15, W16, W17)
-            week_cols = self._find_week_columns(df_main.columns)
-            print(f"📊 Bulunan hafta sütunları: {week_cols}")
-            
-            if len(week_cols) < self.min_weeks:
-                result['errors'].append(
-                    f"❌ Yetersiz W sütunu: {len(week_cols)} hafta (en az {self.min_weeks} gerekli)"
-                )
-                return result
-            if len(week_cols) > self.max_weeks:
-                result['warnings'].append(
-                    f"⚠️ {len(week_cols)} hafta veri var, ilk {self.max_weeks} hafta kullanılacak."
-                )
-                week_cols = week_cols[:self.max_weeks]
-            
-            # 4. Her malzeme satırını işle
-            materials = []
-            error_rows = []
-            warning_rows = []
-            
-            for idx, row in df_main.iterrows():
-                try:
-                    material = self._process_material_row(row, idx, week_cols)
-                    if material:
-                        materials.append(material)
-                        if len(materials) == 1:
-                            print(f"📊 İlk malzeme: {material['code']} - {len(material['historical_demand'])} hafta")
-                            print(f"📊 İlk 5 değer: {material['historical_demand'][:5]}")
+            for sheet_name, df in excel_data.items():
+                sheet_names.append(sheet_name)
+                
+                # Sheet adını canonical'e çevir
+                canonical_name = self.sheet_mapping.get(sheet_name, sheet_name)
+                
+                # Başlık satırını tespit et
+                header_row = self._find_header_row(df)
+                
+                if header_row is None:
+                    # Başlık bulunamadı, tüm satırları ham veri olarak al
+                    result[canonical_name] = df.values.tolist()
+                    continue
+                
+                # Başlık satırını kolon ismi olarak kullan
+                headers = df.iloc[header_row].values.tolist()
+                # Temizlenmiş başlıklar
+                clean_headers = []
+                for h in headers:
+                    if pd.isna(h):
+                        clean_headers.append('')
                     else:
-                        error_rows.append(idx+2)
-                except Exception as e:
-                    error_rows.append(idx+2)
-                    result['errors'].append(f"Satır {idx+2}: {str(e)}")
+                        clean_headers.append(str(h).strip())
+                
+                # 🔍 DEBUG: Başlıkları yazdır
+                print(f"🔍 {sheet_name} başlıkları: {clean_headers[:10]}...")
+                
+                # Veri satırları (başlıktan sonraki satırlar)
+                data_rows = df.iloc[header_row + 1:].values.tolist()
+                
+                # Boş satırları filtrele
+                clean_rows = []
+                for row in data_rows:
+                    has_data = False
+                    clean_row = []
+                    for cell in row:
+                        if pd.isna(cell):
+                            clean_row.append(None)
+                        elif isinstance(cell, str):
+                            cleaned = cell.strip()
+                            clean_row.append(cleaned if cleaned else None)
+                            if cleaned:
+                                has_data = True
+                        else:
+                            clean_row.append(cell)
+                            has_data = True
+                    
+                    if has_data:
+                        clean_rows.append(clean_row)
+                
+                # Özel işlemler
+                if canonical_name == 'materials':
+                    result[canonical_name] = self._process_materials(clean_headers, clean_rows)
+                elif canonical_name == 'suppliers':
+                    result[canonical_name] = self._process_suppliers(clean_headers, clean_rows)
+                elif canonical_name == 'supplier_mapping':
+                    result[canonical_name] = self._process_supplier_mapping(clean_headers, clean_rows)
+                else:
+                    # Genel işlem
+                    result[canonical_name] = []
+                    for row in clean_rows:
+                        row_dict = {}
+                        for idx, header in enumerate(clean_headers):
+                            if idx < len(row):
+                                row_dict[header] = row[idx]
+                        if row_dict:
+                            result[canonical_name].append(row_dict)
             
-            if not materials:
-                result['errors'].append("❌ Hiç geçerli malzeme bulunamadı!")
-                return result
+            # 🔍 DEBUG
+            print(f"🔍 ExcelReader sonucu:")
+            for key, value in result.items():
+                if isinstance(value, list):
+                    print(f"   {key}: {len(value)} satır")
+                elif isinstance(value, dict):
+                    print(f"   {key}: {len(value)} anahtar")
+                else:
+                    print(f"   {key}: {type(value)}")
             
-            # 5. Uyarılar: Mal_Grubu boş olanlar
-            empty_group = [m['code'] for m in materials if not m['group'] or m['group'] == 'GENEL']
-            if empty_group:
-                result['warnings'].append(
-                    f"⚠️ {len(empty_group)} malzemenin Mal_Grubu boş, 'GENEL' olarak atandı: {', '.join(empty_group[:5])}"
-                )
-            
-            # 6. Tedarikçi sheet'leri (eski ve yeni isimlerle)
-            result['data']['materials'] = materials
-            result['data']['week_columns'] = week_cols
-            
-            # Supplier Mapping sheet
-            mapping_sheet_name = None
-            possible_mapping_sheets = ['Malzeme_Tedarikciler', 'Ürün-Tedarikçi Eşleştirmeleri', 'Urun-Tedarikci Esleştirmeleri']
-            for sheet_name in possible_mapping_sheets:
-                if sheet_name in sheets:
-                    mapping_sheet_name = sheet_name
-                    break
-            
-            if mapping_sheet_name:
-                supplier_mapping = self._process_supplier_mapping(sheets[mapping_sheet_name])
-                result['data']['supplier_mapping'] = supplier_mapping
-                mapped_codes = set(supplier_mapping.keys())
-                material_codes = set(m['code'] for m in materials)
-                unmapped = material_codes - mapped_codes
-                if unmapped:
-                    result['warnings'].append(
-                        f"⚠️ {len(unmapped)} malzeme için tedarikçi eşleştirmesi yok: {', '.join(list(unmapped)[:5])}"
-                    )
-            else:
-                result['warnings'].append("ℹ️ Tedarikçi eşleştirme sheet'i bulunamadı. Tek tedarikçi varsayılacak.")
-                result['data']['supplier_mapping'] = {}
-            
-            # Suppliers sheet
-            supplier_sheet_name = None
-            possible_supplier_sheets = ['Tedarikciler', 'Tedarikçi Bilgileri']
-            for sheet_name in possible_supplier_sheets:
-                if sheet_name in sheets:
-                    supplier_sheet_name = sheet_name
-                    break
-            
-            if supplier_sheet_name:
-                suppliers = self._process_suppliers(sheets[supplier_sheet_name])
-                result['data']['suppliers'] = suppliers
-                if not suppliers:
-                    result['warnings'].append("⚠️ Tedarikçi sheet'i boş, varsayılan tedarikçi bilgileri kullanılacak.")
-            else:
-                result['warnings'].append("ℹ️ 'Tedarikçi Bilgileri' sheet'i bulunamadı. Varsayılan tedarikçi bilgileri kullanılacak.")
-                result['data']['suppliers'] = {}
-            
-            # 7. Özet
-            result['summary'] = {
-                'total_materials': len(materials),
-                'total_weeks': len(week_cols),
-                'error_rows': error_rows,
-                'warning_rows': warning_rows,
-                'has_suppliers': bool(result['data']['suppliers']),
-                'has_mapping': bool(result['data']['supplier_mapping'])
+            return {
+                'success': True,
+                'data': result,
+                'sheet_names': sheet_names
             }
-            
-            result['success'] = True
-            return result
             
         except Exception as e:
+            logger.error(f"Excel okuma hatası: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
-                'data': {},
-                'errors': [f"❌ Excel okuma hatası: {str(e)}"],
-                'warnings': [],
-                'summary': {}
+                'error': str(e),
+                'data': {}
             }
-    
-    def _find_week_columns(self, columns: List[str]) -> List[str]:
-        """W sütunlarını bul ve sırala (W1, W2, ... W15, W16, W17)"""
-        week_cols = []
-        for col in columns:
-            col_str = str(col).strip().upper()
-            # ✅ W ile başlayan ve devamında sayı olan sütunlar
-            if col_str.startswith('W') and len(col_str) > 1:
-                num_part = col_str[1:]
-                # ✅ Sadece sayısal olanları al
-                if num_part.isdigit():
-                    week_cols.append(col)
-        # ✅ Sayısal değere göre sırala (W1, W2, ... W10, W11, W12)
-        week_cols.sort(key=lambda x: int(str(x).upper()[1:]))
-        return week_cols
-    
-    def _get_column_value(self, row: pd.Series, *possible_names) -> Any:
-        """Birden fazla olası sütun adından ilk bulunanı döndürür"""
-        for name in possible_names:
-            if name in row.index and not pd.isna(row.get(name)):
-                return row.get(name)
-        return None
-    
-    def _process_material_row(self, row: pd.Series, idx: int, week_cols: List[str]) -> Dict:
-        """Tek bir malzeme satırını işle - Yeni başlık desteği ile"""
-        
-        # Malzeme Kodu (eski veya yeni başlık)
-        material_code = self._get_column_value(row, 'Malzeme_Kodu', 'Ürün Kodu')
-        if not material_code or pd.isna(material_code):
-            return None
-        material_code = str(material_code).strip()
-        
-        # 📌 DEBUG
-        print(f"\n{'='*60}")
-        print(f"🔍 İŞLENİYOR: {material_code}")
-        print(f"📊 Toplam W sütunu: {len(week_cols)}")
-        
-        # 📌 HAFTA VERİLERİNİ Oku
-        demand = []
-        for week_col in week_cols:
-            val = row.get(week_col)
-            float_val = self._safe_float(val)
-            demand.append(float_val)
-        
-        print(f"📊 {material_code} - Okunan veri (ilk 12): {demand[:12]}")
-        print(f"📊 {material_code} - Veri uzunluğu: {len(demand)}")
-        
-        # 📌 Sıfır kontrolü
-        non_zero = [d for d in demand if d != 0]
-        print(f"📊 {material_code} - Sıfır olmayan değer sayısı: {len(non_zero)}/{len(demand)}")
-        
-        if len(demand) < self.min_weeks:
-            print(f"⚠️ {material_code}: {len(demand)} hafta veri var, en az {self.min_weeks} gerekli")
-            while len(demand) < self.min_weeks:
-                demand.append(0)
-            print(f"✅ {material_code}: {len(demand)} haftaya tamamlandı")
-        
-        # Malzeme grubu (eski veya yeni başlık)
-        group = self._get_column_value(row, 'Mal_Grubu', 'Ürün Grubu')
-        if not group or pd.isna(group):
-            group = 'GENEL'
-        group = str(group).strip() or 'GENEL'
-        
-        # Dönem Başı Stok
-        initial_stock = self._get_column_value(row, 'Donem_Basi_Stok', 'Dönem Başı Stok')
-        initial_stock = self._safe_float(initial_stock)
-        
-        # Tedarik Süresi
-        lead_time = self._get_column_value(row, 'Termin_Suresi', 'Tedarik Süresi (Gün)', 'Tedarik Süresi')
-        lead_time = int(self._safe_float(lead_time) or 14)
-        
-        # Parti Büyüklüğü
-        eoq = self._get_column_value(row, 'Tedarik_Parti_Büyüklügü', 'Sipariş Parti Büyüklüğü', 'Parti Büyüklüğü')
-        eoq = int(self._safe_float(eoq) or 100)
-        
-        # Birim Maliyet
-        unit_cost = self._get_column_value(row, 'Birim_Maliyet', 'Birim Maliyet (TL)')
-        unit_cost = self._safe_float(unit_cost) or 100.0
-        
-        # Stok Tutma Oranı
-        holding_rate = self._get_column_value(row, 'Stok_Tutma_Oranı', 'Stok Tutma Oranı (%)', 'Stok Tutma Oranı')
-        holding_rate = self._safe_float(holding_rate) or 0.2
-        
-        # Stok Tükenme Maliyeti
-        shortage_cost = self._get_column_value(row, 'Stok_Tukenme_Maliyeti', 'Stok Tükenme Maliyeti')
-        shortage_cost = self._safe_float(shortage_cost) or 500.0
-        
-        # Malzeme objesi
-        material = {
-            'code': material_code,
-            'description': self._get_column_value(row, 'Malzeme_Aciklama', 'Ürün Adı') or material_code,
-            'group': group,
-            'initial_stock': initial_stock,
-            'lead_time_days': lead_time,
-            'eoq': eoq,
-            'unit_cost': unit_cost,
-            'holding_rate': holding_rate,
-            'shortage_cost': shortage_cost,
-            'historical_demand': demand[:self.max_weeks]
-        }
-        
-        print(f"✅ {material_code} işlendi - {len(material['historical_demand'])} hafta")
-        print(f"{'='*60}\n")
-        
-        return material
 
-    def _process_supplier_mapping(self, df: pd.DataFrame) -> Dict[str, List[Dict]]:
-        """Malzeme-Tedarikçi eşleştirmeleri - Yeni başlık desteği ile"""
-        mapping = {}
+    def _find_header_row(self, df: pd.DataFrame) -> Optional[int]:
+        """
+        Başlık satırını bulur.
+        """
+        max_rows = min(10, len(df))
         
-        # Sütunları bul (eski veya yeni)
-        material_col = None
-        supplier_col = None
-        share_col = None
-        open_qty_col = None
-        planned_due_col = None
-        
-        for col in df.columns:
-            col_str = str(col).strip()
-            if col_str in ['Malzeme_Kodu', 'Ürün Kodu']:
-                material_col = col
-            elif col_str in ['Tedarikci_Kodu', 'Tedarikçi Kodu']:
-                supplier_col = col
-            elif col_str in ['Pay', 'Tedarik Payı (%)', 'Tedarik Payı']:
-                share_col = col
-            elif col_str in ['Acik_Bakiye', 'Açık Sipariş']:
-                open_qty_col = col
-            elif col_str in ['Planli_Termin', 'Planlanan Teslim Tarihi']:
-                planned_due_col = col
-        
-        if not material_col or not supplier_col:
-            return mapping
-        
-        for _, row in df.iterrows():
-            material_code = str(row.get(material_col, '')).strip()
-            supplier_id = str(row.get(supplier_col, '')).strip()
-            if not material_code or not supplier_id:
+        for idx in range(max_rows):
+            row = df.iloc[idx].values.tolist()
+            
+            row_str = []
+            for cell in row:
+                if pd.isna(cell):
+                    row_str.append('')
+                else:
+                    row_str.append(str(cell).strip())
+            
+            if all(cell == '' for cell in row_str):
                 continue
             
-            if material_code not in mapping:
-                mapping[material_code] = []
+            row_text = ' '.join(row_str).lower()
             
-            share = self._safe_float(row.get(share_col, 1.0)) if share_col else 1.0
-            open_qty = self._safe_float(row.get(open_qty_col, 0)) if open_qty_col else 0
-            planned_due = row.get(planned_due_col, None) if planned_due_col and not pd.isna(row.get(planned_due_col)) else None
+            # Anahtar kelime eşleşmesi
+            keyword_matches = 0
+            for keyword in self.header_keywords:
+                if keyword in row_text:
+                    keyword_matches += 1
             
-            mapping[material_code].append({
-                'supplier_id': supplier_id,
-                'share': share,
-                'open_qty': open_qty,
-                'planned_due': planned_due
-            })
-        return mapping
-    
-    def _process_suppliers(self, df: pd.DataFrame) -> Dict[str, Dict]:
-        """Tedarikçi bilgileri - Yeni başlık desteği ile"""
-        suppliers = {}
+            if keyword_matches >= 2:
+                return idx
+            
+            # String oranı
+            string_count = sum(1 for cell in row_str if cell != '')
+            if len(row_str) > 0 and string_count / len(row_str) > 0.6:
+                numeric_count = 0
+                for cell in row_str:
+                    if cell and re.match(r'^[\d.,]+$', cell):
+                        numeric_count += 1
+                
+                if numeric_count / len(row_str) < 0.3:
+                    return idx
         
-        # Sütunları bul
-        supplier_col = None
-        name_col = None
-        factor_col = None
-        ontime_col = None
-        lt_mean_col = None
-        lt_std_col = None
+        return None
+
+    def _get_column_indices(self, headers: List[str], target_columns: List[str]) -> Dict[str, int]:
+        """
+        Kolon indekslerini bulur. Önce direkt eşleşme, sonra mapping üzerinden dener.
+        """
+        result = {}
         
-        for col in df.columns:
-            col_str = str(col).strip()
-            if col_str in ['Tedarikci_Kodu', 'Tedarikçi Kodu']:
-                supplier_col = col
-            elif col_str in ['Tedarikci_Adi', 'Tedarikçi Adı']:
-                name_col = col
-            elif col_str in ['Supplier_Factor', 'Tedarikçi Faktörü']:
-                factor_col = col
-            elif col_str in ['OnTimeRate', 'Zamanında Teslim Oranı (%)', 'Zamanında Teslim Oranı']:
-                ontime_col = col
-            elif col_str in ['LT_Ortalama_Gun', 'Ortalama Teslim Süresi (Gün)', 'Ortalama Teslim Süresi']:
-                lt_mean_col = col
-            elif col_str in ['LT_Std_Gun', 'Teslim Süresi Standart Sapması', 'Teslim Süresi Std Sapma']:
-                lt_std_col = col
+        # Headers'ı temizle
+        clean_headers = []
+        for h in headers:
+            if h is None:
+                clean_headers.append('')
+            else:
+                clean_headers.append(str(h).strip())
         
-        if not supplier_col:
-            return suppliers
-        
-        for _, row in df.iterrows():
-            supplier_id = str(row.get(supplier_col, '')).strip()
-            if not supplier_id:
+        for target in target_columns:
+            found = False
+            
+            # 1. Önce mapping üzerinden eşleşme dene
+            target_lower = self._normalize_text(target)
+            for header in clean_headers:
+                header_lower = self._normalize_text(header)
+                if header_lower == target_lower:
+                    idx = clean_headers.index(header)
+                    result[target] = idx
+                    found = True
+                    print(f"✅ '{target}' -> '{header}' (mapping ile eşleşti)")
+                    break
+            
+            if found:
                 continue
             
-            suppliers[supplier_id] = {
-                'name': str(row.get(name_col, supplier_id)) if name_col else supplier_id,
-                'factor': self._safe_float(row.get(factor_col, 1.0)) if factor_col else 1.0,
-                'ontime_rate': self._safe_float(row.get(ontime_col, 0.8)) if ontime_col else 0.8,
-                'lt_mean': self._safe_float(row.get(lt_mean_col, 14)) if lt_mean_col else 14,
-                'lt_std': self._safe_float(row.get(lt_std_col, 3)) if lt_std_col else 3
+            # 2. column_mapping'te ara
+            for header in clean_headers:
+                if not header:
+                    continue
+                header_lower = self._normalize_text(header)
+                
+                # Mapping'te bu header var mı?
+                if header_lower in self.column_mapping:
+                    mapped_target = self.column_mapping[header_lower]
+                    if mapped_target == target:
+                        idx = clean_headers.index(header)
+                        result[target] = idx
+                        found = True
+                        print(f"✅ '{target}' -> '{header}' (column_mapping ile eşleşti)")
+                        break
+                
+                # Mapping'teki anahtarları da dene
+                for key, mapped_target in self.column_mapping.items():
+                    if mapped_target == target:
+                        if key in header_lower or header_lower in key:
+                            idx = clean_headers.index(header)
+                            result[target] = idx
+                            found = True
+                            print(f"✅ '{target}' -> '{header}' (kısmi eşleşme: '{key}')")
+                            break
+                if found:
+                    break
+            
+            if not found:
+                # 3. Son çare: direkt kelime eşleşmesi
+                target_words = target.lower().split()
+                for header in clean_headers:
+                    if not header:
+                        continue
+                    header_lower = header.lower()
+                    # Tüm kelimeler header'da var mı?
+                    all_words_found = all(word in header_lower for word in target_words)
+                    if all_words_found:
+                        idx = clean_headers.index(header)
+                        result[target] = idx
+                        found = True
+                        print(f"✅ '{target}' -> '{header}' (kelime eşleşmesi)")
+                        break
+                
+                if not found:
+                    result[target] = None
+                    print(f"❌ '{target}' eşleşemedi! Mevcut başlıklar: {clean_headers[:10]}")
+        
+        return result
+
+# app/utils/excel_reader.py - _process_materials DÜZELTİLDİ
+
+    def _process_materials(self, headers: List[str], rows: List[List]) -> List[Dict[str, Any]]:
+        """Temel_Veriler sheet'ini işler."""
+        result = []
+        
+        print(f"🔍 _process_materials: headers = {headers[:10]}...")
+        print(f"🔍 _process_materials: {len(rows)} satır")
+        
+        # Kolon indekslerini bul
+        col_indices = self._get_column_indices(headers, [
+            'Ürün Kodu', 'Ürün Adı', 'Ürün Grubu', 'Dönem Başı Stok',
+            'Tedarik Süresi (Gün)', 'Sipariş Parti Büyüklüğü',
+            'Birim Maliyet (TL)', 'Stok Tutma Oranı (%)', 'Stok Tükenme Maliyeti'
+        ])
+        
+        print(f"🔍 Kolon indeksleri: {col_indices}")
+        
+        # W kolonlarını bul
+        week_indices = []
+        for idx, header in enumerate(headers):
+            if isinstance(header, str):
+                header_upper = header.upper().strip()
+                if header_upper.startswith('W'):
+                    try:
+                        week_num = int(header_upper[1:])
+                        if 1 <= week_num <= 52:
+                            week_indices.append((idx, week_num))
+                    except ValueError:
+                        match = re.match(r'W(\d+)', header_upper)
+                        if match:
+                            week_num = int(match.group(1))
+                            if 1 <= week_num <= 52:
+                                week_indices.append((idx, week_num))
+        
+        week_indices.sort(key=lambda x: x[1])
+        print(f"🔍 W kolonları: {len(week_indices)} adet")
+        
+        for row_idx, row in enumerate(rows):
+            # Ürün Kodu kontrolü
+            product_code_idx = col_indices.get('Ürün Kodu')
+            product_code = None
+            
+            if product_code_idx is not None and product_code_idx < len(row):
+                product_code = row[product_code_idx]
+            
+            # Ürün Kodu boş olabilir, bu bir hata ama satırı atlamamalıyız
+            if product_code is None or str(product_code).strip() == '':
+                print(f"⚠️ {row_idx + 1}. satırda Ürün Kodu BOŞ! (Bu bir veri hatası, ancak satır atlanmayacak)")
+                product_code = None
+            
+            # Satırda en az bir geçerli veri var mı?
+            has_valid_data = False
+            
+            # Ürün Adı kontrolü
+            description_idx = col_indices.get('Ürün Adı')
+            if description_idx is not None and description_idx < len(row):
+                description = row[description_idx]
+                if description is not None and str(description).strip() != '':
+                    has_valid_data = True
+            
+            # W verileri kontrolü
+            if not has_valid_data:
+                for idx, _ in week_indices:
+                    if idx < len(row):
+                        value = row[idx]
+                        if value is not None and str(value).strip() != '' and str(value).strip() != '0':
+                            has_valid_data = True
+                            break
+            
+            if not has_valid_data:
+                print(f"⚠️ {row_idx + 1}. satır tamamen boş, atlanıyor.")
+                continue
+            
+            # ✅ SATIRI EKLE (product_code None olsa bile)
+            material = {
+                'product_code': str(product_code).strip() if product_code is not None else None,
+                'description': self._get_cell(row, col_indices.get('Ürün Adı')),
+                'group': self._get_cell(row, col_indices.get('Ürün Grubu')),
+                'initial_stock': self._get_numeric(row, col_indices.get('Dönem Başı Stok')),
+                'lead_time_days': self._get_numeric(row, col_indices.get('Tedarik Süresi (Gün)')),
+                'eoq': self._get_numeric(row, col_indices.get('Sipariş Parti Büyüklüğü')),
+                'unit_cost': self._get_numeric(row, col_indices.get('Birim Maliyet (TL)')),
+                'holding_rate': self._get_numeric(row, col_indices.get('Stok Tutma Oranı (%)')),
+                'shortage_cost': self._get_numeric(row, col_indices.get('Stok Tükenme Maliyeti')),
             }
-        return suppliers
+            
+            # W kolonlarını ekle - _get_numeric_safe yerine _get_numeric kullan
+            weekly_data = []
+            for idx, week_num in week_indices:
+                if idx < len(row):
+                    value = row[idx]
+                    if isinstance(value, str) and value.startswith('='):
+                        weekly_data.append(None)
+                    else:
+                        # ✅ _get_numeric_safe yerine _get_numeric kullan
+                        weekly_data.append(self._get_numeric_from_value(value))
+                else:
+                    weekly_data.append(None)
+            
+            material['historical_demand'] = weekly_data
+            material['weekly_data'] = weekly_data
+            
+            # Eğer Ürün Kodu boşsa, bunu bir hata olarak işaretle
+            if material['product_code'] is None:
+                material['_missing_code'] = True
+                material['_row_number'] = row_idx + 1
+            
+            result.append(material)
+        
+        print(f"🔍 materials işlendi: {len(result)} satır")
+        if result:
+            print(f"   İlk satır: product_code={result[0].get('product_code')}, description={result[0].get('description', '')[:30] if result[0].get('description') else 'None'}")
+        
+        return result
     
-    def _safe_float(self, value) -> float:
-        """Güvenli float dönüşümü"""
+    def _get_numeric_from_value(self, value: Any) -> Optional[float]:
+        """Bir değeri sayısal olarak dönüştürmeye çalışır."""
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return None
+            if cleaned.startswith('='):
+                return None
+            try:
+                # Türkçe format dönüşümleri
+                if '.' in cleaned and ',' in cleaned:
+                    cleaned = cleaned.replace('.', '').replace(',', '.')
+                elif ',' in cleaned and '.' in cleaned:
+                    cleaned = cleaned.replace(',', '')
+                elif ',' in cleaned and '.' not in cleaned:
+                    cleaned = cleaned.replace(',', '.')
+                elif '.' in cleaned and ',' not in cleaned:
+                    # Belirsiz: 10.000 (on bin mi, on virgül sıfır mı?)
+                    # Varsayılan olarak binlik ayraç kabul et
+                    cleaned = cleaned.replace('.', '')
+                return float(cleaned)
+            except:
+                return None
+        return None
+
+# app/utils/excel_reader.py - _process_suppliers DÜZELTİLDİ
+
+    def _process_suppliers(self, headers: List[str], rows: List[List]) -> Dict[str, Any]:
+        """Tedarikciler sheet'ini işler."""
+        result = {}
+        
+        col_indices = self._get_column_indices(headers, [
+            'Tedarikçi Kodu', 'Tedarikçi Adı', 'Tedarikçi Faktörü',
+            'Zamanında Teslim Oranı (%)', 'Ortalama Teslim Süresi (Gün)',
+            'Teslim Süresi Standart Sapması'
+        ])
+        
+        print(f"🔍 Suppliers kolon indeksleri: {col_indices}")
+        
+        for row_idx, row in enumerate(rows):
+            # ✅ row'un liste olduğundan emin ol
+            if not isinstance(row, list):
+                print(f"⚠️ {row_idx}. satır liste değil: {type(row)} - atlanıyor")
+                continue
+            
+            supplier_code_idx = col_indices.get('Tedarikçi Kodu')
+            if supplier_code_idx is None or supplier_code_idx >= len(row):
+                print(f"⚠️ {row_idx}. satırda Tedarikçi Kodu indeksi geçersiz")
+                continue
+            
+            supplier_code = row[supplier_code_idx]
+            if supplier_code is None or str(supplier_code).strip() == '':
+                print(f"⚠️ {row_idx}. satırda Tedarikçi Kodu BOŞ - atlanıyor")
+                continue
+            
+            supplier_code = str(supplier_code).strip()
+            
+            result[supplier_code] = {
+                'name': self._get_cell(row, col_indices.get('Tedarikçi Adı')),
+                'factor': self._get_numeric(row, col_indices.get('Tedarikçi Faktörü'), default=1.0),
+                'ontime_rate': self._get_numeric(row, col_indices.get('Zamanında Teslim Oranı (%)'), default=0),
+                'lt_mean': self._get_numeric(row, col_indices.get('Ortalama Teslim Süresi (Gün)')),
+                'lt_std': self._get_numeric(row, col_indices.get('Teslim Süresi Standart Sapması')),
+            }
+        
+        print(f"🔍 suppliers işlendi: {len(result)} tedarikçi")
+        return result
+
+    def _process_supplier_mapping(self, headers: List[str], rows: List[List]) -> Dict[str, Any]:
+        """Malzeme_Tedarikciler sheet'ini işler."""
+        result = {}
+        
+        col_indices = self._get_column_indices(headers, [
+            'Ürün Kodu', 'Tedarikçi Kodu', 'Tedarik Payı (%)',
+            'Açık Sipariş', 'Planlanan Teslim Tarihi'
+        ])
+        
+        print(f"🔍 Supplier mapping kolon indeksleri: {col_indices}")
+        
+        for row_idx, row in enumerate(rows):
+            if not isinstance(row, list):
+                print(f"⚠️ {row_idx}. satır liste değil: {type(row)} - atlanıyor")
+                continue
+            
+            product_code_idx = col_indices.get('Ürün Kodu')
+            supplier_code_idx = col_indices.get('Tedarikçi Kodu')
+            
+            if product_code_idx is None or product_code_idx >= len(row):
+                print(f"⚠️ {row_idx}. satırda Ürün Kodu indeksi geçersiz")
+                continue
+            if supplier_code_idx is None or supplier_code_idx >= len(row):
+                print(f"⚠️ {row_idx}. satırda Tedarikçi Kodu indeksi geçersiz")
+                continue
+            
+            product_code = row[product_code_idx]
+            supplier_code = row[supplier_code_idx]
+            
+            if product_code is None or str(product_code).strip() == '':
+                print(f"⚠️ {row_idx}. satırda Ürün Kodu BOŞ - atlanıyor")
+                continue
+            if supplier_code is None or str(supplier_code).strip() == '':
+                print(f"⚠️ {row_idx}. satırda Tedarikçi Kodu BOŞ - atlanıyor")
+                continue
+            
+            product_code = str(product_code).strip()
+            supplier_code = str(supplier_code).strip()
+            
+            if product_code not in result:
+                result[product_code] = []
+            
+            # ✅ share değerini doğru al (yüzde olarak)
+            share_value = row[col_indices.get('Tedarik Payı (%)')] if col_indices.get('Tedarik Payı (%)') is not None and col_indices.get('Tedarik Payı (%)') < len(row) else 100
+            try:
+                share = float(share_value) / 100 if share_value else 1.0
+            except:
+                share = 1.0
+            
+            result[product_code].append({
+                'supplier_id': supplier_code,
+                'share': share,
+                'open_qty': self._get_numeric(row, col_indices.get('Açık Sipariş'), default=0),
+                'planned_due': self._get_cell(row, col_indices.get('Planlanan Teslim Tarihi')),
+            })
+        
+        print(f"🔍 supplier_mapping işlendi: {len(result)} ürün")
+        return result
+
+ 
+    def _get_cell(self, row: List, idx: Optional[int]) -> Optional[str]:
+        if idx is None or idx >= len(row):
+            return None
+        value = row[idx]
+        if value is None or pd.isna(value):
+            return None
+        if isinstance(value, str):
+            cleaned = value.strip()
+            return cleaned if cleaned else None
+        return str(value)
+
+    def _get_numeric(self, row: List, idx: Optional[int], default: Optional[float] = None) -> Optional[float]:
+        if idx is None or idx >= len(row):
+            return default
+        
+        value = row[idx]
+        if value is None or pd.isna(value):
+            return default
+        
+        if isinstance(value, (int, float)):
+            return float(value)
+        
+        if isinstance(value, str):
+            cleaned = value.strip()
+            if not cleaned:
+                return default
+            
+            if cleaned.startswith('='):
+                return default
+            
+            if cleaned.endswith('%'):
+                try:
+                    return float(cleaned[:-1]) / 100
+                except:
+                    pass
+            
+            try:
+                if '.' in cleaned and ',' in cleaned:
+                    cleaned = cleaned.replace('.', '').replace(',', '.')
+                elif ',' in cleaned and '.' in cleaned:
+                    cleaned = cleaned.replace(',', '')
+                elif ',' in cleaned and '.' not in cleaned:
+                    cleaned = cleaned.replace(',', '.')
+                elif '.' in cleaned and ',' not in cleaned:
+                    cleaned = cleaned.replace('.', '')
+                
+                return float(cleaned)
+            except:
+                return default
+        
+        return default
+
+    def _get_numeric(self, row: List, idx: Optional[int], default: Optional[float] = None) -> Optional[float]:
+        """Hücre değerini sayısal olarak alır."""
+        if idx is None or idx >= len(row):
+            return default
+        
+        value = row[idx]
+        
+        # None veya NaN kontrolü
+        if value is None:
+            return default
+        
+        # pandas NaN kontrolü
         try:
-            if pd.isna(value) or value is None:
-                return 0.0
-            if isinstance(value, (int, float)):
-                if np.isnan(value) or np.isinf(value):
-                    return 0.0
-                return float(value)
-            if isinstance(value, str):
-                value = str(value).strip()
-                if value.startswith('='):
-                    return 0.0
-                value = value.replace(',', '.').replace(' ', '')
-                return float(value) if value else 0.0
-            return 0.0
+            import pandas as pd
+            if pd.isna(value):
+                return default
         except:
-            return 0.0
+            pass
+        
+        # Zaten sayısal ise (0 dahil)
+        if isinstance(value, (int, float)):
+            return float(value)
+        
+        # String ise dönüştürmeyi dene
+        if isinstance(value, str):
+            cleaned = value.strip()
+            
+            # Boş string veya sadece boşluk
+            if not cleaned:
+                return default
+            
+            # Excel formülü (AVERAGE gibi)
+            if cleaned.startswith('='):
+                return default
+            
+            # Yüzde işareti
+            if cleaned.endswith('%'):
+                try:
+                    return float(cleaned[:-1]) / 100
+                except:
+                    pass
+            
+            # Binlik ayraç ve ondalık ayraç dönüşümleri
+            try:
+                # Türkçe format: 1.250,50
+                if '.' in cleaned and ',' in cleaned:
+                    cleaned = cleaned.replace('.', '').replace(',', '.')
+                # 10,000.00
+                elif ',' in cleaned and '.' in cleaned:
+                    cleaned = cleaned.replace(',', '')
+                # 125,50
+                elif ',' in cleaned and '.' not in cleaned:
+                    cleaned = cleaned.replace(',', '.')
+                # 10.000 (belirsiz)
+                elif '.' in cleaned and ',' not in cleaned:
+                    # Varsayılan olarak binlik ayraç kabul et
+                    cleaned = cleaned.replace('.', '')
+                
+                return float(cleaned)
+            except:
+                return default
+        
+        return default
+    

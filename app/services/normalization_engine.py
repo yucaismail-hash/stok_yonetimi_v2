@@ -1,14 +1,16 @@
 # app/services/normalization_engine.py
 """
-Smart Import Engine - Akıllı Veri Standardizasyonu
+Normalization Engine - Sadece güvenli numerik normalizasyon yapar.
+String alanlara dokunmaz.
+Locale-aware: tr-TR varsayılan.
 """
 
 import re
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
-from app.models import NormalizationRule
+from app.schemas.canonical import FIELD_TYPES, get_canonical_field
 
 logger = logging.getLogger(__name__)
 
@@ -16,76 +18,157 @@ logger = logging.getLogger(__name__)
 class NormalizationEngine:
     """
     Akıllı Veri Standardizasyonu Motoru
-    - Otomatik düzeltme
-    - Smart Suggestion
-    - Güven eşiği kontrolü
+    - Sadece numerik alanlarda locale-aware dönüşüm
+    - Belirsiz formatlarda user action required
     """
-    
+
     def __init__(self, db: Session, user_id: int, upload_id: str):
         self.db = db
         self.user_id = user_id
         self.upload_id = upload_id
-        self.rules = self._load_rules()
-    
-    def _load_rules(self) -> List[NormalizationRule]:
-        """Aktif normalizasyon kurallarını yükle"""
-        return self.db.query(NormalizationRule).filter(
-            NormalizationRule.is_active == True
-        ).all()
-    
+
+# app/services/normalization_engine.py - normalize_data DÜZELTİLDİ
+
+# app/services/normalization_engine.py - normalize_data DÜZELTİLDİ
+
     def normalize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Tüm veriyi normalize et
+        Veriyi normalize et.
+        Sadece numerik alanlarda güvenli dönüşüm yapar.
+        String alanlara dokunmaz.
         """
         normalized = {}
         changes = []
         suggestions = []
         errors = []
-        
+
+        # Veriyi sheet bazında işle
         for sheet_name, rows in data.items():
             if not rows:
                 normalized[sheet_name] = []
                 continue
-            
-            normalized[sheet_name] = []
-            for row in rows:
-                new_row = dict(row)
-                for key, value in row.items():
+
+            # ============================================================
+            # 1. EĞER ROWS BİR DICT İSE (suppliers veya supplier_mapping gibi)
+            # ============================================================
+            if isinstance(rows, dict):
+                print(f"🔍 {sheet_name} bir dict, dönüştürülüyor...")
+                rows_list = []
+                if sheet_name == 'suppliers':
+                    for key, value in rows.items():
+                        if isinstance(value, dict):
+                            value['supplier_code'] = key
+                            rows_list.append(value)
+                        else:
+                            rows_list.append(value)
+                elif sheet_name == 'supplier_mapping':
+                    for product_code, supplier_list in rows.items():
+                        if isinstance(supplier_list, list):
+                            for item in supplier_list:
+                                if isinstance(item, dict):
+                                    # ============================================================
+                                    # ✅ SADECE GEREKLİ ALANLARI AL
+                                    # ============================================================
+                                    new_item = {
+                                        'supplier_id': item.get('supplier_id', ''),
+                                        'share': item.get('share', 1.0),
+                                        'open_qty': item.get('open_qty', 0),
+                                        'planned_due': item.get('planned_due', ''),
+                                    }
+                                    rows_list.append(new_item)
+                        else:
+                            rows_list.append(supplier_list)
+                else:
+                    for key, value in rows.items():
+                        if isinstance(value, dict):
+                            value['_key'] = key
+                            rows_list.append(value)
+                        else:
+                            rows_list.append(value)
+                
+                rows = rows_list
+                print(f"🔍 {sheet_name} dönüştürüldü: {len(rows)} satır")
+
+            # ============================================================
+            # 2. ROWS BİR LİSTE DEĞİLSE ATLA
+            # ============================================================
+            if not isinstance(rows, list):
+                print(f"⚠️ {sheet_name} rows liste değil: {type(rows)} - atlanıyor")
+                normalized[sheet_name] = []
+                continue
+
+            # ============================================================
+            # 3. HER SATIRI İŞLE
+            # ============================================================
+            normalized_rows = []
+            for row_idx, row in enumerate(rows):
+                if not isinstance(row, dict):
+                    print(f"⚠️ {sheet_name} - {row_idx}. satır dict değil: {type(row)} - atlanıyor")
+                    continue
+                
+                # ============================================================
+                # ✅ SADECE GEREKLİ ALANLARI KORU, FAZLA ALANLARI TEMİZLE
+                # ============================================================
+                # supplier_mapping için sadece belirli alanları koru
+                if sheet_name == 'supplier_mapping':
+                    clean_row = {
+                        'supplier_id': row.get('supplier_id', ''),
+                        'share': row.get('share', 1.0),
+                        'open_qty': row.get('open_qty', 0),
+                        'planned_due': row.get('planned_due', ''),
+                    }
+                else:
+                    clean_row = dict(row)
+                
+                new_row = dict(clean_row)
+                for col, value in clean_row.items():
                     if isinstance(value, str):
-                        original = value
-                        new_value, confidence, suggestion = self._normalize_value(value, key)
-                        
-                        if new_value != original:
-                            changes.append({
-                                'sheet': sheet_name,
-                                'column': key,
-                                'original': original,
-                                'new': new_value,
-                                'confidence': confidence
-                            })
-                            
-                            # Eğer güven eşiğinin altındaysa suggestion olarak ekle
-                            if confidence < 0.8 and suggestion:
+                        canonical_field = get_canonical_field(col)
+                        expected_type = FIELD_TYPES.get(canonical_field)
+
+                        if expected_type in ['float', 'percentage']:
+                            original = value
+                            normalized_value, is_ambiguous, suggestion = self._normalize_numeric(value)
+                            if normalized_value != original:
+                                if not is_ambiguous:
+                                    new_row[col] = normalized_value
+                                    changes.append({
+                                        'sheet': sheet_name,
+                                        'row': row_idx + 1,
+                                        'column': col,
+                                        'canonical_field': canonical_field,
+                                        'original': original,
+                                        'new': normalized_value,
+                                        'confidence': 1.0,
+                                        'reason': 'Güvenli numerik dönüşüm'
+                                    })
+                                else:
+                                    suggestions.append({
+                                        'sheet': sheet_name,
+                                        'row': row_idx + 1,
+                                        'column': col,
+                                        'canonical_field': canonical_field,
+                                        'original': original,
+                                        'suggestion': normalized_value,
+                                        'confidence': 0.5,
+                                        'message': f"Belirsiz format: '{original}'. Önerilen: '{normalized_value}'. Lütfen onaylayın veya düzeltin."
+                                    })
+                            elif is_ambiguous:
                                 suggestions.append({
                                     'sheet': sheet_name,
-                                    'column': key,
+                                    'row': row_idx + 1,
+                                    'column': col,
+                                    'canonical_field': canonical_field,
                                     'original': original,
-                                    'suggestion': suggestion,
-                                    'confidence': confidence
+                                    'suggestion': normalized_value,
+                                    'confidence': 0.5,
+                                    'message': f"Belirsiz format: '{original}'. Lütfen düzeltin."
                                 })
-                            
-                            new_row[key] = new_value
-                        elif value and confidence < 0.8:
-                            # Düzeltilemedi ama yorumlanamadı
-                            errors.append({
-                                'sheet': sheet_name,
-                                'column': key,
-                                'value': value,
-                                'message': 'Yorumlanamadı, manuel düzeltme gerekli'
-                            })
-                
-                normalized[sheet_name].append(new_row)
-        
+                normalized_rows.append(new_row)
+            
+            normalized[sheet_name] = normalized_rows
+            print(f"🔍 {sheet_name} normalizasyon tamamlandı: {len(normalized_rows)} satır")
+
         return {
             'normalized_data': normalized,
             'changes': changes,
@@ -95,80 +178,48 @@ class NormalizationEngine:
             'total_suggestions': len(suggestions),
             'total_errors': len(errors)
         }
-    
-    def _normalize_value(self, value: str, column: str = None) -> tuple:
+
+    def _normalize_numeric(self, value: str) -> Tuple[str, bool, Optional[str]]:
         """
-        Tek bir değeri normalize et
-        Returns: (new_value, confidence, suggestion)
+        Numerik bir string'i normalize eder.
+        Dönüş: (normalized_value, is_ambiguous, suggestion)
         """
-        result = value
-        confidence = 1.0
-        suggestion = None
-        
-        # 1. Baş ve sondaki boşlukları temizle
-        result = result.strip()
-        
-        # 2. Çoklu boşlukları tek boşluğa çevir
-        if '  ' in result:
-            result = re.sub(r'\s+', ' ', result)
-            confidence *= 0.95
-        
-        # 3. TAB karakterlerini temizle
-        if '\t' in result:
-            result = result.replace('\t', ' ')
-            confidence *= 0.95
-        
-        # 4. Sayısal dönüşümler
-        # 10.000 → 10000
-        if re.match(r'^[\d,.]{1,}([\.,][\d]{3}){1,}$', result):
-            original = result
-            result = result.replace('.', '').replace(',', '')
-            confidence = 0.96
-            suggestion = f"{original} → {result}"
-        
-        # 10,000.00 → 10000
-        elif re.match(r'^\d{1,3}(,\d{3})*(\.\d{2})?$', result):
-            original = result
-            result = result.replace(',', '').replace('.', '')
-            confidence = 0.96
-            suggestion = f"{original} → {result}"
-        
-        # 10000,00 → 10000.00
-        elif re.match(r'^\d+,\d{2}$', result):
-            original = result
-            result = result.replace(',', '.')
-            confidence = 0.96
-            suggestion = f"{original} → {result}"
-        
-        # 5. Büyük harfe çevir (ürün kodları için)
-        if column and ('kod' in column.lower() or 'code' in column.lower()):
-            if not result.isdigit() and len(result) < 30:
-                original = result
-                result = result.upper()
-                if result != original:
-                    confidence *= 0.98
-        
-        # 6. Yüzde değerleri
-        if column and ('oran' in column.lower() or 'rate' in column.lower() or 'yüzde' in column.lower()):
-            if result.endswith('%'):
-                original = result
-                result = result.rstrip('%')
-                confidence *= 0.97
-                suggestion = f"{original} → {result}"
-        
-        # 7. Özel karakterleri temizle (güvenli olmayanlar)
-        # (Opsiyonel)
-        
-        return result, confidence, suggestion
-    
-    def apply_suggestion(self, original: str, suggestion: str) -> str:
-        """Kullanıcının seçtiği suggestion'ı uygula"""
-        # Suggestion string'inden yeni değeri çıkar
-        if ' → ' in suggestion:
-            parts = suggestion.split(' → ')
-            if len(parts) == 2:
-                return parts[1]
-        return original
+        # Boş veya None kontrolü
+        if not value:
+            return value, False, None
+
+        # Önce zaten float parse edilebiliyor mu?
+        try:
+            float(value)
+            return value, False, None
+        except:
+            pass
+
+        # Türkçe format: 1.250,50 -> 1250.50
+        match = re.match(r'^(\d{1,3}(?:\.\d{3})*),(\d{2})$', value)
+        if match:
+            normalized = match.group(1).replace('.', '') + '.' + match.group(2)
+            return normalized, False, f"{value} → {normalized}"
+
+        # 125,50 -> 125.50
+        match = re.match(r'^(\d+),(\d{2})$', value)
+        if match:
+            normalized = match.group(1) + '.' + match.group(2)
+            return normalized, False, f"{value} → {normalized}"
+
+        # 10.000 -> belirsiz (on bin mi, on virgül sıfır mı?)
+        match = re.match(r'^(\d{1,3}\.\d{3})$', value)
+        if match:
+            # Belirsiz, kullanıcıya bırak
+            return value, True, f"'{value}' formatı belirsiz. On bin mi yoksa on virgül sıfır mı?"
+
+        # 10,000 -> belirsiz
+        match = re.match(r'^(\d{1,3},\d{3})$', value)
+        if match:
+            return value, True, f"'{value}' formatı belirsiz. On bin mi yoksa on virgül sıfır mı?"
+
+        # Bilinmeyen format
+        return value, True, f"'{value}' formatı tanınmadı. Lütfen düzeltin."
 
 
 def get_normalization_engine(db: Session, user_id: int, upload_id: str) -> NormalizationEngine:

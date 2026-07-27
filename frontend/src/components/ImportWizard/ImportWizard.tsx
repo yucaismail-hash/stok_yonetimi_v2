@@ -4,50 +4,22 @@ import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
-  Grid,
-  Paper,
-  Chip,
-  CircularProgress,
-  Alert,
-  Button,
-  Divider,
-  Stepper,
-  Step,
-  StepLabel,
-  StepContent,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   IconButton,
   LinearProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
+  Chip,
+  Button,
+  Stepper,
+  Step,
+  StepLabel,
+  Alert,
 } from '@mui/material';
-import {
-  Close,
-  CloudUpload,
-  CheckCircle,
-  Error,
-  Warning,
-  Info,
-  ArrowForward,
-  ArrowBack,
-  Download,
-  Refresh,
-  FilePresent,
-  TableChart,
-  Assessment,
-  AutoAwesome,
-} from '@mui/icons-material';
-import { validateExcel, getValidationResult, applyNormalization } from '../../services/api';
-import { ValidationResponse, FileInfo, SheetCheck, DataQualityResult, NormalizationResult, AnalysisImpact } from '../../types/import';
+import { Close, AutoAwesome, ArrowBack, ArrowForward } from '@mui/icons-material';
+import { validateExcel, applyNormalization, createDataset, reValidate } from '../../services/api';
+import { ValidationResponse } from '../../types/import';
 
 // Step bileşenleri
 import Step1FileUpload from './Step1FileUpload';
@@ -81,8 +53,33 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   const [validationData, setValidationData] = useState<ValidationResponse | null>(null);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [canProceed, setCanProceed] = useState(true);
 
+  // ============================================================
+  // Wizard'ı kapatırken state resetle
+  // ============================================================
+  const handleClose = () => {
+    if (processing) return; // işlem devam ederken kapatma
+    resetWizard();
+    onClose();
+  };
+
+  const resetWizard = () => {
+    setActiveStep(0);
+    setFile(null);
+    setUploadId(null);
+    setLoading(false);
+    setError(null);
+    setValidationData(null);
+    setProcessing(false);
+    setProgress(0);
+    setCanProceed(true);
+  };
+
+  // ============================================================
   // Dosya yükleme ve validasyon
+  // ============================================================
+
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
     setError(null);
@@ -90,15 +87,17 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
     setProgress(10);
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-
       const response = await validateExcel(selectedFile);
       const data = response.data;
 
       if (data.success) {
         setUploadId(data.upload_id);
         setValidationData(data);
+        setCanProceed(data.can_proceed !== false);
+        
+        // ✅ Debug: normalization verisini kontrol et
+        console.log('🔍 Normalization verisi:', data.normalization);
+        
         setProgress(100);
         setActiveStep(1);
       } else {
@@ -112,35 +111,48 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
     }
   };
 
-  // Sonraki adım
-  const handleNext = () => {
-    if (activeStep === steps.length - 1) {
-      handleComplete();
-    } else {
-      setActiveStep((prev) => prev + 1);
-    }
-  };
-
-  // Önceki adım
-  const handleBack = () => {
-    setActiveStep((prev) => prev - 1);
-  };
-
-  // Tamamlama - Dataset oluştur
+  // ============================================================
+  // Normalization ve Dataset oluşturma
+  // ============================================================
   const handleComplete = async () => {
     if (!uploadId) return;
+
+    // can_proceed kontrolü (güvenlik için)
+    if (!canProceed) {
+      setError('Kritik hatalar nedeniyle dataset oluşturulamaz.');
+      return;
+    }
 
     setProcessing(true);
     setProgress(0);
 
     try {
-      const response = await applyNormalization(uploadId);
-      if (response.data.success) {
-        onComplete(response.data.dataset_id);
-        onClose();
-      } else {
-        setError(response.data.error || 'Dataset oluşturulamadı');
+      // 1. Normalization uygula
+      setProgress(30);
+      const normResponse = await applyNormalization(uploadId);
+      
+      if (!normResponse.data.success) {
+        setError(normResponse.data.error || 'Normalization başarısız');
+        setProcessing(false);
+        return;
       }
+
+      // 2. Dataset oluştur
+      setProgress(70);
+      const datasetResponse = await createDataset(uploadId);
+      
+      if (!datasetResponse.data.success) {
+        setError(datasetResponse.data.error || 'Dataset oluşturulamadı');
+        setProcessing(false);
+        return;
+      }
+
+      const datasetId = datasetResponse.data.dataset_id;
+      setProgress(100);
+      
+      // Başarılı
+      onComplete(datasetId);
+      onClose(); // wizard'ı kapat
     } catch (err: any) {
       console.error('❌ Dataset oluşturma hatası:', err);
       setError(err.response?.data?.detail || 'Dataset oluşturulamadı');
@@ -149,9 +161,52 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
     }
   };
 
-    const [canProceed, setCanProceed] = useState(true);
+  // ============================================================
+  // Re-validation (kullanıcı düzeltmeleri sonrası)
+  // ============================================================
+  const handleReValidate = async (corrections: any) => {
+    if (!uploadId) return;
 
+    setLoading(true);
+    try {
+      const response = await reValidate(uploadId, corrections);
+      if (response.data.success) {
+        // Validation sonuçlarını güncelle
+        const newData = response.data.validation_data;
+        setValidationData(newData);
+        setCanProceed(newData.can_proceed !== false);
+        // Eğer aktif step 3 veya 4 ise, yeniden render et
+      } else {
+        setError(response.data.error || 'Re-validation başarısız');
+      }
+    } catch (err: any) {
+      console.error('❌ Re-validation hatası:', err);
+      setError(err.response?.data?.detail || 'Re-validation başarısız');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================
+  // Navigasyon
+  // ============================================================
+  const handleNext = () => {
+    // can_proceed adım geçişini engellemez! Sadece final buton disabled
+    if (activeStep === steps.length - 1) {
+      handleComplete();
+    } else {
+      setActiveStep((prev) => prev + 1);
+    }
+  };
+
+  const handleBack = () => {
+    setActiveStep((prev) => prev - 1);
+  };
+
+  // ============================================================
   // Step içeriğini render et
+  // ============================================================
+
   const renderStepContent = (step: number) => {
     switch (step) {
       case 0:
@@ -165,11 +220,10 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
         );
       case 1:
         return (
-            <Step2SheetCheck
+          <Step2SheetCheck
             data={validationData?.sheet_check}
             loading={loading}
-            onProceedChange={setCanProceed}
-            />
+          />
         );
       case 2:
         return (
@@ -181,7 +235,8 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
       case 3:
         return (
           <Step4Normalization
-            data={validationData?.normalization}
+            // ✅ null'ı undefined'a çevir
+            data={validationData?.normalization ?? undefined}
             loading={loading}
           />
         );
@@ -196,7 +251,9 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
         return (
           <Step6Summary
             data={validationData}
-            loading={loading}
+            loading={loading || processing}
+            canProceed={canProceed}
+            onComplete={handleComplete}
           />
         );
       default:
@@ -204,7 +261,13 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
     }
   };
 
-  // Step tamamlandı mı kontrolü
+  // ============================================================
+  // Buton durumları
+  // ============================================================
+  const isFirstStep = activeStep === 0;
+  const isLastStep = activeStep === steps.length - 1;
+  
+  // Adım tamamlandı mı? (can_proceed değil, veri var mı kontrolü)
   const isStepComplete = (step: number) => {
     if (step === 0) return !!file;
     if (step === 1) return validationData?.sheet_check?.success !== undefined;
@@ -215,22 +278,31 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
     return false;
   };
 
-  // Buton durumları
-  const isFirstStep = activeStep === 0;
-  const isLastStep = activeStep === steps.length - 1;
   const canNext = isStepComplete(activeStep);
 
+  // ============================================================
+  // useEffect: Wizard açıldığında reset
+  // ============================================================
+  useEffect(() => {
+    if (open) {
+      resetWizard();
+    }
+  }, [open]);
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
     <Dialog
-    open={open}
-    onClose={processing ? undefined : onClose}
-    maxWidth="lg"
-    fullWidth
-    slotProps={{
+      open={open}
+      onClose={handleClose}
+      maxWidth="lg"
+      fullWidth
+      slotProps={{
         paper: {
-        sx: { minHeight: '70vh', maxHeight: '90vh' },
+          sx: { minHeight: '70vh', maxHeight: '90vh' },
         },
-    }}
+      }}
     >
       <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 2 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -246,7 +318,7 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
             />
           </Box>
           {!processing && (
-            <IconButton onClick={onClose} size="small">
+            <IconButton onClick={handleClose} size="small">
               <Close />
             </IconButton>
           )}
@@ -255,7 +327,7 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
 
       <DialogContent sx={{ p: 0 }}>
         {/* İlerleme */}
-        {loading || processing ? (
+        {(loading || processing) && (
           <Box sx={{ px: 3, pt: 2 }}>
             <LinearProgress
               variant="determinate"
@@ -266,7 +338,14 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
               {loading ? 'Dosya doğrulanıyor...' : 'Dataset oluşturuluyor...'} %{Math.round(progress)}
             </Typography>
           </Box>
-        ) : null}
+        )}
+
+        {/* Hata mesajı */}
+        {error && (
+          <Alert severity="error" sx={{ mx: 3, mt: 2 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
 
         {/* Stepper */}
         <Box sx={{ px: 3, py: 2 }}>
@@ -287,7 +366,7 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
 
       <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 2, px: 3 }}>
         <Button
-          onClick={onClose}
+          onClick={handleClose}
           disabled={processing}
           sx={{ fontSize: '0.75rem', textTransform: 'none' }}
         >
