@@ -3,6 +3,9 @@
 Canonical Schema Mapping - Excel kolon adlarını internal field'lara eşler.
 """
 
+import re
+from typing import Dict, List, Optional
+
 # Excel'deki Türkçe kolon adları -> canonical field adları
 CANONICAL_MAP = {
     # Temel_Veriler
@@ -93,9 +96,7 @@ CRITICAL_FIELDS = {
     "Malzeme_Tedarikciler": ["product_code", "supplier_id", "share"],
 }
 
-# ============================================================
-# ✅ OPSİYONEL ALANLAR (coverage kontrolü yapılmayacak)
-# ============================================================
+# Opsiyonel alanlar (coverage kontrolü yapılmayacak, ama geçersiz değer kontrolü yapılacak)
 OPTIONAL_FIELDS = {
     "Temel_Veriler": [
         "holding_rate",      # Stok Tutma Oranı - opsiyonel
@@ -116,6 +117,7 @@ OPTIONAL_FIELDS = {
     ],
 }
 
+
 # ============================================================
 # YARDIMCI FONKSİYONLAR
 # ============================================================
@@ -126,8 +128,36 @@ def get_canonical_field(excel_column: str) -> str:
         return excel_column
     return CANONICAL_MAP.get(excel_column, excel_column)
 
+
 def get_excel_column(canonical_field: str) -> str:
     """Canonical field'ı Excel kolon adına çevirir."""
     if not canonical_field:
         return canonical_field
     return REVERSE_CANONICAL_MAP.get(canonical_field, canonical_field)
+
+
+def normalize_column_name(column_name: str) -> str:
+    """
+    Kolon adını normalize eder (küçük harf, Türkçe karakterler, boşluklar)
+    """
+    if not column_name:
+        return ''
+    
+    # Küçük harfe çevir
+    normalized = column_name.lower()
+    
+    # Türkçe karakterleri değiştir
+    replacements = {
+        'ç': 'c', 'ğ': 'g', 'ı': 'i', 'ö': 'o', 'ş': 's', 'ü': 'u',
+        'Ç': 'c', 'Ğ': 'g', 'İ': 'i', 'Ö': 'o', 'Ş': 's', 'Ü': 'u'
+    }
+    for tr, en in replacements.items():
+        normalized = normalized.replace(tr, en)
+    
+    # Parantez içindekileri temizle
+    normalized = re.sub(r'\([^)]*\)', '', normalized)
+    
+    # Özel karakterleri temizle (sadece harf ve rakam kalır)
+    normalized = re.sub(r'[^a-z0-9]', '', normalized)
+    
+    return normalized

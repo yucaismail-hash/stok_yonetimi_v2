@@ -106,16 +106,64 @@ class DatasetBuilder:
         # 3. Period Count hesapla (historical_demand veya weekly_data)
         period_count = 0
         for material in materials:
-            demand = material.get('historical_demand', [])
-            if not demand:
-                demand = material.get('weekly_data', [])
-            if not demand:
+            # Önce weekly_data dene
+            demand = material.get('weekly_data', [])
+            if not demand or len(demand) == 0:
+                # Sonra historical_demand dene
+                demand = material.get('historical_demand', [])
+            if not demand or len(demand) == 0:
                 # W1, W2... formatında olabilir
-                w_cols = [material.get(f'W{i}') for i in range(1, 20) if material.get(f'W{i}') is not None]
+                w_cols = []
+                for i in range(1, 53):  # maksimum 52 hafta
+                    key = f'W{i}'
+                    if key in material:
+                        w_cols.append(material[key])
                 if w_cols:
                     demand = w_cols
-            if len(demand) > period_count:
-                period_count = len(demand)
+            
+            # Sadece None olmayan değerleri say (0 da geçerli)
+            valid_demand = [d for d in demand if d is not None]
+            if len(valid_demand) > period_count:
+                period_count = len(valid_demand)
+
+        
+        print("========== DATASET DEBUG ==========")
+        print("cached_data keys:", cached_data.keys())
+
+        print("materials len:", len(materials))
+
+        if materials:
+            print(materials[0].keys())
+
+            print("weekly_data =", materials[0].get("weekly_data"))
+
+            print("historical_demand =", materials[0].get("historical_demand"))
+
+        print("===================================")
+        
+        # ✅ Eğer period_count 0 ise, W kolonlarını doğrudan kontrol et
+        if period_count == 0:
+            print("🔍 Period count 0, W kolonlarını doğrudan kontrol ediyorum...")
+            for material in materials:
+                # W kolonlarını say
+                w_count = 0
+                for key in material.keys():
+                    if key.startswith('W'):
+                        try:
+                            week_num = int(key[1:])
+                            if 1 <= week_num <= 52:
+                                w_count += 1
+                        except:
+                            pass
+                if w_count > period_count:
+                    period_count = w_count
+                    print(f"   W kolonları bulundu: {period_count} adet")
+        
+        # ✅ Eğer hala period_count 0 ise hata fırlat
+        if period_count == 0:
+            error_msg = "Geçmiş talep verisi bulunamadı. Dataset oluşturulamaz."
+            logger.error(f"❌ Semantic Validation: {error_msg}")
+            raise ValueError(error_msg)
 
         # 4. Data Points hesapla (ProductCount × PeriodCount)
         data_points = product_count * period_count
@@ -125,6 +173,7 @@ class DatasetBuilder:
             error_msg = "Geçmiş talep verisi bulunamadı. Dataset oluşturulamaz."
             logger.error(f"❌ Semantic Validation: {error_msg}")
             raise ValueError(error_msg)
+
 
         # 6. Dataset verisini hazırla
         dataset_data = {
@@ -175,25 +224,31 @@ class DatasetBuilder:
         self,
         user_id: int,
         materials: List[Dict[str, Any]],
-        suppliers: Optional[Dict[str, Any]] = None,
-        supplier_mapping: Optional[Dict[str, Any]] = None,
+        suppliers: Optional[Dict[str, Any]] = None,  # ✅ dict bekliyor
+        supplier_mapping: Optional[Dict[str, Any]] = None,  # ✅ dict bekliyor
         week_columns: Optional[List[str]] = None,
         upload_id: Optional[str] = None,
         source_type: str = "api",
         source_name: Optional[str] = None,
-        validation_result: Optional[Dict[str, Any]] = None  # Dataset Gate için
+        validation_result: Optional[Dict[str, Any]] = None
     ) -> AnalysisDataset:
         """
         Doğrudan materials listesinden Dataset oluşturur.
-        API veya ERP entegrasyonları için kullanılır.
         """
         cached_data = {
             'materials': materials,
-            'suppliers': suppliers or {},
-            'supplier_mapping': supplier_mapping or {},
+            'suppliers': suppliers or {},      # ✅ dict olarak kaydediliyor
+            'supplier_mapping': supplier_mapping or {},  # ✅ dict olarak kaydediliyor
             'week_columns': week_columns or [],
             'upload_id': upload_id
         }
+        print("=========== CACHE ===========")
+
+        print(cached_data)
+
+        print(cached_data["suppliers"])
+
+        print(cached_data["supplier_mapping"])
 
         return self.build_from_cache(
             user_id=user_id,
@@ -203,7 +258,7 @@ class DatasetBuilder:
             source_name=source_name,
             validation_result=validation_result
         )
-
+    
     def get_dataset(self, dataset_id: int, user_id: int) -> Optional[AnalysisDataset]:
         """Dataset ID'ye göre dataset getirir (kullanıcı doğrulamalı)"""
         return self.db.query(AnalysisDataset).filter(

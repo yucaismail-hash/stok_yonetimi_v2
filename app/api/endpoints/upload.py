@@ -1,14 +1,17 @@
+# app/api/endpoints/upload.py - DÜZELTİLDİ
+
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import Optional
-import uuid 
+import uuid
 from app.database import get_db
 from app.models import User, UploadedData, AnalysisResult, AnalysisInput, AnalysisDataset
 from app.auth import get_current_user, get_current_user_optional
 from app.utils.excel_reader import ExcelReader
-from app.utils.excel_processor import ExcelProcessor
+from app.utils.excel_processor import ExcelProcessor  # ✅ DOĞRU
 from app.services.dataset_builder import DatasetBuilder
+from app.services.active_dataset import get_active_dataset_service
 import shutil
 import os
 from datetime import datetime
@@ -16,33 +19,30 @@ import tempfile
 
 router = APIRouter()
 excel_reader = ExcelReader()
-excel_processor = ExcelProcessor()
+excel_processor = ExcelProcessor()  # ✅ DOĞRU
 
-# ✅ Geçici veri cache'i (kullanıcı bazlı)
+# ✅ Geçici veri cache'i - SADECE IMPORT WIZARD İÇİN
 upload_cache = {}
 
 def get_user_upload_data(user_id: int):
-    """Kullanıcının yüklediği verileri getir - SADECE CACHE!"""
+    """Kullanıcının yüklediği verileri getir - SADECE IMPORT WIZARD İÇİN!"""
+    # ⚠️ BU FONKSİYON SADECE IMPORT WIZARD TARAFINDAN KULLANILMALIDIR.
+    # Analiz modülleri ACTIVE DATASET kullanmalıdır.
     data = upload_cache.get(user_id)
     if data:
         print(f"✅ Cache verisi bulundu: {data.get('total_materials', 0)} malzeme")
-        if data.get('materials'):
-            print(f"✅ İlk malzeme: {data['materials'][0].keys() if data['materials'] else 'None'}")
     else:
         print(f"❌ Cache verisi yok: {user_id}")
     return data
 
 def set_user_upload_data(user_id: int, data: dict):
-    """Kullanıcının yüklediği verileri cache'e kaydet"""
+    """Kullanıcının yüklediği verileri cache'e kaydet - SADECE IMPORT WIZARD İÇİN!"""
     upload_cache[user_id] = data
 
-def get_active_upload_id(user_id: int) -> Optional[str]:
-    """Kullanıcının aktif upload_id'sini cache'den getir"""
-    data = get_user_upload_data(user_id)
-    if data:
-        return data.get('upload_id')
-    return None
 
+# ============================================================
+# 📌 UPLOAD EXCEL - CACHE'E KAYDET
+# ============================================================
 @router.post("/upload")
 async def upload_excel(
     file: UploadFile = File(...),
@@ -51,7 +51,7 @@ async def upload_excel(
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Excel dosyası yükle - Veriyi hem cache'e hem DB'ye kaydet
+    Excel dosyası yükle - Veriyi cache'e kaydet (Import Wizard için)
     Token maliyeti: 0 (ücretsiz)
     """
     temp_path = None
@@ -92,7 +92,7 @@ async def upload_excel(
         
         # 6. Cache verisini hazırla
         cached_data = {
-            'upload_id': upload_id,  # ✅ YENİ
+            'upload_id': upload_id,
             'materials': materials,
             'supplier_mapping': read_result['data'].get('supplier_mapping', {}),
             'suppliers': read_result['data'].get('suppliers', {}),
@@ -114,7 +114,7 @@ async def upload_excel(
             user_id=user_id,
             file_name=file.filename,
             file_size=0,
-            data=cached_data,  # Tüm veriyi JSON olarak kaydet
+            data=cached_data,
             is_active=True
         )
         db.add(analysis_input)
@@ -137,7 +137,7 @@ async def upload_excel(
         return {
             'success': True,
             'message': f"{len(materials)} malzeme başarıyla yüklendi.",
-            'upload_id': upload_id,  # ✅ DÖNDÜR
+            'upload_id': upload_id,
             'total_materials': len(materials),
             'file_name': file.filename,
             'mode': mode,
@@ -159,73 +159,88 @@ async def upload_excel(
             except:
                 pass
 
+
+# ============================================================
+# 📌 UPLOAD STATUS - ACTIVE DATASET BAZLI
+# ============================================================
 @router.get("/upload/status")
 async def get_upload_status(
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_current_user_optional)
 ):
     """
-    Kullanıcının yükleme durumunu kontrol et - SADECE CACHE!
+    Kullanıcının yükleme durumunu kontrol et - ACTIVE DATASET BAZLI!
     Token maliyeti: 0 (ücretsiz)
     """
     if not current_user:
         return {"has_data": False, "message": "Giriş yapılmamış"}
     
-    user_id = current_user.id
-    cached_data = get_user_upload_data(user_id)
+    # ✅ ACTIVE DATASET'ten kontrol et
+    active_service = get_active_dataset_service(db)
+    stats = active_service.get_dataset_stats(current_user.id)
     
+    if stats['has_data']:
+        return {
+            "has_data": True,
+            "dataset_id": stats['dataset_id'],
+            "upload_id": stats['upload_id'],
+            "filename": stats['source_name'] or 'Bilinmeyen',
+            "uploaded_at": stats['created_at'],
+            "status": "completed",
+            "materials_count": stats['material_count'],
+            "week_count": stats['week_count'],
+            "source_type": stats['source_type'],
+            "is_active": stats['is_active']
+        }
+    
+    # ✅ Cache'den kontrol et (Import Wizard devam ediyor olabilir)
+    cached_data = get_user_upload_data(current_user.id)
     if cached_data and cached_data.get('materials'):
-        materials = cached_data.get('materials', [])
-        
-        # ✅ Hafta sayısını hesapla
-        week_count = 0
-        if materials:
-            # İlk malzemenin historical_demand uzunluğu
-            first_material = materials[0] if materials else {}
-            historical = first_material.get('historical_demand', [])
-            week_count = len(historical)
-        
         return {
             "has_data": True,
             "upload_id": cached_data.get('upload_id'),
             "filename": cached_data.get('file_name', 'unknown.xlsx'),
             "uploaded_at": cached_data.get('uploaded_at'),
-            "status": "completed",
-            "materials_count": len(materials),
-            "week_count": week_count,  # ✅ EKLENDİ
+            "status": "processing",
+            "materials_count": len(cached_data.get('materials', [])),
+            "week_count": 0,
+            "source_type": "cache",
+            "is_active": False
         }
     
     return {"has_data": False}
 
+
+# ============================================================
+# 📌 MATERIALS INFO - ACTIVE DATASET BAZLI
+# ============================================================
 @router.get("/upload/materials-info")
 async def get_materials_info(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Yüklenen verilerin detaylı bilgisini getir.
+    Yüklenen verilerin detaylı bilgisini getir - ACTIVE DATASET BAZLI!
     """
-    cached_data = get_user_upload_data(current_user.id)
-    if not cached_data:
-        return {"has_data": False, "message": "Veri bulunamadı"}
+    # ✅ ACTIVE DATASET'ten kontrol et
+    active_service = get_active_dataset_service(db)
+    stats = active_service.get_dataset_stats(current_user.id)
     
-    materials = cached_data.get('materials', [])
+    if stats['has_data']:
+        return {
+            "has_data": True,
+            "materials_count": stats['material_count'],
+            "week_count": stats['week_count'],
+            "total_materials": stats['material_count'],
+            "file_name": stats['source_name']
+        }
     
-    # ✅ Hafta sayısını hesapla
-    week_count = 0
-    if materials:
-        first_material = materials[0] if materials else {}
-        historical = first_material.get('historical_demand', [])
-        week_count = len(historical)
-    
-    return {
-        "has_data": True,
-        "materials_count": len(materials),
-        "week_count": week_count,
-        "total_materials": len(materials),
-        "file_name": cached_data.get('file_name')
-    }
+    return {"has_data": False, "message": "Veri bulunamadı"}
 
+
+# ============================================================
+# 📌 CLEAR UPLOAD DATA - SADECE CACHE TEMİZLER
+# ============================================================
 @router.delete("/upload/clear")
 def clear_upload_data(
     current_user: User = Depends(get_current_user),
@@ -247,6 +262,10 @@ def clear_upload_data(
     
     return {'success': True, 'message': 'Veriler temizlendi'}
 
+
+# ============================================================
+# 📌 GET RESULTS - analysis_results tablosundan
+# ============================================================
 @router.get("/upload/results")
 async def get_upload_results(
     result_type: Optional[str] = None,
@@ -264,10 +283,6 @@ async def get_upload_results(
     results = []
     seen = set()
     
-    # ============================================================
-    # 📌 TEK TABLO: analysis_results
-    # ============================================================
-    
     query = db.query(AnalysisResult).filter(
         AnalysisResult.user_id == current_user.id
     )
@@ -275,7 +290,6 @@ async def get_upload_results(
     if result_type:
         query = query.filter(AnalysisResult.result_type.like(f"{result_type}%"))
     
-    # ✅ Sadece tamamlanmış veya senkron olanları al
     query = query.filter(
         (AnalysisResult.status == None) | (AnalysisResult.status == 'completed')
     )
@@ -289,7 +303,6 @@ async def get_upload_results(
         items = data.get('results', [])
         is_async = r.task_id is not None
         
-        # ✅ SADECE BATCH KAYDI EKLE (malzemeleri TEK TEK EKLEME!)
         key = f"result_{r.id}_{r.created_at.isoformat()}"
         if key not in seen:
             seen.add(key)
@@ -320,10 +333,10 @@ async def get_upload_results(
         "results": results
     }
 
-# ============================================================
-# 🆕 DATASET BUILDER ENTEGRASYONU
-# ============================================================
 
+# ============================================================
+# 📌 DATASET BUILDER ENDPOINT'LERİ
+# ============================================================
 @router.post("/upload/build-dataset")
 async def build_dataset_from_upload(
     db: Session = Depends(get_db),
@@ -342,7 +355,6 @@ async def build_dataset_from_upload(
     
     upload_id = cached_data.get('upload_id')
     
-    # Dataset Builder ile dataset oluştur
     builder = DatasetBuilder(db)
     dataset = builder.build_from_cache(
         user_id=current_user.id,
@@ -372,10 +384,7 @@ async def get_user_datasets(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Kullanıcının tüm dataset'lerini listeler.
-    Token maliyeti: 0 (ücretsiz)
-    """
+    """Kullanıcının tüm dataset'lerini listeler."""
     builder = DatasetBuilder(db)
     datasets = builder.get_active_datasets(current_user.id, limit)
     
@@ -404,10 +413,7 @@ async def get_dataset_detail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Dataset detaylarını getirir.
-    Token maliyeti: 0 (ücretsiz)
-    """
+    """Dataset detaylarını getirir."""
     builder = DatasetBuilder(db)
     dataset = builder.get_dataset(dataset_id, current_user.id)
     
@@ -441,10 +447,7 @@ async def delete_dataset(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Dataset'i pasifleştirir (siler).
-    Token maliyeti: 0 (ücretsiz)
-    """
+    """Dataset'i pasifleştirir (siler)."""
     builder = DatasetBuilder(db)
     result = builder.deactivate_dataset(dataset_id, current_user.id)
     

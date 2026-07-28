@@ -27,105 +27,201 @@ class NormalizationEngine:
         self.user_id = user_id
         self.upload_id = upload_id
 
-# app/services/normalization_engine.py - normalize_data DÜZELTİLDİ
-
-# app/services/normalization_engine.py - normalize_data DÜZELTİLDİ
+# app/services/normalization_engine.py - DÜZELTİLDİ
 
     def normalize_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Veriyi normalize et.
         Sadece numerik alanlarda güvenli dönüşüm yapar.
         String alanlara dokunmaz.
+        Validation hatalarını da errors listesine ekler.
         """
         normalized = {}
         changes = []
         suggestions = []
         errors = []
 
+        # ============================================================
+        # Validation hatalarını al (data içinden)
+        # ============================================================
+        validation_errors = data.pop('_validation_errors', [])
+        
+        # ============================================================
         # Veriyi sheet bazında işle
+        # ============================================================
         for sheet_name, rows in data.items():
             if not rows:
                 normalized[sheet_name] = []
                 continue
 
             # ============================================================
-            # 1. EĞER ROWS BİR DICT İSE (suppliers veya supplier_mapping gibi)
+            # ✅ suppliers DİCT İSE DÖNÜŞTÜRME - YAPISINI KORU
             # ============================================================
+            if sheet_name == 'suppliers' and isinstance(rows, dict):
+                print(f"🔍 {sheet_name} dict, yapısı korunuyor: {len(rows)} tedarikçi")
+                # Sadece değerleri normalize et, yapıyı bozma
+                normalized_rows = {}
+                for supplier_id, supplier_data in rows.items():
+                    if isinstance(supplier_data, dict):
+                        new_supplier_data = dict(supplier_data)
+                        # Numerik alanları normalize et
+                        for col, value in supplier_data.items():
+                            if isinstance(value, str):
+                                canonical_field = get_canonical_field(col)
+                                expected_type = FIELD_TYPES.get(canonical_field)
+                                if expected_type in ['float', 'percentage']:
+                                    normalized_value, is_ambiguous, suggestion = self._normalize_numeric(value)
+                                    if normalized_value != value and not is_ambiguous:
+                                        new_supplier_data[col] = normalized_value
+                                        changes.append({
+                                            'sheet': sheet_name,
+                                            'row': supplier_id,
+                                            'column': col,
+                                            'canonical_field': canonical_field,
+                                            'original': value,
+                                            'new': normalized_value,
+                                            'confidence': 1.0,
+                                            'reason': 'Güvenli numerik dönüşüm'
+                                        })
+                        normalized_rows[supplier_id] = new_supplier_data
+                normalized[sheet_name] = normalized_rows
+                print(f"🔍 {sheet_name} normalize edildi: {len(normalized_rows)} tedarikçi (dict korundu)")
+                continue
+
+            # ============================================================
+            # ✅ supplier_mapping DİCT İSE DÖNÜŞTÜRME - YAPISINI KORU
+            # ============================================================
+            if sheet_name == 'supplier_mapping' and isinstance(rows, dict):
+                print(f"🔍 {sheet_name} dict, yapısı korunuyor: {len(rows)} ürün")
+                normalized_rows = {}
+                for product_code, supplier_list in rows.items():
+                    if isinstance(supplier_list, list):
+                        new_supplier_list = []
+                        for item in supplier_list:
+                            if isinstance(item, dict):
+                                new_item = dict(item)
+                                # Numerik alanları normalize et (share, open_qty)
+                                for col, value in item.items():
+                                    if isinstance(value, str):
+                                        canonical_field = get_canonical_field(col)
+                                        expected_type = FIELD_TYPES.get(canonical_field)
+                                        if expected_type in ['float', 'percentage']:
+                                            normalized_value, is_ambiguous, suggestion = self._normalize_numeric(value)
+                                            if normalized_value != value and not is_ambiguous:
+                                                new_item[col] = normalized_value
+                                                changes.append({
+                                                    'sheet': sheet_name,
+                                                    'row': product_code,
+                                                    'column': col,
+                                                    'canonical_field': canonical_field,
+                                                    'original': value,
+                                                    'new': normalized_value,
+                                                    'confidence': 1.0,
+                                                    'reason': 'Güvenli numerik dönüşüm'
+                                                })
+                                new_supplier_list.append(new_item)
+                        normalized_rows[product_code] = new_supplier_list
+                normalized[sheet_name] = normalized_rows
+                print(f"🔍 {sheet_name} normalize edildi: {len(normalized_rows)} ürün (dict korundu)")
+                continue
+
+            # ============================================================
+            # materials - LİSTE, SATIR BAZLI NORMALİZASYON
+            # ============================================================
+            if sheet_name == 'materials' and isinstance(rows, list):
+                normalized_rows = []
+                for row_idx, row in enumerate(rows):
+                    if not isinstance(row, dict):
+                        print(f"⚠️ {sheet_name} - {row_idx}. satır dict değil: {type(row)} - atlanıyor")
+                        continue
+                    
+                    new_row = dict(row)
+                    for col, value in row.items():
+                        if isinstance(value, str):
+                            canonical_field = get_canonical_field(col)
+                            expected_type = FIELD_TYPES.get(canonical_field)
+                            if expected_type in ['float', 'percentage']:
+                                original = value
+                                normalized_value, is_ambiguous, suggestion = self._normalize_numeric(value)
+                                if normalized_value != original:
+                                    if not is_ambiguous:
+                                        new_row[col] = normalized_value
+                                        changes.append({
+                                            'sheet': sheet_name,
+                                            'row': row_idx + 1,
+                                            'column': col,
+                                            'canonical_field': canonical_field,
+                                            'original': original,
+                                            'new': normalized_value,
+                                            'confidence': 1.0,
+                                            'reason': 'Güvenli numerik dönüşüm'
+                                        })
+                                    else:
+                                        suggestions.append({
+                                            'sheet': sheet_name,
+                                            'row': row_idx + 1,
+                                            'column': col,
+                                            'canonical_field': canonical_field,
+                                            'original': original,
+                                            'suggestion': normalized_value,
+                                            'confidence': 0.5,
+                                            'message': f"Belirsiz format: '{original}'. Önerilen: '{normalized_value}'. Lütfen onaylayın veya düzeltin."
+                                        })
+                                elif is_ambiguous:
+                                    suggestions.append({
+                                        'sheet': sheet_name,
+                                        'row': row_idx + 1,
+                                        'column': col,
+                                        'canonical_field': canonical_field,
+                                        'original': original,
+                                        'suggestion': normalized_value,
+                                        'confidence': 0.5,
+                                        'message': f"Belirsiz format: '{original}'. Lütfen düzeltin."
+                                    })
+                    normalized_rows.append(new_row)
+                normalized[sheet_name] = normalized_rows
+                print(f"🔍 {sheet_name} normalize edildi: {len(normalized_rows)} satır")
+                continue
+
+            # ============================================================
+            # Diğer sheet'ler (Tedarikciler, Malzeme_Tedarikciler fallback)
+            # ============================================================
+            # Eğer rows bir dict ise ve yukarıdaki özel durumlara girmediyse
             if isinstance(rows, dict):
-                print(f"🔍 {sheet_name} bir dict, dönüştürülüyor...")
+                print(f"🔍 {sheet_name} dict, dönüştürülüyor...")
                 rows_list = []
-                if sheet_name == 'suppliers':
-                    for key, value in rows.items():
-                        if isinstance(value, dict):
-                            value['supplier_code'] = key
-                            rows_list.append(value)
-                        else:
-                            rows_list.append(value)
-                elif sheet_name == 'supplier_mapping':
-                    for product_code, supplier_list in rows.items():
-                        if isinstance(supplier_list, list):
-                            for item in supplier_list:
-                                if isinstance(item, dict):
-                                    # ============================================================
-                                    # ✅ SADECE GEREKLİ ALANLARI AL
-                                    # ============================================================
-                                    new_item = {
-                                        'supplier_id': item.get('supplier_id', ''),
-                                        'share': item.get('share', 1.0),
-                                        'open_qty': item.get('open_qty', 0),
-                                        'planned_due': item.get('planned_due', ''),
-                                    }
-                                    rows_list.append(new_item)
-                        else:
-                            rows_list.append(supplier_list)
-                else:
-                    for key, value in rows.items():
-                        if isinstance(value, dict):
-                            value['_key'] = key
-                            rows_list.append(value)
-                        else:
-                            rows_list.append(value)
-                
+                for key, value in rows.items():
+                    if isinstance(value, dict):
+                        value['_key'] = key
+                        rows_list.append(value)
+                    elif isinstance(value, list):
+                        for item in value:
+                            if isinstance(item, dict):
+                                item['_key'] = key
+                                rows_list.append(item)
+                    else:
+                        rows_list.append(value)
                 rows = rows_list
                 print(f"🔍 {sheet_name} dönüştürüldü: {len(rows)} satır")
 
-            # ============================================================
-            # 2. ROWS BİR LİSTE DEĞİLSE ATLA
-            # ============================================================
+            # ROWS BİR LİSTE DEĞİLSE ATLA
             if not isinstance(rows, list):
                 print(f"⚠️ {sheet_name} rows liste değil: {type(rows)} - atlanıyor")
                 normalized[sheet_name] = []
                 continue
 
-            # ============================================================
-            # 3. HER SATIRI İŞLE
-            # ============================================================
+            # HER SATIRI İŞLE (diğer sheet'ler için)
             normalized_rows = []
             for row_idx, row in enumerate(rows):
                 if not isinstance(row, dict):
                     print(f"⚠️ {sheet_name} - {row_idx}. satır dict değil: {type(row)} - atlanıyor")
                     continue
                 
-                # ============================================================
-                # ✅ SADECE GEREKLİ ALANLARI KORU, FAZLA ALANLARI TEMİZLE
-                # ============================================================
-                # supplier_mapping için sadece belirli alanları koru
-                if sheet_name == 'supplier_mapping':
-                    clean_row = {
-                        'supplier_id': row.get('supplier_id', ''),
-                        'share': row.get('share', 1.0),
-                        'open_qty': row.get('open_qty', 0),
-                        'planned_due': row.get('planned_due', ''),
-                    }
-                else:
-                    clean_row = dict(row)
-                
-                new_row = dict(clean_row)
-                for col, value in clean_row.items():
+                new_row = dict(row)
+                for col, value in row.items():
                     if isinstance(value, str):
                         canonical_field = get_canonical_field(col)
                         expected_type = FIELD_TYPES.get(canonical_field)
-
                         if expected_type in ['float', 'percentage']:
                             original = value
                             normalized_value, is_ambiguous, suggestion = self._normalize_numeric(value)
@@ -167,7 +263,25 @@ class NormalizationEngine:
                 normalized_rows.append(new_row)
             
             normalized[sheet_name] = normalized_rows
-            print(f"🔍 {sheet_name} normalizasyon tamamlandı: {len(normalized_rows)} satır")
+            print(f"🔍 {sheet_name} normalize edildi: {len(normalized_rows)} satır")
+
+        # ============================================================
+        # Validation hatalarını errors'a ekle
+        # ============================================================
+        for err in validation_errors:
+            # Zaten eklenmiş mi kontrol et
+            exists = False
+            for existing in errors:
+                if (existing.get('sheet') == err.get('sheet') and
+                    existing.get('row') == err.get('row') and
+                    existing.get('column') == err.get('column')):
+                    exists = True
+                    break
+            if not exists:
+                errors.append(err)
+        
+        # total_errors'i güncelle
+        total_errors = len(errors)
 
         return {
             'normalized_data': normalized,
@@ -176,9 +290,9 @@ class NormalizationEngine:
             'errors': errors,
             'total_changes': len(changes),
             'total_suggestions': len(suggestions),
-            'total_errors': len(errors)
+            'total_errors': total_errors
         }
-
+    
     def _normalize_numeric(self, value: str) -> Tuple[str, bool, Optional[str]]:
         """
         Numerik bir string'i normalize eder.

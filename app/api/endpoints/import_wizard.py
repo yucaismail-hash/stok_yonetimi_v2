@@ -1,4 +1,4 @@
-# app/api/endpoints/import_wizard.py - GÜNCELLENDİ
+# app/api/endpoints/import_wizard.py - TAM VE GÜNCEL
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ import uuid
 import json
 import tempfile
 import os
+import logging
 
 from app.database import get_db
 from app.models import User, ValidationResult
@@ -16,15 +17,23 @@ from app.services.validation_engine import get_validation_engine
 from app.services.normalization_engine import get_normalization_engine
 from app.services.dataset_builder import DatasetBuilder
 from app.utils.excel_reader import ExcelReader
+from app.services.active_dataset import get_active_dataset_service
 from app.schemas.canonical import (
     CANONICAL_MAP, 
     FIELD_TYPES, 
     SHEET_FIELDS, 
     CRITICAL_FIELDS,
-    OPTIONAL_FIELDS,  # ✅ EKLENDI
+    OPTIONAL_FIELDS,
     get_canonical_field, 
     get_excel_column
 )
+from app.schemas.import_wizard import (
+    ReValidateRequest,
+    NormalizeRequest,
+    ApplyDatasetRequest
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 excel_reader = ExcelReader()
@@ -48,8 +57,9 @@ def delete_cache(upload_id: str) -> None:
         del validation_cache[upload_id]
 
 
-# app/api/endpoints/import_wizard.py - validate_excel TAM KOD
-
+# ============================================================
+# 1. VALIDATE EXCEL ENDPOINT
+# ============================================================
 @router.post("/import-wizard/validate")
 async def validate_excel(
     file: UploadFile = File(...),
@@ -96,18 +106,21 @@ async def validate_excel(
 
         sheets = read_result['data']
         
-        # ============================================================
         # DEBUG: sheets içeriğini kontrol et
-        # ============================================================
         print(f"🔍 sheets keys: {list(sheets.keys())}")
         
         if 'materials' in sheets:
             materials = sheets['materials']
             if materials and isinstance(materials, list) and len(materials) > 0:
-                print(f"🔍 materials ilk 3 satır:")
+                print(f"🔍 materials ilk 3 satır (ham ExcelReader çıktısı):")
                 for i, mat in enumerate(materials[:3]):
                     if isinstance(mat, dict):
-                        print(f"   Satır {i+1}: product_code={mat.get('product_code', 'BULUNAMADI!')}, description={mat.get('description', '')[:30]}")
+                        print(f"   Satır {i+1}:")
+                        print(f"      product_code={mat.get('product_code', 'BULUNAMADI!')!r}")
+                        print(f"      unit_cost={mat.get('unit_cost', 'BULUNAMADI!')!r}")
+                        print(f"      holding_rate={mat.get('holding_rate', 'BULUNAMADI!')!r}")
+                        print(f"      shortage_cost={mat.get('shortage_cost', 'BULUNAMADI!')!r}")
+                        print(f"      description={mat.get('description', '')[:30]!r}")
                     else:
                         print(f"   Satır {i+1}: {type(mat)} - {mat}")
             else:
@@ -116,7 +129,6 @@ async def validate_excel(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Dosya okuma hatası: {str(e)}")
     finally:
-        # Geçici dosyayı temizle
         if temp_path and os.path.exists(temp_path):
             try:
                 os.unlink(temp_path)
@@ -150,75 +162,85 @@ async def validate_excel(
     print(f"🔍 Veri kalitesi skoru: %{data_quality.get('summary', {}).get('score', 0):.1f}")
     print(f"🔍 can_proceed: {data_quality.get('can_proceed', True)}")
     
-# app/api/endpoints/import_wizard.py - /validate endpoint'i
-
     # ============================================================
-    # 5. Normalization Engine
-    # ============================================================
-    normalization_engine = get_normalization_engine(db, current_user.id, upload_id)
-    normalization_result = normalization_engine.normalize_data(sheets)
-    
-    # ============================================================
-    # ✅ Validation hatalarını normalization sonucuna ekle
+    # 4b. Validation hatalarını topla (normalization'a aktarmak için)
     # ============================================================
     
-    # Opsiyonel alanları al
+    # ✅ OPTIONAL_FIELDS'ı al
     optional_fields = []
     for sheet_name in OPTIONAL_FIELDS:
         optional_fields.extend(OPTIONAL_FIELDS.get(sheet_name, []))
     
-    # 1. Data type errors
-    data_type_errors = data_quality.get('data_type_errors', [])
-    for err in data_type_errors:
+    validation_errors = []
+    
+    # Business rule errors - critical olanlar
+    for err in data_quality.get('business_rule_errors', []):
+        if err.get('severity') == 'critical' or err.get('requires_user_action'):
+            validation_errors.append({
+                'sheet': err.get('sheet', ''),
+                'row': err.get('row', ''),
+                'column': err.get('column', ''),
+                'canonical_field': err.get('canonical_field', ''),
+                'value': err.get('original_value', ''),
+                'original_value': err.get('original_value', ''),
+                'message': err.get('message', ''),
+                'type': 'business_rule_error',
+                'severity': err.get('severity', 'critical'),
+                'rows': err.get('rows', []),
+                'requires_user_action': True
+            })
+    
+    # Data type errors - opsiyonel alanlarda geçersiz değerler gösterilir!
+    for err in data_quality.get('data_type_errors', []):
         field = err.get('canonical_field')
-        if field in optional_fields:
+        value = err.get('original_value')
+        
+        is_optional = field in optional_fields
+        
+        # Opsiyonel ve değer boşsa atla
+        if is_optional and (value is None or str(value).strip() == ''):
             continue
-        normalization_result['errors'].append({
+        
+        # Geçersiz değer varsa (opsiyonel olsa bile) göster
+        validation_errors.append({
             'sheet': err.get('sheet', ''),
             'row': err.get('row', ''),
             'column': err.get('column', ''),
+            'canonical_field': err.get('canonical_field', ''),
             'value': err.get('original_value', ''),
             'original_value': err.get('original_value', ''),
             'message': err.get('message', ''),
             'type': 'data_type_error',
-            'severity': err.get('severity', 'critical'),
+            'severity': err.get('severity', 'warning'),
+            'requires_user_action': True
         })
-        normalization_result['total_errors'] += 1
     
-    # 2. Business rule errors
-    business_rule_errors = data_quality.get('business_rule_errors', [])
-    for err in business_rule_errors:
-        field = err.get('canonical_field')
-        if field in optional_fields:
-            continue
-        normalization_result['errors'].append({
-            'sheet': err.get('sheet', ''),
-            'row': err.get('row', ''),
-            'column': err.get('column', ''),
-            'value': err.get('original_value', ''),
-            'original_value': err.get('original_value', ''),
-            'message': err.get('message', ''),
-            'type': 'business_rule_error',
-            'severity': err.get('severity', 'critical'),
-            'rows': err.get('rows', []),
-        })
-        normalization_result['total_errors'] += 1
-    
-    # 3. Structural errors (critical olanlar)
-    structural_errors = data_quality.get('structural_errors', [])
-    for err in structural_errors:
+    # Missing data - critical olanlar (product_code gibi)
+    for err in data_quality.get('missing_data', []):
         if err.get('severity') == 'critical':
-            normalization_result['errors'].append({
-                'sheet': err.get('sheet', ''),
-                'row': None,
-                'column': err.get('column', ''),
-                'value': None,
-                'original_value': None,
-                'message': err.get('message', ''),
-                'type': 'structural_error',
-                'severity': 'critical',
-            })
-            normalization_result['total_errors'] += 1
+            missing_rows = err.get('missing_rows_list', [])
+            for row_num in missing_rows:
+                validation_errors.append({
+                    'sheet': err.get('sheet', ''),
+                    'row': row_num,
+                    'column': err.get('column', ''),
+                    'canonical_field': err.get('canonical_field', ''),
+                    'value': None,
+                    'original_value': None,
+                    'message': f"{row_num}. satırda {err.get('column', '')} eksik!",
+                    'type': 'missing_data',
+                    'severity': 'critical',
+                    'requires_user_action': True
+                })
+    
+    # ============================================================
+    # 5. Normalization Engine (validation_errors'u gönder)
+    # ============================================================
+    sheets_with_errors = sheets.copy()
+    sheets_with_errors['_validation_errors'] = validation_errors
+    
+    normalization_engine = get_normalization_engine(db, current_user.id, upload_id)
+    normalization_result = normalization_engine.normalize_data(sheets_with_errors)
     
     print(f"🔍 Normalization sonucu (validation hataları eklendi):")
     print(f"   - Otomatik düzeltme: {normalization_result.get('total_changes', 0)}")
@@ -226,7 +248,7 @@ async def validate_excel(
     print(f"   - Manuel düzeltme: {normalization_result.get('total_errors', 0)}")
     
     # ============================================================
-    # 6. Impact Assessment (validation sonuçlarını kullanarak)
+    # 6. Impact Assessment
     # ============================================================
     impact = validation_engine.analyze_impact(sheets, data_quality)
     print(f"🔍 Impact skoru: %{impact.get('overall_score', 0):.1f}")
@@ -238,7 +260,7 @@ async def validate_excel(
     print(f"🔍 Genel can_proceed: {can_proceed}")
     
     # ============================================================
-    # 8. Cache'e kaydet (sheets ve normalization verisi dahil)
+    # 8. Cache'e kaydet
     # ============================================================
     result_data = {
         'upload_id': upload_id,
@@ -246,11 +268,11 @@ async def validate_excel(
         'file_info': file_info,
         'sheet_check': sheet_check,
         'data_quality': data_quality,
-        'normalization': normalization_result,      # ✅ normalization eklendi
+        'normalization': normalization_result,
         'impact': impact,
         'can_proceed': can_proceed,
-        'sheets': sheets,                           # sheets verisi cache'te
-        'normalized_data': normalization_result.get('normalized_data', {}),  # normalize edilmiş veri
+        'sheets': sheets,
+        'normalized_data': normalization_result.get('normalized_data', {}),
         'status': 'validated_and_normalized'
     }
     set_cache(upload_id, result_data)
@@ -261,7 +283,7 @@ async def validate_excel(
     validation_result = ValidationResult(
         user_id=current_user.id,
         upload_id=upload_id,
-        step=6,  # Tüm adımlar tamamlandı
+        step=6,
         result_data=result_data,
         status='completed',
         expires_at=datetime.utcnow() + timedelta(hours=24)
@@ -270,7 +292,7 @@ async def validate_excel(
     db.commit()
     
     # ============================================================
-    # 10. Sonuçları döndür (sheets verisi hariç - gereksiz büyük)
+    # 10. Sonuçları döndür
     # ============================================================
     return {
         'success': True,
@@ -279,21 +301,27 @@ async def validate_excel(
         'file_info': file_info,
         'sheet_check': sheet_check,
         'data_quality': data_quality,
-        'normalization': normalization_result,  # ✅ normalization döndürülüyor
+        'normalization': normalization_result,
         'impact': impact,
     }
 
+
+# ============================================================
+# 2. NORMALIZE EXCEL ENDPOINT
+# ============================================================
 @router.post("/import-wizard/normalize")
 async def normalize_excel(
-    upload_id: str,
+    request: NormalizeRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Normalization yap ve dataset oluşturmak için hazırla (can_proceed kontrolü)."""
     
+    upload_id = request.upload_id
+    
     cache_data = get_cache(upload_id)
     if not cache_data:
-        raise HTTPException(status_code=404, detail="Validation sonucu bulunamadı.")
+        raise HTTPException(status_code=404, detail="Validation sonucu bulunamadı. Lütfen dosyayı yeniden yükleyin.")
 
     can_proceed = cache_data.get('can_proceed', True)
     sheets = cache_data.get('sheets')
@@ -311,69 +339,14 @@ async def normalize_excel(
         error_msg = f"Dataset oluşturulamıyor. Kritik hatalar: {', '.join(critical_errors[:5])}"
         raise HTTPException(status_code=400, detail=error_msg)
 
-    # ============================================================
-    # ✅ Normalization yap
-    # ============================================================
+    # Normalization yap
     engine = get_normalization_engine(db, current_user.id, upload_id)
     normalization_result = engine.normalize_data(sheets)
     
-    # ============================================================
-    # ✅ Validation'dan gelen hataları normalization_result'a ekle
-    # ============================================================
-    data_quality = cache_data.get('data_quality', {})
-    
-    # app/api/endpoints/import_wizard.py - /validate endpoint'i
-
-    # ============================================================
-    # Validation hatalarını normalization sonucuna ekle (sadece critical olanlar)
-    # ============================================================
-    optional_fields = OPTIONAL_FIELDS.get('Temel_Veriler', [])
-    
-    # Data type errors - sadece opsiyonel olmayanlar
-    data_type_errors = data_quality.get('data_type_errors', [])
-    for err in data_type_errors:
-        field = err.get('canonical_field')
-        # ✅ Opsiyonel alanları atla
-        if field in optional_fields:
-            continue
-        normalization_result['errors'].append({
-            'sheet': err.get('sheet', ''),
-            'row': err.get('row', ''),
-            'column': err.get('column', ''),
-            'value': err.get('original_value', ''),
-            'original_value': err.get('original_value', ''),
-            'message': err.get('message', ''),
-            'type': 'data_type_error',
-            'severity': err.get('severity', 'critical'),
-        })
-        normalization_result['total_errors'] += 1
-    
-    # Business rule errors - sadece opsiyonel olmayanlar
-    business_rule_errors = data_quality.get('business_rule_errors', [])
-    for err in business_rule_errors:
-        field = err.get('canonical_field')
-        # ✅ Opsiyonel alanları atla
-        if field in optional_fields:
-            continue
-        normalization_result['errors'].append({
-            'sheet': err.get('sheet', ''),
-            'row': err.get('row', ''),
-            'column': err.get('column', ''),
-            'value': err.get('original_value', ''),
-            'original_value': err.get('original_value', ''),
-            'message': err.get('message', ''),
-            'type': 'business_rule_error',
-            'severity': err.get('severity', 'critical'),
-            'rows': err.get('rows', []),
-        })
-        normalization_result['total_errors'] += 1
-    
-    # ============================================================
-    # ✅ Cache'i güncelle
-    # ============================================================
+    # Normalize edilmiş veriyi cache'e ekle
     cache_data['normalization'] = normalization_result
-    cache_data['normalized_data'] = normalization_result.get('normalized_data', {})
     cache_data['status'] = 'normalized'
+    cache_data['normalized_data'] = normalization_result.get('normalized_data', {})
     set_cache(upload_id, cache_data)
 
     return {
@@ -385,13 +358,24 @@ async def normalize_excel(
         'normalization': normalization_result
     }
 
+
+# ============================================================
+# 3. APPLY DATASET ENDPOINT
+# ============================================================
+
+# app/api/endpoints/import_wizard.py - apply_dataset (TAM DÜZELTİLMİŞ)
+
 @router.post("/import-wizard/apply-dataset")
 async def apply_dataset(
-    upload_id: str,
+    request: ApplyDatasetRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Dataset oluştur (normalization uygulanmış veriden). Önce can_proceed kontrolü."""
+    """
+    Dataset oluştur ve aktif yap.
+    """
+    
+    upload_id = request.upload_id
     
     # Cache'den veriyi al
     cache_data = get_cache(upload_id)
@@ -404,7 +388,6 @@ async def apply_dataset(
     if not normalized_data:
         raise HTTPException(status_code=400, detail="Normalization yapılmamış. Lütfen önce normalizasyonu tamamlayın.")
 
-    # DATASET GATE: can_proceed kontrol et
     if not can_proceed:
         critical_errors = []
         data_quality = cache_data.get('data_quality', {})
@@ -415,47 +398,170 @@ async def apply_dataset(
         error_msg = f"Dataset oluşturulamıyor. Kritik hatalar: {', '.join(critical_errors[:5])}"
         raise HTTPException(status_code=400, detail=error_msg)
 
+    # ============================================================
+    # ✅ DEBUG: normalized_data içeriğini kontrol et
+    # ============================================================
+    print(f"🔍 normalized_data keys: {list(normalized_data.keys())}")
+    
+    # materials
+    materials = normalized_data.get('materials', [])
+    if not materials:
+        materials = normalized_data.get('Temel_Veriler', [])
+    print(f"🔍 materials: type={type(materials)}, len={len(materials)}")
+    if materials and isinstance(materials, list):
+        print(f"   ilk material keys: {list(materials[0].keys()) if materials else 'empty'}")
+
+    # ============================================================
+    # ✅ SUPPLIERS - normalized_data'dan al
+    # ============================================================
+    suppliers = normalized_data.get('suppliers', {})
+    if not suppliers:
+        suppliers = normalized_data.get('Tedarikciler', {})
+    
+    print(f"🔍 suppliers (ham): type={type(suppliers)}, len={len(suppliers) if isinstance(suppliers, (dict, list)) else 'unknown'}")
+    
+    # ✅ Eğer suppliers bir list ise dict'e çevir (DatasetBuilder dict bekliyor)
+    if isinstance(suppliers, list):
+        print(f"⚠️ suppliers bir list! {len(suppliers)} satır, dict'e dönüştürülüyor...")
+        converted_suppliers = {}
+        for idx, item in enumerate(suppliers):
+            if isinstance(item, dict):
+                # supplier_id'yi bul
+                supplier_id = item.get('supplier_id') or item.get('Tedarikçi Kodu') or item.get('code')
+                if supplier_id:
+                    converted_suppliers[str(supplier_id)] = item
+                else:
+                    print(f"   ⚠️ {idx}. satırda supplier_id bulunamadı: {item.keys() if isinstance(item, dict) else 'not dict'}")
+        suppliers = converted_suppliers
+        print(f"   dönüştürüldü: {len(suppliers)} tedarikçi")
+    elif not isinstance(suppliers, dict):
+        print(f"   ⚠️ suppliers bilinmeyen tip: {type(suppliers)}")
+        suppliers = {}
+    
+    print(f"🔍 suppliers (son): type={type(suppliers)}, len={len(suppliers)}")
+    if suppliers and isinstance(suppliers, dict):
+        print(f"   suppliers keys: {list(suppliers.keys())}")
+
+    # ============================================================
+    # ✅ SUPPLIER_MAPPING - normalized_data'dan al
+    # ============================================================
+    supplier_mapping = normalized_data.get('supplier_mapping', {})
+    if not supplier_mapping:
+        supplier_mapping = normalized_data.get('Malzeme_Tedarikciler', {})
+    
+    print(f"🔍 supplier_mapping (ham): type={type(supplier_mapping)}, len={len(supplier_mapping) if isinstance(supplier_mapping, (dict, list)) else 'unknown'}")
+    
+    # ✅ Eğer supplier_mapping bir list ise dict'e çevir (DatasetBuilder dict bekliyor)
+    if isinstance(supplier_mapping, list):
+        print(f"⚠️ supplier_mapping bir list! {len(supplier_mapping)} satır, dict'e dönüştürülüyor...")
+        converted_mapping = {}
+        for idx, item in enumerate(supplier_mapping):
+            if isinstance(item, dict):
+                product_code = item.get('product_code') or item.get('Ürün Kodu')
+                supplier_id = item.get('supplier_id') or item.get('Tedarikçi Kodu')
+                if product_code and supplier_id:
+                    if product_code not in converted_mapping:
+                        converted_mapping[product_code] = []
+                    converted_mapping[product_code].append({
+                        'supplier_id': supplier_id,
+                        'share': item.get('share', 1.0)
+                    })
+                else:
+                    print(f"   ⚠️ {idx}. satırda product_code veya supplier_id eksik: {item.keys() if isinstance(item, dict) else 'not dict'}")
+            elif isinstance(item, list):
+                # nested list olabilir
+                for sub_item in item:
+                    if isinstance(sub_item, dict):
+                        product_code = sub_item.get('product_code') or sub_item.get('Ürün Kodu')
+                        supplier_id = sub_item.get('supplier_id') or sub_item.get('Tedarikçi Kodu')
+                        if product_code and supplier_id:
+                            if product_code not in converted_mapping:
+                                converted_mapping[product_code] = []
+                            converted_mapping[product_code].append({
+                                'supplier_id': supplier_id,
+                                'share': sub_item.get('share', 1.0)
+                            })
+        supplier_mapping = converted_mapping
+        print(f"   dönüştürüldü: {len(supplier_mapping)} ürün")
+    elif not isinstance(supplier_mapping, dict):
+        print(f"   ⚠️ supplier_mapping bilinmeyen tip: {type(supplier_mapping)}")
+        supplier_mapping = {}
+    
+    print(f"🔍 supplier_mapping (son): type={type(supplier_mapping)}, len={len(supplier_mapping)}")
+    if supplier_mapping and isinstance(supplier_mapping, dict):
+        first_key = next(iter(supplier_mapping.keys()))
+        print(f"   ilk ürün: {first_key} -> {len(supplier_mapping.get(first_key, []))} tedarikçi")
+        print(f"   ilk ürün detay: {supplier_mapping.get(first_key, [])[:2]}")
+
+    # ============================================================
+    # ✅ WEEK_COLUMNS - normalized_data'dan al
+    # ============================================================
+    week_columns = normalized_data.get('week_columns', [])
+    print(f"🔍 week_columns: type={type(week_columns)}, len={len(week_columns)}")
+    if week_columns:
+        print(f"   week_columns: {week_columns[:5]}...")
+    else:
+        # materials içinden W kolonlarını bul
+        if materials and isinstance(materials, list):
+            first_material = materials[0] if materials else {}
+            if isinstance(first_material, dict):
+                print(f"   materials içinden W kolonları aranıyor...")
+                week_cols_from_materials = [k for k in first_material.keys() if k.startswith('W')]
+                if week_cols_from_materials:
+                    week_columns = week_cols_from_materials
+                    print(f"   materials'den bulundu: {week_cols_from_materials}")
+                else:
+                    # historical_demand veya weekly_data'dan al
+                    weekly_data = first_material.get('weekly_data', [])
+                    if weekly_data:
+                        week_columns = [f'W{i}' for i in range(1, len(weekly_data) + 1)]
+                        print(f"   weekly_data'dan türetildi: {len(week_columns)} kolon")
+
+    # ============================================================
+    # ✅ cached_data HAZIRLA
+    # ============================================================
+    cached_data_for_builder = {
+        'materials': materials,
+        'suppliers': suppliers,
+        'supplier_mapping': supplier_mapping,
+        'week_columns': week_columns,
+        'upload_id': upload_id
+    }
+    
+    print(f"🔍 cached_data_for_builder:")
+    print(f"   materials: {len(cached_data_for_builder['materials'])} satır")
+    print(f"   suppliers: {len(cached_data_for_builder['suppliers'])} tedarikçi")
+    print(f"   supplier_mapping: {len(cached_data_for_builder['supplier_mapping'])} ürün")
+    print(f"   week_columns: {len(cached_data_for_builder['week_columns'])} kolon")
+
     # Dataset Builder ile dataset oluştur
     builder = DatasetBuilder(db)
     
     try:
-        # normalized_data'dan materials listesini çıkar
-        # normalized_data yapısı: {'Temel_Veriler': [...], 'Tedarikciler': {...}, 'Malzeme_Tedarikciler': {...}}
-        materials = []
-        if 'Temel_Veriler' in normalized_data:
-            materials = normalized_data['Temel_Veriler']
-        
-        # Tedarikçiler
-        suppliers = {}
-        if 'Tedarikciler' in normalized_data:
-            # Tedarikciler dict olarak gelir
-            suppliers = normalized_data['Tedarikciler']
-        
-        # Tedarikçi eşleştirme
-        supplier_mapping = {}
-        if 'Malzeme_Tedarikciler' in normalized_data:
-            for row in normalized_data['Malzeme_Tedarikciler']:
-                material_code = row.get('Ürün Kodu') or row.get('product_code')
-                supplier_code = row.get('Tedarikçi Kodu') or row.get('supplier_id')
-                if material_code and supplier_code:
-                    if material_code not in supplier_mapping:
-                        supplier_mapping[material_code] = []
-                    supplier_mapping[material_code].append({
-                        'supplier_id': supplier_code,
-                        'share': row.get('Tedarik Payı (%)', 1.0) / 100
-                    })
-        
-        # Dataset oluştur
         dataset = builder.build_from_materials(
             user_id=current_user.id,
-            materials=materials,
-            suppliers=suppliers,
-            supplier_mapping=supplier_mapping,
+            materials=cached_data_for_builder['materials'],
+            suppliers=cached_data_for_builder['suppliers'],
+            supplier_mapping=cached_data_for_builder['supplier_mapping'],
+            week_columns=cached_data_for_builder['week_columns'],
             upload_id=upload_id,
             source_type="excel",
             source_name=cache_data.get('file_name', 'unknown.xlsx'),
-            validation_result=cache_data  # Dataset Gate için
+            validation_result=cache_data
         )
+        
+        # ============================================================
+        # ✅ Dataset kaydettikten sonra kontrol
+        # ============================================================
+        print(f"🔍 Dataset kaydedildi: ID={dataset.id}")
+        print(f"   dataset_data keys: {list(dataset.dataset_data.keys())}")
+        print(f"   suppliers: {type(dataset.dataset_data.get('suppliers'))} - {len(dataset.dataset_data.get('suppliers', {}))}")
+        print(f"   supplier_mapping: {type(dataset.dataset_data.get('supplier_mapping'))} - {len(dataset.dataset_data.get('supplier_mapping', {}))}")
+        print(f"   week_columns: {len(dataset.dataset_data.get('week_columns', []))}")
+        
+        # Active Dataset'i güncelle
+        active_service = get_active_dataset_service(db)
+        active_service.set_active_dataset(current_user.id, dataset.id)
         
         # Cache'i temizle
         delete_cache(upload_id)
@@ -463,114 +569,21 @@ async def apply_dataset(
         return {
             'success': True,
             'dataset_id': dataset.id,
-            'message': 'Dataset başarıyla oluşturuldu'
+            'message': 'Dataset başarıyla oluşturuldu ve aktif yapıldı'
         }
         
     except ValueError as e:
+        print(f"❌ Dataset oluşturma hatası (ValueError): {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Dataset oluşturma hatası: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Dataset oluşturulurken hata oluştu: {str(e)}")
-
-
-@router.post("/import-wizard/re-validate")
-async def re_validate(
-    upload_id: str,
-    corrections: Dict[str, Any],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Kullanıcı düzeltmeleri sonrası yeniden validation yap."""
     
-    # Cache'den veriyi al
-    cache_data = get_cache(upload_id)
-    if not cache_data:
-        raise HTTPException(status_code=404, detail="Validation sonucu bulunamadı.")
-
-    sheets = cache_data.get('sheets')
-    if not sheets:
-        raise HTTPException(status_code=400, detail="Sheet verisi bulunamadı.")
-
-    # ============================================================
-    # Kullanıcı düzeltmelerini uygula
-    # ============================================================
-    # corrections formatı: {'sheetname_row_column': 'new_value'}
-    # Örnek: {'Temel_Veriler_1_product_code': 'ABC001'}
-    
-    for key, new_value in corrections.items():
-        # key formatı: sheet_row_column
-        parts = key.split('_')
-        if len(parts) < 3:
-            continue
-        
-        sheet_name = parts[0]
-        try:
-            row_idx = int(parts[1]) - 1  # 1-based'den 0-based'e
-        except:
-            continue
-        
-        # column adını birleştir (birden fazla _ olabilir)
-        column = '_'.join(parts[2:])
-        
-        # Sheet'i bul
-        if sheet_name not in sheets:
-            continue
-        
-        rows = sheets[sheet_name]
-        if row_idx >= len(rows):
-            continue
-        
-        # Değeri güncelle
-        if isinstance(rows[row_idx], dict):
-            rows[row_idx][column] = new_value
-    
-    # ============================================================
-    # Yeniden validation çalıştır
-    # ============================================================
-    engine = get_validation_engine(db, current_user.id, upload_id)
-    
-    # Sheet kontrolü
-    sheet_check = engine.check_sheets(sheets)
-    
-    # Veri kalitesi
-    data_quality = engine.validate_data_quality(sheets)
-    
-    # Impact
-    impact = engine.analyze_impact(sheets, data_quality)
-    
-    # can_proceed
-    can_proceed = sheet_check.get('can_proceed', True) and data_quality.get('can_proceed', True)
-    
-    # Cache'i güncelle
-    cache_data['sheet_check'] = sheet_check
-    cache_data['data_quality'] = data_quality
-    cache_data['impact'] = impact
-    cache_data['can_proceed'] = can_proceed
-    cache_data['sheets'] = sheets
-    set_cache(upload_id, cache_data)
-    
-    # Validation sonucunu veritabanına kaydet
-    validation_result = db.query(ValidationResult).filter(
-        ValidationResult.upload_id == upload_id,
-        ValidationResult.user_id == current_user.id
-    ).first()
-    
-    if validation_result:
-        validation_result.result_data = cache_data
-        validation_result.updated_at = datetime.utcnow()
-        db.commit()
-    
-    return {
-        'success': True,
-        'upload_id': upload_id,
-        'can_proceed': can_proceed,
-        'sheet_check': sheet_check,
-        'data_quality': data_quality,
-        'impact': impact,
-        'validation_data': cache_data
-    }
-
-
+# ============================================================
+# 4. GET VALIDATION RESULT
+# ============================================================
 @router.get("/import-wizard/result/{upload_id}")
 async def get_validation_result(
     upload_id: str,
@@ -596,6 +609,9 @@ async def get_validation_result(
     return result.result_data
 
 
+# ============================================================
+# 5. CLEAR CACHE
+# ============================================================
 @router.delete("/import-wizard/cache/{upload_id}")
 async def clear_cache(
     upload_id: str,

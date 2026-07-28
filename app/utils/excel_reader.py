@@ -451,6 +451,8 @@ class ExcelReader:
 
 # app/utils/excel_reader.py - _process_materials DÜZELTİLDİ
 
+# app/utils/excel_reader.py - _process_materials DÜZELTİLDİ
+
     def _process_materials(self, headers: List[str], rows: List[List]) -> List[Dict[str, Any]]:
         """Temel_Veriler sheet'ini işler."""
         result = []
@@ -472,6 +474,7 @@ class ExcelReader:
         for idx, header in enumerate(headers):
             if isinstance(header, str):
                 header_upper = header.upper().strip()
+                # W1, W2, ... W12, W13 formatları
                 if header_upper.startswith('W'):
                     try:
                         week_num = int(header_upper[1:])
@@ -523,32 +526,47 @@ class ExcelReader:
                 print(f"⚠️ {row_idx + 1}. satır tamamen boş, atlanıyor.")
                 continue
             
-            # ✅ SATIRI EKLE (product_code None olsa bile)
+            # ============================================================
+            # RAW VALUE PRESERVATION
+            # ============================================================
             material = {
                 'product_code': str(product_code).strip() if product_code is not None else None,
                 'description': self._get_cell(row, col_indices.get('Ürün Adı')),
                 'group': self._get_cell(row, col_indices.get('Ürün Grubu')),
-                'initial_stock': self._get_numeric(row, col_indices.get('Dönem Başı Stok')),
-                'lead_time_days': self._get_numeric(row, col_indices.get('Tedarik Süresi (Gün)')),
-                'eoq': self._get_numeric(row, col_indices.get('Sipariş Parti Büyüklüğü')),
-                'unit_cost': self._get_numeric(row, col_indices.get('Birim Maliyet (TL)')),
-                'holding_rate': self._get_numeric(row, col_indices.get('Stok Tutma Oranı (%)')),
-                'shortage_cost': self._get_numeric(row, col_indices.get('Stok Tükenme Maliyeti')),
+                'initial_stock': self._get_raw_value(row, col_indices.get('Dönem Başı Stok')),
+                'lead_time_days': self._get_raw_value(row, col_indices.get('Tedarik Süresi (Gün)')),
+                'eoq': self._get_raw_value(row, col_indices.get('Sipariş Parti Büyüklüğü')),
+                'unit_cost': self._get_raw_value(row, col_indices.get('Birim Maliyet (TL)')),
+                'holding_rate': self._get_raw_value(row, col_indices.get('Stok Tutma Oranı (%)')),
+                'shortage_cost': self._get_raw_value(row, col_indices.get('Stok Tükenme Maliyeti')),
             }
             
-            # W kolonlarını ekle - _get_numeric_safe yerine _get_numeric kullan
+            # ============================================================
+            # W kolonlarını ekle - RAW VALUE PRESERVATION
+            # historical_demand ve weekly_data aynı veriyi içerir
+            # ============================================================
             weekly_data = []
+            has_weekly_data = False
+            
             for idx, week_num in week_indices:
                 if idx < len(row):
                     value = row[idx]
+                    # Excel formülü ise None bırak
                     if isinstance(value, str) and value.startswith('='):
                         weekly_data.append(None)
                     else:
-                        # ✅ _get_numeric_safe yerine _get_numeric kullan
-                        weekly_data.append(self._get_numeric_from_value(value))
+                        # Ham değeri koru
+                        weekly_data.append(value)
+                        if value is not None and str(value).strip() != '' and str(value).strip() != '0':
+                            has_weekly_data = True
                 else:
                     weekly_data.append(None)
             
+            # ✅ Eğer hiç W verisi yoksa, bu satırı atlama ama uyarı ver
+            if not has_weekly_data:
+                print(f"⚠️ {row_idx + 1}. satırda W verisi yok! (product_code={material['product_code']})")
+            
+            # ✅ historical_demand ve weekly_data'yı aynı veriyle doldur
             material['historical_demand'] = weekly_data
             material['weekly_data'] = weekly_data
             
@@ -561,7 +579,8 @@ class ExcelReader:
         
         print(f"🔍 materials işlendi: {len(result)} satır")
         if result:
-            print(f"   İlk satır: product_code={result[0].get('product_code')}, description={result[0].get('description', '')[:30] if result[0].get('description') else 'None'}")
+            print(f"   İlk satır: product_code={result[0].get('product_code')!r}, unit_cost={result[0].get('unit_cost')!r}, holding_rate={result[0].get('holding_rate')!r}")
+            print(f"   İlk satır W verileri: {result[0].get('weekly_data', [])[:5]!r}")
         
         return result
     
@@ -696,8 +715,8 @@ class ExcelReader:
         print(f"🔍 supplier_mapping işlendi: {len(result)} ürün")
         return result
 
- 
     def _get_cell(self, row: List, idx: Optional[int]) -> Optional[str]:
+        """Hücre değerini string olarak alır."""
         if idx is None or idx >= len(row):
             return None
         value = row[idx]
@@ -708,108 +727,86 @@ class ExcelReader:
             return cleaned if cleaned else None
         return str(value)
 
-    def _get_numeric(self, row: List, idx: Optional[int], default: Optional[float] = None) -> Optional[float]:
-        if idx is None or idx >= len(row):
-            return default
-        
-        value = row[idx]
-        if value is None or pd.isna(value):
-            return default
-        
-        if isinstance(value, (int, float)):
-            return float(value)
-        
-        if isinstance(value, str):
-            cleaned = value.strip()
-            if not cleaned:
-                return default
+    def _get_raw_value(self, row: List, idx: Optional[int]) -> Any:
+            """
+            Hücre değerini ham olarak alır.
+            Hiçbir dönüşüm yapmaz, sadece None/NaN kontrolü yapar.
+            Validasyon engine'i dönüşümü yapacaktır.
+            """
+            if idx is None or idx >= len(row):
+                return None
             
-            if cleaned.startswith('='):
-                return default
+            value = row[idx]
             
-            if cleaned.endswith('%'):
-                try:
-                    return float(cleaned[:-1]) / 100
-                except:
-                    pass
+            # None veya NaN kontrolü
+            if value is None:
+                return None
             
+            # pandas NaN kontrolü
             try:
-                if '.' in cleaned and ',' in cleaned:
-                    cleaned = cleaned.replace('.', '').replace(',', '.')
-                elif ',' in cleaned and '.' in cleaned:
-                    cleaned = cleaned.replace(',', '')
-                elif ',' in cleaned and '.' not in cleaned:
-                    cleaned = cleaned.replace(',', '.')
-                elif '.' in cleaned and ',' not in cleaned:
-                    cleaned = cleaned.replace('.', '')
-                
-                return float(cleaned)
+                import pandas as pd
+                if pd.isna(value):
+                    return None
             except:
-                return default
-        
-        return default
+                pass
+            
+            # Ham değeri olduğu gibi döndür
+            # - Eğer string ise (örn: "asd", "125,50") string olarak döner
+            # - Eğer int/float ise sayısal olarak döner
+            # - Eğer bool ise bool olarak döner
+            return value
 
     def _get_numeric(self, row: List, idx: Optional[int], default: Optional[float] = None) -> Optional[float]:
-        """Hücre değerini sayısal olarak alır."""
-        if idx is None or idx >= len(row):
-            return default
-        
-        value = row[idx]
-        
-        # None veya NaN kontrolü
-        if value is None:
-            return default
-        
-        # pandas NaN kontrolü
-        try:
-            import pandas as pd
-            if pd.isna(value):
-                return default
-        except:
-            pass
-        
-        # Zaten sayısal ise (0 dahil)
-        if isinstance(value, (int, float)):
-            return float(value)
-        
-        # String ise dönüştürmeyi dene
-        if isinstance(value, str):
-            cleaned = value.strip()
-            
-            # Boş string veya sadece boşluk
-            if not cleaned:
+            """
+            Hücre değerini sayısal olarak alır.
+            SADECE VALID NUMERIC VALUE için kullanılır.
+            Eğer değer numeric değilse None döndürür.
+            """
+            if idx is None or idx >= len(row):
                 return default
             
-            # Excel formülü (AVERAGE gibi)
-            if cleaned.startswith('='):
+            value = row[idx]
+            
+            if value is None:
                 return default
             
-            # Yüzde işareti
-            if cleaned.endswith('%'):
-                try:
-                    return float(cleaned[:-1]) / 100
-                except:
-                    pass
-            
-            # Binlik ayraç ve ondalık ayraç dönüşümleri
             try:
-                # Türkçe format: 1.250,50
-                if '.' in cleaned and ',' in cleaned:
-                    cleaned = cleaned.replace('.', '').replace(',', '.')
-                # 10,000.00
-                elif ',' in cleaned and '.' in cleaned:
-                    cleaned = cleaned.replace(',', '')
-                # 125,50
-                elif ',' in cleaned and '.' not in cleaned:
-                    cleaned = cleaned.replace(',', '.')
-                # 10.000 (belirsiz)
-                elif '.' in cleaned and ',' not in cleaned:
-                    # Varsayılan olarak binlik ayraç kabul et
-                    cleaned = cleaned.replace('.', '')
-                
-                return float(cleaned)
+                import pandas as pd
+                if pd.isna(value):
+                    return default
             except:
-                return default
-        
-        return default
-    
+                pass
+            
+            if isinstance(value, (int, float)):
+                return float(value)
+            
+            if isinstance(value, str):
+                cleaned = value.strip()
+                if not cleaned:
+                    return default
+                
+                if cleaned.startswith('='):
+                    return default
+                
+                if cleaned.endswith('%'):
+                    try:
+                        return float(cleaned[:-1]) / 100
+                    except:
+                        pass
+                
+                try:
+                    if '.' in cleaned and ',' in cleaned:
+                        cleaned = cleaned.replace('.', '').replace(',', '.')
+                    elif ',' in cleaned and '.' in cleaned:
+                        cleaned = cleaned.replace(',', '')
+                    elif ',' in cleaned and '.' not in cleaned:
+                        cleaned = cleaned.replace(',', '.')
+                    elif '.' in cleaned and ',' not in cleaned:
+                        cleaned = cleaned.replace('.', '')
+                    
+                    return float(cleaned)
+                except:
+                    return default
+            
+            return default
+  

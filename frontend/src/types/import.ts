@@ -38,6 +38,10 @@ export interface DataQualitySummary {
   total_type_errors?: number;
   total_business?: number;
   total_suggestions?: number;
+  total_critical?: number;
+  total_warnings?: number;
+  total_info?: number;
+  total_rows?: number;
 }
 
 export interface ColumnCheck {
@@ -74,10 +78,13 @@ export interface DataQualityResult {
   business_rule_errors: any[];
   summary: DataQualitySummary;
   score: number;
-  can_proceed?: boolean; // ✅ EKLENDI - Dataset Gate için
-  // ✅ YENİ ALANLAR (validation_engine'den gelen)
+  can_proceed?: boolean;
   structural_errors?: ValidationError[];
   normalization_suggestions?: ValidationError[];
+  // ✅ YENİ ALANLAR
+  critical_errors?: ValidationError[];
+  warnings?: ValidationError[];
+  info_messages?: ValidationError[];
 }
 
 export interface NormalizationChange {

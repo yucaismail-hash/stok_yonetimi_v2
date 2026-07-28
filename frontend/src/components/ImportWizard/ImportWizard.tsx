@@ -18,14 +18,14 @@ import {
   Alert,
 } from '@mui/material';
 import { Close, AutoAwesome, ArrowBack, ArrowForward } from '@mui/icons-material';
-import { validateExcel, applyNormalization, createDataset, reValidate } from '../../services/api';
+import { validateExcel, createDataset } from '../../services/api';
 import { ValidationResponse } from '../../types/import';
 
 // Step bileşenleri
 import Step1FileUpload from './Step1FileUpload';
 import Step2SheetCheck from './Step2SheetCheck';
 import Step3DataValidation from './Step3DataValidation';
-import Step4Normalization from './Step4Normalization';
+import Step4QualityAnalysis from './Step4QualityAnalysis';
 import Step5ImpactAnalysis from './Step5ImpactAnalysis';
 import Step6Summary from './Step6Summary';
 
@@ -39,8 +39,8 @@ const steps = [
   'Excel Dosyası',
   'Sheet Kontrolü',
   'Veri Kalitesi',
-  'Standardizasyon',
-  'Analiz Etkisi',
+  'Analiz ve Etki',
+  'Impact Skorları',
   'Son Onay',
 ];
 
@@ -59,7 +59,7 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   // Wizard'ı kapatırken state resetle
   // ============================================================
   const handleClose = () => {
-    if (processing) return; // işlem devam ederken kapatma
+    if (processing) return;
     resetWizard();
     onClose();
   };
@@ -79,7 +79,6 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   // ============================================================
   // Dosya yükleme ve validasyon
   // ============================================================
-
   const handleFileSelect = async (selectedFile: File) => {
     setFile(selectedFile);
     setError(null);
@@ -94,10 +93,6 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
         setUploadId(data.upload_id);
         setValidationData(data);
         setCanProceed(data.can_proceed !== false);
-        
-        // ✅ Debug: normalization verisini kontrol et
-        console.log('🔍 Normalization verisi:', data.normalization);
-        
         setProgress(100);
         setActiveStep(1);
       } else {
@@ -112,12 +107,11 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   };
 
   // ============================================================
-  // Normalization ve Dataset oluşturma
+  // Dataset oluşturma
   // ============================================================
   const handleComplete = async () => {
     if (!uploadId) return;
 
-    // can_proceed kontrolü (güvenlik için)
     if (!canProceed) {
       setError('Kritik hatalar nedeniyle dataset oluşturulamaz.');
       return;
@@ -127,18 +121,7 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
     setProgress(0);
 
     try {
-      // 1. Normalization uygula
-      setProgress(30);
-      const normResponse = await applyNormalization(uploadId);
-      
-      if (!normResponse.data.success) {
-        setError(normResponse.data.error || 'Normalization başarısız');
-        setProcessing(false);
-        return;
-      }
-
-      // 2. Dataset oluştur
-      setProgress(70);
+      setProgress(50);
       const datasetResponse = await createDataset(uploadId);
       
       if (!datasetResponse.data.success) {
@@ -150,40 +133,13 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
       const datasetId = datasetResponse.data.dataset_id;
       setProgress(100);
       
-      // Başarılı
       onComplete(datasetId);
-      onClose(); // wizard'ı kapat
+      onClose();
     } catch (err: any) {
       console.error('❌ Dataset oluşturma hatası:', err);
       setError(err.response?.data?.detail || 'Dataset oluşturulamadı');
     } finally {
       setProcessing(false);
-    }
-  };
-
-  // ============================================================
-  // Re-validation (kullanıcı düzeltmeleri sonrası)
-  // ============================================================
-  const handleReValidate = async (corrections: any) => {
-    if (!uploadId) return;
-
-    setLoading(true);
-    try {
-      const response = await reValidate(uploadId, corrections);
-      if (response.data.success) {
-        // Validation sonuçlarını güncelle
-        const newData = response.data.validation_data;
-        setValidationData(newData);
-        setCanProceed(newData.can_proceed !== false);
-        // Eğer aktif step 3 veya 4 ise, yeniden render et
-      } else {
-        setError(response.data.error || 'Re-validation başarısız');
-      }
-    } catch (err: any) {
-      console.error('❌ Re-validation hatası:', err);
-      setError(err.response?.data?.detail || 'Re-validation başarısız');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -206,7 +162,6 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   // ============================================================
   // Step içeriğini render et
   // ============================================================
-
   const renderStepContent = (step: number) => {
     switch (step) {
       case 0:
@@ -234,9 +189,8 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
         );
       case 3:
         return (
-          <Step4Normalization
-            // ✅ null'ı undefined'a çevir
-            data={validationData?.normalization ?? undefined}
+          <Step4QualityAnalysis
+            data={validationData}
             loading={loading}
           />
         );
@@ -267,12 +221,12 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   const isFirstStep = activeStep === 0;
   const isLastStep = activeStep === steps.length - 1;
   
-  // Adım tamamlandı mı? (can_proceed değil, veri var mı kontrolü)
+  // Adım tamamlandı mı?
   const isStepComplete = (step: number) => {
     if (step === 0) return !!file;
     if (step === 1) return validationData?.sheet_check?.success !== undefined;
     if (step === 2) return validationData?.data_quality !== undefined;
-    if (step === 3) return validationData?.normalization !== undefined;
+    if (step === 3) return validationData?.data_quality !== undefined;
     if (step === 4) return validationData?.impact !== undefined;
     if (step === 5) return true;
     return false;

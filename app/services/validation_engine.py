@@ -18,7 +18,8 @@ from app.schemas.canonical import (
     CRITICAL_FIELDS,
     OPTIONAL_FIELDS,  # ✅ EKLENDI
     get_canonical_field, 
-    get_excel_column
+    get_excel_column,
+    normalize_column_name,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,9 +117,6 @@ class ValidationEngine:
     # ============================================================
     # STEP 3: Veri Kalitesi - Kapsamlı Validation
     # ============================================================
-# app/services/validation_engine.py - validate_data_quality DÜZELTİLDİ
-
-# app/services/validation_engine.py - validate_data_quality DÜZELTİLDİ
 
     def validate_data_quality(self, sheets: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -192,9 +190,9 @@ class ValidationEngine:
                         print(f"✅ '{field}' -> '{original_name}' orijinal isimle bulundu")
                     else:
                         # 3. Tüm kolonları normalize ederek kontrol et
-                        field_normalized = self._normalize_column_name(field)
+                        field_normalized = normalize_column_name(field)
                         for col in existing_columns:
-                            col_normalized = self._normalize_column_name(col)
+                            col_normalized = normalize_column_name(col)
                             if col_normalized == field_normalized:
                                 field_exists = True
                                 matched_column = col
@@ -275,9 +273,9 @@ class ValidationEngine:
                     if original_name in existing_columns:
                         actual_column = original_name
                     else:
-                        field_normalized = self._normalize_column_name(field)
+                        field_normalized = normalize_column_name(field)
                         for col in existing_columns:
-                            if self._normalize_column_name(col) == field_normalized:
+                            if normalize_column_name(col) == field_normalized:
                                 actual_column = col
                                 break
                 
@@ -306,7 +304,6 @@ class ValidationEngine:
                     
                     if is_critical:
                         severity = 'critical'
-                        # ✅ coverage bilgisi sadece message içinde, tekrar etmesin
                         missing_data.append({
                             'sheet': sheet_name,
                             'column': get_excel_column(field),
@@ -317,7 +314,7 @@ class ValidationEngine:
                             'total_rows': total_rows,
                             'valid_rows': valid_rows,
                             'missing_rows': missing_count,
-                            'coverage_percentage': coverage_percentage,  # ✅ frontend buradan alabilir
+                            'coverage_percentage': coverage_percentage,
                             'missing_rows_list': missing_rows_list[:50],
                             'auto_fixable': False,
                             'requires_user_action': True
@@ -345,8 +342,10 @@ class ValidationEngine:
             # 3. DATA TYPE VALIDATION
             # ============================================================
             
+            # Duplicate kontrolü için set
+            seen_errors = set()
+            
             for field in expected_fields:
-                # Bu field için mevcut kolon adını bul
                 actual_column = None
                 if field in existing_columns:
                     actual_column = field
@@ -355,9 +354,9 @@ class ValidationEngine:
                     if original_name in existing_columns:
                         actual_column = original_name
                     else:
-                        field_normalized = self._normalize_column_name(field)
+                        field_normalized = normalize_column_name(field)
                         for col in existing_columns:
-                            if self._normalize_column_name(col) == field_normalized:
+                            if normalize_column_name(col) == field_normalized:
                                 actual_column = col
                                 break
                 
@@ -368,14 +367,31 @@ class ValidationEngine:
                 if not expected_type:
                     continue
                 
+                is_optional = field in OPTIONAL_FIELDS.get(sheet_name, [])
+                
                 for row_idx, row in enumerate(rows):
                     value = row.get(actual_column)
+                    
+                    # Boş değerler opsiyonel alanlarda tolere edilir
                     if self._is_empty(value):
                         continue
                     
                     # Tip kontrolü
                     is_valid, error_msg = self._validate_type(value, expected_type, field)
                     if not is_valid:
+                        # Opsiyonel alanlarda geçersiz değer WARNING olur, ama GÖSTERİLİR!
+                        severity = 'critical' if field in CRITICAL_FIELDS.get(sheet_name, []) else 'warning'
+                        
+                        # Opsiyonel alanlarda geçersiz değer warning
+                        if is_optional:
+                            severity = 'warning'
+                        
+                        # Duplicate kontrolü
+                        error_key = f"{sheet_name}_{row_idx}_{field}_{value}"
+                        if error_key in seen_errors:
+                            continue
+                        seen_errors.add(error_key)
+                        
                         data_type_errors.append({
                             'sheet': sheet_name,
                             'row': row_idx + 1,
@@ -384,31 +400,35 @@ class ValidationEngine:
                             'original_value': value,
                             'expected_type': expected_type,
                             'type': 'data_type_error',
-                            'severity': 'critical' if field in CRITICAL_FIELDS.get(sheet_name, []) else 'warning',
+                            'severity': severity,
                             'message': error_msg,
                             'auto_fixable': False,
                             'requires_user_action': True
                         })
-                        if field in CRITICAL_FIELDS.get(sheet_name, []):
+                        if severity == 'critical':
                             can_proceed = False
                     
                     # Normalization suggestion (belirsiz numeric format)
                     if expected_type in ['float', 'percentage'] and isinstance(value, str):
                         normalized, is_ambiguous = self._suggest_normalization(value)
                         if is_ambiguous:
-                            normalization_suggestions.append({
-                                'sheet': sheet_name,
-                                'row': row_idx + 1,
-                                'column': get_excel_column(field),
-                                'canonical_field': field,
-                                'original_value': value,
-                                'suggested_value': normalized,
-                                'type': 'normalization_suggestion',
-                                'severity': 'info',
-                                'message': f"Belirsiz format: '{value}'. Önerilen: '{normalized}'. Lütfen onaylayın veya düzeltin.",
-                                'auto_fixable': False,
-                                'requires_user_action': True
-                            })
+                            # Duplicate kontrolü
+                            sugg_key = f"{sheet_name}_{row_idx}_{field}_{value}"
+                            if sugg_key not in seen_errors:
+                                seen_errors.add(sugg_key)
+                                normalization_suggestions.append({
+                                    'sheet': sheet_name,
+                                    'row': row_idx + 1,
+                                    'column': get_excel_column(field),
+                                    'canonical_field': field,
+                                    'original_value': value,
+                                    'suggested_value': normalized,
+                                    'type': 'normalization_suggestion',
+                                    'severity': 'info',
+                                    'message': f"Belirsiz format: '{value}'. Önerilen: '{normalized}'. Lütfen onaylayın veya düzeltin.",
+                                    'auto_fixable': False,
+                                    'requires_user_action': True
+                                })
 
             # ============================================================
             # 4. BUSINESS RULE VALIDATION
@@ -416,18 +436,15 @@ class ValidationEngine:
             
             # 4a. Temel_Veriler için: Ürün Kodu boş olan satırlar
             if sheet_name == 'Temel_Veriler':
-                # Ürün Kodu kolonunu bul
+                # Ürün Kodu kolonunu canonical helper ile bul
                 code_column = None
-                if 'code' in existing_columns:
-                    code_column = 'code'
-                elif 'Ürün Kodu' in existing_columns:
-                    code_column = 'Ürün Kodu'
-                else:
-                    # Normalize ederek bul
-                    for col in existing_columns:
-                        if self._normalize_column_name(col) in ['product_code', 'code', 'urun_kodu']:
-                            code_column = col
-                            break
+                for col in existing_columns:
+                    if normalize_column_name(col) == 'productcode':
+                        code_column = col
+                        break
+                    if col == 'product_code' or col == 'code':
+                        code_column = col
+                        break
                 
                 if code_column:
                     for row_idx, row in enumerate(rows):
@@ -457,7 +474,7 @@ class ValidationEngine:
                     supplier_column = 'supplier_id'
                 else:
                     for col in existing_columns:
-                        if self._normalize_column_name(col) in ['supplier_id', 'tedarikci_kodu']:
+                        if normalize_column_name(col) in ['supplier_id', 'tedarikci_kodu']:
                             supplier_column = col
                             break
                 
@@ -479,12 +496,12 @@ class ValidationEngine:
                             })
                             can_proceed = False
 
-                        # 4c. Negative values - SADECE KRİTİK/OPTİSYONEL OLMAYAN ALANLAR
+            # 4c. Negative values - SADECE KRİTİK/OPTİSYONEL OLMAYAN ALANLAR
             numeric_fields = ['initial_stock', 'lead_time_days', 'eoq', 'unit_cost', 'shortage_cost', 'lt_mean', 'lt_std']
             optional_fields = OPTIONAL_FIELDS.get(sheet_name, [])
             
             for field in numeric_fields:
-                # ✅ Opsiyonel alanları atla
+                # Opsiyonel alanları atla
                 if field in optional_fields:
                     continue
                 
@@ -527,7 +544,7 @@ class ValidationEngine:
             # 4d. Percentage ranges (0-100) - SADECE KRİTİK/OPTİSYONEL OLMAYAN ALANLAR
             percentage_fields = ['holding_rate', 'ontime_rate', 'share']
             for field in percentage_fields:
-                # ✅ Opsiyonel alanları atla
+                # Opsiyonel alanları atla
                 if field in optional_fields:
                     continue
                 
@@ -637,13 +654,55 @@ class ValidationEngine:
                             can_proceed = False
 
         # ============================================================
-        # ÖZET
+        # Hataları kategorilere ayır (Step 4 için)
         # ============================================================
+        critical_errors = []
+        warnings = []
+        info_messages = []
+        
+        for err in structural_errors:
+            if err.get('severity') == 'critical':
+                critical_errors.append(err)
+            else:
+                warnings.append(err)
+        
+        for err in business_rule_errors:
+            if err.get('severity') == 'critical':
+                critical_errors.append(err)
+            else:
+                warnings.append(err)
+        
+        for err in data_type_errors:
+            if err.get('severity') == 'critical':
+                critical_errors.append(err)
+            else:
+                warnings.append(err)
+        
+        for err in missing_data:
+            if err.get('severity') == 'critical':
+                critical_errors.append(err)
+            else:
+                warnings.append(err)
+        
+        for err in normalization_suggestions:
+            info_messages.append(err)
+        
+        # Özet
         total_structural = len(structural_errors)
         total_missing = len(missing_data)
         total_type_errors = len(data_type_errors)
         total_business = len(business_rule_errors)
         total_suggestions = len(normalization_suggestions)
+        total_critical = len(critical_errors)
+        total_warnings = len(warnings)
+        total_info = len(info_messages)
+        
+        # ✅ normalized bir dict olduğundan emin ol
+        total_rows = 0
+        if isinstance(normalized, dict):
+            for rows in normalized.values():
+                if isinstance(rows, list):
+                    total_rows += len(rows)
 
         total_problems = total_structural + total_missing + total_type_errors + total_business
         score = max(0, 100 - total_problems * 5)
@@ -654,17 +713,24 @@ class ValidationEngine:
             'data_type_errors': data_type_errors,
             'business_rule_errors': business_rule_errors,
             'normalization_suggestions': normalization_suggestions,
+            'critical_errors': critical_errors,
+            'warnings': warnings,
+            'info_messages': info_messages,
             'summary': {
                 'total_structural': total_structural,
                 'total_missing': total_missing,
                 'total_type_errors': total_type_errors,
                 'total_business': total_business,
                 'total_suggestions': total_suggestions,
+                'total_critical': total_critical,
+                'total_warnings': total_warnings,
+                'total_info': total_info,
+                'total_rows': total_rows,
                 'score': score,
             },
             'can_proceed': can_proceed
         }
-    
+
     def _normalize_column_name(self, column_name: str) -> str:
         """Kolon adını normalize eder (küçük harf, Türkçe karakterler, boşluklar)"""
         if not column_name:
@@ -960,40 +1026,43 @@ class ValidationEngine:
             return len(value) == 0
         return False
     
-    def _validate_type(self, value, expected_type: str, field: str) -> tuple:
-            """Veri tipi doğrulama."""
-            if expected_type == 'string':
-                return True, ""
-            if expected_type == 'float':
-                try:
-                    float(value)
-                    return True, ""
-                except:
-                    return False, f"'{value}' sayısal bir değer değil."
-            if expected_type == 'percentage':
-                try:
-                    num = float(value)
-                    if 0 <= num <= 100:
-                        return True, ""
-                    else:
-                        return False, f"Yüzde değeri 0-100 arası olmalı, '{value}'"
-                except:
-                    return False, f"'{value}' yüzde formatında değil."
-            if expected_type == 'date':
-                try:
-                    from datetime import datetime
-                    datetime.strptime(str(value), "%Y-%m-%d")
-                    return True, ""
-                except:
-                    try:
-                        datetime.strptime(str(value), "%d.%m.%Y")
-                        return True, ""
-                    except:
-                        return False, f"'{value}' geçerli bir tarih değil."
-            if expected_type == 'list':
-                return isinstance(value, list), "Liste olmalı."
-            return True, ""
+# app/services/validation_engine.py - _validate_type içinde
 
+    def _validate_type(self, value, expected_type: str, field: str) -> tuple:
+        """Veri tipi doğrulama."""
+        if expected_type == 'string':
+            return True, ""
+        if expected_type == 'float':
+            try:
+                float(value)
+                return True, ""
+            except:
+                return False, f"'{value}' sayısal bir değer değil."
+        if expected_type == 'percentage':
+            try:
+                # Önce sayısal değere çevir
+                num = float(value)
+                if 0 <= num <= 100:
+                    return True, ""
+                else:
+                    return False, f"Yüzde değeri 0-100 arası olmalı, '{num}'"
+            except:
+                return False, f"'{value}' yüzde formatında değil."
+        if expected_type == 'date':
+            try:
+                from datetime import datetime
+                datetime.strptime(str(value), "%Y-%m-%d")
+                return True, ""
+            except:
+                try:
+                    datetime.strptime(str(value), "%d.%m.%Y")
+                    return True, ""
+                except:
+                    return False, f"'{value}' geçerli bir tarih değil."
+        if expected_type == 'list':
+            return isinstance(value, list), "Liste olmalı."
+        return True, ""
+    
     def _suggest_normalization(self, value: str) -> tuple:
             """Belirsiz numeric formatları normalize etmek için öneri üretir."""
             try:

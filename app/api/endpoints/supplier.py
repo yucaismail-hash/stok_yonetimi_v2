@@ -1,3 +1,5 @@
+# app/api/endpoints/supplier.py - TAM VE GÜNCEL (DÜZELTİLMİŞ)
+
 import numpy as np
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
@@ -14,19 +16,9 @@ from app.auth import get_current_user
 from app.models import User, AnalysisResult, Notification
 from app.database import get_db
 from sqlalchemy.orm import Session
-from app.api.endpoints.upload import get_user_upload_data
-import uuid
-from app.analysis.trend_summary_engine import TrendSummaryEngine
-from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
-from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
-import logging
-
-from app.api.dependencies import (
-    get_or_create_dataset_from_upload,
-    process_pricing_with_dataset,
-    get_active_dataset
-)
-
+from app.services.active_dataset import get_active_dataset_service
+from app.services.pricing_engine import PricingEngine
+from app.schemas.credit import PricingRequest
 from app.services.dashboard_summary_builder import (
     build_forecast_dashboard_summary,
     build_safety_stock_dashboard_summary,
@@ -34,13 +26,19 @@ from app.services.dashboard_summary_builder import (
     build_backtest_dashboard_summary,
     build_supplier_dashboard_summary
 )
+from app.analysis.trend_summary_engine import TrendSummaryEngine
+from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
+from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
+import uuid
+import logging
 
 logger = logging.getLogger(__name__)
-ai_engine = AISummaryEngine()
+
 router = APIRouter()
 
 supplier_analyzer = SupplierPerformanceAnalyzer()
 share_optimizer = SupplierShareOptimizer(supplier_analyzer)
+ai_engine = AISummaryEngine()
 
 
 # ============================================================
@@ -48,41 +46,124 @@ share_optimizer = SupplierShareOptimizer(supplier_analyzer)
 # ============================================================
 
 def update_async_task_status(db: Session, task_id: str, status: str, message: str):
-    db.query(AnalysisResult).filter(
-        AnalysisResult.task_id == task_id
-    ).update({
-        'status': status,
-        'message': message,
-        'updated_at': datetime.utcnow()
-    })
-    db.commit()
+    """Async task status'ünü günceller - task_id ile arar"""
+    try:
+        result = db.query(AnalysisResult).filter(
+            AnalysisResult.task_id == task_id
+        ).first()
+        
+        if result:
+            # ✅ Mevcut kaydı güncelle
+            result.status = status
+            result.message = message
+            result.updated_at = datetime.utcnow()
+            db.commit()
+            print(f"✅ Task {task_id} durumu güncellendi: {status}")
+        else:
+            # ❌ Kayıt bulunamadı - yeni kayıt oluştur
+            print(f"⚠️ Task {task_id} için kayıt bulunamadı, yeni oluşturuluyor...")
+            # Bu durumda yeni kayıt oluşturulabilir veya loglanabilir
+            # Şimdilik sadece loglayalım
+    except Exception as e:
+        print(f"❌ update_async_task_status hatası: {e}")
+        db.rollback()
 
-# 🆕 AI ÖZETİ ARKA PLANDA OLUŞTUR (Aynı fonksiyon)
-def generate_ai_summary_background(result_id: int, result_type: str, user_id: int):
+
+def generate_ai_summary_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
     """Arka planda AI özeti oluşturur"""
     try:
         from app.database import SessionLocal
+        from app.models import User
+        
         db2 = SessionLocal()
         try:
+            user = db2.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
             result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
             if result and result.ai_summary is None:
                 logger.info(f"🔄 AI özeti oluşturuluyor: {result_type} (ID: {result_id})")
-                summary = ai_engine.build_summary(result_type, result.data)
+                
+                user_country = user.billing_country or country or "TR"
+                language = get_language_from_country(user_country)
+                
+                engine = AISummaryEngine(language=language)
+                summary = engine.build_summary(result_type, result.data)
+                
                 result.ai_summary = summary
                 result.ai_status = "completed"
-                result.ai_version = ai_engine.ai_version
+                result.ai_version = engine.ai_version
                 result.ai_created_at = datetime.utcnow()
-                result.ai_prompt_version = ai_engine.prompt_version
+                result.ai_prompt_version = engine.prompt_version
                 db2.commit()
-                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id})")
+                
+                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id}, Dil: {language})")
         finally:
             db2.close()
     except Exception as e:
         logger.error(f"❌ AI özeti oluşturma hatası: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+def refresh_trend_summary(user_id: int, country: str = "TR"):
+    """Trend Summary'yi yenile"""
+    try:
+        from app.database import SessionLocal
+        from app.models import User
+        from app.analysis.trend_summary_engine import TrendSummaryEngine
+        from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
+        from app.analysis.ai_summary_engine import get_language_from_country
+        
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            language = get_language_from_country(country or user.billing_country or "TR")
+            trend_engine = TrendSummaryEngine(language=language)
+            exec_engine = ExecutiveSummaryEngine(language=language)
+            
+            recent_analyses = trend_engine.get_recent_analyses(db, user_id)
+            if not recent_analyses:
+                logger.info(f"ℹ️ Trend için yeterli analiz yok: {user_id}")
+                return
+            
+            trend_summary = trend_engine.build_trend_summary(recent_analyses)
+            
+            executive_summary = exec_engine.build_executive_summary(
+                trend_summary=trend_summary,
+                previous_executive=user.executive_summary
+            )
+            
+            user.trend_summary = trend_summary
+            user.trend_updated_at = datetime.utcnow()
+            user.executive_summary = executive_summary
+            user.executive_updated_at = datetime.utcnow()
+            db.commit()
+            
+            logger.info(f"✅ Trend & Executive Summary yenilendi: User {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Trend yenileme hatası (User {user_id}): {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
+
 
 # ============================================================
-# 📌 SENKRON TEDARİKÇİ ANALİZİ
+# 📌 SENKRON TEDARİKÇİ ANALİZİ - ACTIVE DATASET BAZLI
 # ============================================================
+
+# app/api/endpoints/supplier.py - analyze_suppliers_batch (TAM DÜZELTİLMİŞ)
 
 @router.post("/supplier/batch")
 def analyze_suppliers_batch(
@@ -91,49 +172,48 @@ def analyze_suppliers_batch(
     db: Session = Depends(get_db)
 ):
     """
-    Toplu Tedarikçi Analizi - Cache'ten verileri alır.
-    🆕 Pricing Engine ile dinamik ücretlendirme
+    Toplu Tedarikçi Analizi - ACTIVE DATASET BAZLI!
     """
     try:
-        # 1. Cache'den verileri al
-        cached_data = get_user_upload_data(current_user.id)
-        if not cached_data:
-            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        # ✅ ACTIVE DATASET'ten verileri al
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(current_user.id)
         
-        upload_id = cached_data.get('upload_id')
+        if not stats['has_data']:
+            raise HTTPException(
+                status_code=404, 
+                detail="Aktif dataset bulunamadı! Lütfen önce Excel yükleyip dataset oluşturun."
+            )
         
-        # 2. Dataset'i al veya oluştur
-        from app.services.dataset_builder import DatasetBuilder
-        builder = DatasetBuilder(db)
-        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
-
+        upload_id = stats['upload_id']
+        dataset_id = stats['dataset_id']
+        
+        # ✅ Active dataset'ten verileri al
+        suppliers = active_service.get_active_suppliers(current_user.id)
+        supplier_mapping = active_service.get_active_supplier_mapping(current_user.id)
+        materials = active_service.get_active_materials(current_user.id)
+        
+        # ✅ Active dataset'i al (pricing için)
+        dataset = active_service.get_active_dataset(current_user.id)
         if not dataset:
-            dataset = builder.build_from_cache(
-                user_id=current_user.id,
-                cached_data=cached_data,
-                upload_id=upload_id,
-                source_type="excel",
-                source_name=cached_data.get('file_name', 'unknown.xlsx')
-            )
-
-        # 🆕 Dataset Complexity Score'u hesapla (debug için)
-        from app.models import EndpointProfile
-        endpoint_profile = db.query(EndpointProfile).filter(
-            EndpointProfile.endpoint == "/api/supplier/batch",
-            EndpointProfile.is_active == True
-        ).first()
-
-        if endpoint_profile and endpoint_profile.dataset_config:
-            dcs_score, breakdown = builder.get_dataset_complexity_score(
-                dataset, 
-                endpoint_profile.dataset_config
-            )
-            print(f"🔍 Tedarikçi DCS: {dcs_score}, breakdown: {breakdown}")
+            raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
         
-        # 3. Pricing Engine ile ücretlendirme
-        from app.services.pricing_engine import PricingEngine
-        from app.schemas.credit import PricingRequest
+        # ✅ Verileri kontrol et
+        if not suppliers:
+            return {
+                'success': False,
+                'error': 'Tedarikçi verisi bulunamadı. Lütfen Excel\'e "Tedarikciler" sheet\'i ekleyin.',
+                'has_suppliers': False
+            }
         
+        if not supplier_mapping:
+            return {
+                'success': False,
+                'error': 'Malzeme-Tedarikçi eşleştirmesi bulunamadı. Lütfen "Malzeme_Tedarikciler" sheet\'ini ekleyin.',
+                'has_suppliers': False
+            }
+        
+        # ✅ Pricing Engine ile ücretlendirme
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/supplier/batch",
@@ -155,25 +235,7 @@ def analyze_suppliers_batch(
                 detail=pricing_response.message or "Pricing işlemi başarısız"
             )
         
-        # 4. Analizi çalıştır (mevcut kod)
-        suppliers = cached_data.get('suppliers', {})
-        supplier_mapping = cached_data.get('supplier_mapping', {})
-        materials = cached_data.get('materials', [])
-        
-        if not suppliers:
-            return {
-                'success': False,
-                'error': 'Tedarikçi verisi bulunamadı. Lütfen Excel\'e "Tedarikciler" sheet\'i ekleyin.',
-                'has_suppliers': False
-            }
-        
-        if not supplier_mapping:
-            return {
-                'success': False,
-                'error': 'Malzeme-Tedarikçi eşleştirmesi bulunamadı. Lütfen "Malzeme_Tedarikciler" sheet\'ini ekleyin.',
-                'has_suppliers': False
-            }
-        
+        # ✅ Analizi çalıştır
         supplier_results = []
         recommendations = []
         
@@ -181,8 +243,15 @@ def analyze_suppliers_batch(
             name = supplier_data.get('name', supplier_id)
             factor = supplier_data.get('factor', 1.0)
             ontime_rate = supplier_data.get('ontime_rate', 0.8)
-            lt_mean = supplier_data.get('lt_mean', 14)
-            lt_std = supplier_data.get('lt_std', 3)
+            
+            # ✅ lt_mean ve lt_std None kontrolü
+            lt_mean = supplier_data.get('lt_mean')
+            if lt_mean is None:
+                lt_mean = 14
+            
+            lt_std = supplier_data.get('lt_std')
+            if lt_std is None:
+                lt_std = 3
             
             risk_score = 1.0 - ontime_rate
             perf_score = ontime_rate * (1.0 / factor) if factor > 0 else ontime_rate
@@ -210,7 +279,8 @@ def analyze_suppliers_batch(
                 recommendation_parts.append(f"🟢 {name} orta seviyede (Risk: {risk_score*100:.0f}%, Performans: {perf_score*100:.0f}%)")
                 recommendation_parts.append("📊 Düzenli takip edilmeli")
             
-            recommendation_parts.append(f"⏱️ Ortalama LT: {lt_mean:.0f} gün (Std: {lt_std:.0f})")
+            # ✅ lt_mean ve lt_std formatlanırken None kontrolü
+            recommendation_parts.append(f"⏱️ Ortalama LT: {float(lt_mean):.0f} gün (Std: {float(lt_std):.0f})")
             if material_count > 0:
                 recommendation_parts.append(f"📦 {material_count} malzeme bağlı, toplam pay: {total_share*100:.1f}%")
             
@@ -252,7 +322,6 @@ def analyze_suppliers_batch(
         if not supplier_results:
             raise HTTPException(status_code=400, detail="Hiçbir sonuç üretilemedi!")
         
-        # 5. Sonuçları kaydet
         # ✅ 1. result_data
         result_data = {
             'suppliers': supplier_results,
@@ -329,27 +398,33 @@ def analyze_suppliers_batch(
         raise
     except Exception as e:
         db.rollback()
-        print(f"❌ Tedarikçi analiz hatası: {e}")
+        logger.error(f"❌ Tedarikçi analiz hatası: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
 # ============================================================
-# 📌 SENKRON TEDARİKÇİ KONTROL
+# 📌 SENKRON TEDARİKÇİ KONTROL - ACTIVE DATASET BAZLI
 # ============================================================
 
 @router.get("/supplier/check")
 def check_supplier_data(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """Tedarikçi verisi kontrolü - ACTIVE DATASET BAZLI!"""
     try:
-        cached_data = get_user_upload_data(current_user.id)
-        if not cached_data:
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(current_user.id)
+        
+        if not stats['has_data']:
             return {
                 'has_suppliers': False,
-                'message': 'Henüz Excel dosyası yüklenmemiş!'
+                'message': 'Aktif dataset bulunamadı! Lütfen önce Excel yükleyip dataset oluşturun.'
             }
         
-        suppliers = cached_data.get('suppliers', {})
-        supplier_mapping = cached_data.get('supplier_mapping', {})
+        suppliers = active_service.get_active_suppliers(current_user.id)
+        supplier_mapping = active_service.get_active_supplier_mapping(current_user.id)
         
         has_suppliers = bool(suppliers) and bool(supplier_mapping)
         
@@ -361,6 +436,7 @@ def check_supplier_data(
         }
         
     except Exception as e:
+        logger.error(f"❌ Tedarikçi kontrol hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
@@ -369,45 +445,76 @@ def check_supplier_data(
 # ============================================================
 
 @router.get("/supplier/{supplier_id}/risk")
-def get_supplier_risk(supplier_id: str):
+def get_supplier_risk(
+    supplier_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Tedarikçi risk skorunu getirir - ACTIVE DATASET BAZLI!"""
     try:
-        risk_score = supplier_analyzer.get_supplier_risk_score(supplier_id)
-        perf_score = supplier_analyzer.get_supplier_performance_score(supplier_id)
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(current_user.id)
+        
+        if not stats['has_data']:
+            raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
+        
+        suppliers = active_service.get_active_suppliers(current_user.id)
+        
+        if supplier_id not in suppliers:
+            raise HTTPException(status_code=404, detail=f"Tedarikçi '{supplier_id}' bulunamadı!")
+        
+        supplier_data = suppliers[supplier_id]
+        ontime_rate = supplier_data.get('ontime_rate', 0.8)
+        factor = supplier_data.get('factor', 1.0)
+        
+        risk_score = 1.0 - ontime_rate
+        perf_score = ontime_rate * (1.0 / factor) if factor > 0 else ontime_rate
         
         return {
             "supplier_id": supplier_id,
             "risk_score": risk_score,
             "performance_score": perf_score,
-            "risk_level": "YÜKSEK" if risk_score > 0.7 else ("ORTA" if risk_score > 0.4 else "DÜŞÜK"),
+            "risk_level": "YÜKSEK" if risk_score > 0.4 else ("ORTA" if risk_score > 0.2 else "DÜŞÜK"),
             "performance_level": "İYİ" if perf_score > 0.7 else ("ORTA" if perf_score > 0.4 else "KÖTÜ")
         }
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"❌ Tedarikçi risk hatası: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
 
 # ============================================================
-# 📌 ASYNC TEDARİKÇİ ANALİZİ
+# 📌 ASYNC TEDARİKÇİ ANALİZİ - ACTIVE DATASET BAZLI
 # ============================================================
 
 @router.post("/supplier/batch/async")
 def start_async_supplier_analysis(
-    background_tasks: BackgroundTasks,  # ✅ Request parametresi YOK
+    background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Async tedarikçi analizi başlatır. Hemen task_id döner.
-    🆕 Pricing Engine ile dinamik ücretlendirme
+    ACTIVE DATASET BAZLI!
     """
     try:
-        # 1. Cache'den verileri al
-        cached_data = get_user_upload_data(current_user.id)
-        if not cached_data:
-            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        # ✅ ACTIVE DATASET'ten verileri al
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(current_user.id)
         
-        upload_id = cached_data.get('upload_id')
-        suppliers = cached_data.get('suppliers', {})
-        supplier_mapping = cached_data.get('supplier_mapping', {})
+        if not stats['has_data']:
+            raise HTTPException(
+                status_code=404, 
+                detail="Aktif dataset bulunamadı! Lütfen önce Excel yükleyip dataset oluşturun."
+            )
+        
+        upload_id = stats['upload_id']
+        dataset_id = stats['dataset_id']
+        
+        # ✅ Active dataset'ten verileri al
+        suppliers = active_service.get_active_suppliers(current_user.id)
+        supplier_mapping = active_service.get_active_supplier_mapping(current_user.id)
         
         if not suppliers or not supplier_mapping:
             raise HTTPException(
@@ -415,24 +522,12 @@ def start_async_supplier_analysis(
                 detail="Tedarikçi verisi bulunamadı. Lütfen Excel'de 'Tedarikciler' ve 'Malzeme_Tedarikciler' sheet'lerini ekleyin."
             )
         
-        # 2. Dataset'i al veya oluştur
-        from app.services.dataset_builder import DatasetBuilder
-        builder = DatasetBuilder(db)
-        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
-        
+        # ✅ Active dataset'i al (pricing için)
+        dataset = active_service.get_active_dataset(current_user.id)
         if not dataset:
-            dataset = builder.build_from_cache(
-                user_id=current_user.id,
-                cached_data=cached_data,
-                upload_id=upload_id,
-                source_type="excel",
-                source_name=cached_data.get('file_name', 'unknown.xlsx')
-            )
+            raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
         
-        # 3. Pricing Engine ile ücretlendirme (Async'de hemen düş)
-        from app.services.pricing_engine import PricingEngine
-        from app.schemas.credit import PricingRequest
-        
+        # ✅ Pricing Engine ile ücretlendirme (Async'de hemen düş)
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/supplier/batch/async",
@@ -454,10 +549,10 @@ def start_async_supplier_analysis(
                 detail=pricing_response.message or "Pricing işlemi başarısız"
             )
         
-        # 4. Task ID oluştur
+        # Task ID oluştur
         task_id = str(uuid.uuid4())
         
-        # 5. Initial record'u kaydet
+        # Initial record'u kaydet
         initial_data = {
             'status': 'processing',
             'message': 'Tedarikçi analizi başlatıldı, işleniyor...',
@@ -491,7 +586,7 @@ def start_async_supplier_analysis(
         db.add(initial_record)
         db.commit()
         
-        # 6. Async job'u arka planda başlat
+        # Async job'u arka planda başlat
         background_tasks.add_task(
             run_async_supplier_job,
             task_id=task_id,
@@ -513,20 +608,33 @@ def start_async_supplier_analysis(
         raise
     except Exception as e:
         db.rollback()
+        logger.error(f"❌ Async Tedarikçi analizi başlatma hatası: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
+
+# ============================================================
+# 📌 ASYNC TEDARİKÇİ ANALİZİ JOB - ACTIVE DATASET BAZLI
+# ============================================================
+
+# app/api/endpoints/supplier.py - run_async_supplier_job (DÜZELTİLDİ)
+
 def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Session):
-    """Async tedarikçi analizi işini gerçekleştirir."""
+    """Async tedarikçi analizi işini gerçekleştirir - ACTIVE DATASET BAZLI!"""
     try:
         print(f"🔄 Async tedarikçi analizi başladı: Task ID {task_id}")
         
-        cached_data = get_user_upload_data(user_id)
-        if not cached_data:
-            update_async_task_status(db, task_id, 'failed', 'Veri bulunamadı')
+        # ✅ ACTIVE DATASET'ten verileri al (cached_data KULLANMA!)
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(user_id)
+        
+        if not stats['has_data']:
+            update_async_task_status(db, task_id, 'failed', 'Aktif dataset bulunamadı')
             return
         
-        suppliers = cached_data.get('suppliers', {})
-        supplier_mapping = cached_data.get('supplier_mapping', {})
+        suppliers = active_service.get_active_suppliers(user_id)
+        supplier_mapping = active_service.get_active_supplier_mapping(user_id)
         
         if not suppliers or not supplier_mapping:
             update_async_task_status(db, task_id, 'failed', 'Tedarikçi verisi bulunamadı')
@@ -539,8 +647,15 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             name = supplier_data.get('name', supplier_id)
             factor = supplier_data.get('factor', 1.0)
             ontime_rate = supplier_data.get('ontime_rate', 0.8)
-            lt_mean = supplier_data.get('lt_mean', 14)
-            lt_std = supplier_data.get('lt_std', 3)
+            
+            # ✅ lt_mean ve lt_std None kontrolü
+            lt_mean = supplier_data.get('lt_mean')
+            if lt_mean is None:
+                lt_mean = 14
+            
+            lt_std = supplier_data.get('lt_std')
+            if lt_std is None:
+                lt_std = 3
             
             risk_score = 1.0 - ontime_rate
             perf_score = ontime_rate * (1.0 / factor) if factor > 0 else ontime_rate
@@ -568,7 +683,7 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
                 recommendation_parts.append(f"🟢 {name} orta seviyede (Risk: {risk_score*100:.0f}%, Performans: {perf_score*100:.0f}%)")
                 recommendation_parts.append("📊 Düzenli takip edilmeli")
             
-            recommendation_parts.append(f"⏱️ Ortalama LT: {lt_mean:.0f} gün (Std: {lt_std:.0f})")
+            recommendation_parts.append(f"⏱️ Ortalama LT: {float(lt_mean):.0f} gün (Std: {float(lt_std):.0f})")
             if material_count > 0:
                 recommendation_parts.append(f"📦 {material_count} malzeme bağlı, toplam pay: {total_share*100:.1f}%")
             
@@ -611,17 +726,13 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
         
-        # ============================================================
-        # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
-        # ============================================================
-        
-        # ✅ 1. result_data hazırla (dashboard_summary YOK)
+        # ✅ 1. result_data hazırla
         result_data = {
             'success': True,
             'total': len(supplier_results),
-            'suppliers': supplier_results,              # ← Supplier'a özel
-            'recommendations': recommendations,         # ← Supplier'a özel
-            'total_suppliers': len(supplier_results),   # ← Supplier'a özel
+            'suppliers': supplier_results,
+            'recommendations': recommendations,
+            'total_suppliers': len(supplier_results),
             'has_suppliers': True,
             'task_id': task_id,
             'status': 'completed',
@@ -629,41 +740,25 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             'completed_at': datetime.utcnow().isoformat()
         }
         
-        # ✅ 2. Mevcut kaydı al
-        existing = db.query(AnalysisResult).filter(
+        # ✅ 2. Mevcut kaydı güncelle (task_id ile)
+        db.query(AnalysisResult).filter(
+            AnalysisResult.task_id == task_id
+        ).update({
+            'data': result_data,
+            'status': 'completed',
+            'progress': 100,
+            'message': 'Tamamlandı!',
+            'total_materials': len(supplier_results),
+            'updated_at': datetime.utcnow()
+        })
+        db.commit()
+        
+        # ✅ 3. Result'u tekrar al (ID için)
+        result = db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
         ).first()
         
-        if existing:
-            # ✅ 3. dashboard_summary oluştur
-            dashboard_summary = build_supplier_dashboard_summary(
-                suppliers=supplier_results,             # ← supplier_results kullan
-                analysis_id=existing.id,
-                dataset_id=0
-            )
-            
-            # ✅ 4. dashboard_summary'yi ekle
-            result_data['dashboard_summary'] = dashboard_summary
-            
-            # ✅ 5. Güncelle
-            db.query(AnalysisResult).filter(
-                AnalysisResult.task_id == task_id
-            ).update({
-                'data': result_data,
-                'status': 'completed',
-                'progress': 100,
-                'message': 'Tamamlandı!',
-                'total_materials': len(supplier_results),
-                'updated_at': datetime.utcnow()
-            })
-            db.commit()
-        
-        # ✅ Sonucu tekrar al (ID için)
-        result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-        
-        # ============================================================
-        # 📌 BİLDİRİM OLUŞTUR
-        # ============================================================
+        # ✅ 4. Bildirim oluştur
         try:
             notification = Notification(
                 user_id=user_id,
@@ -677,15 +772,12 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
         except Exception as e:
             print(f"⚠️ Bildirim hatası: {e}")
         
-        # ============================================================
-        # 🆕 AI ÖZETİNİ OLUŞTUR
-        # ============================================================
+        # ✅ 5. AI Özeti oluştur
         try:
             if result:
                 user = db.query(User).filter(User.id == user_id).first()
                 country = user.billing_country if user else 'TR'
                 
-                # ✅ generate_ai_summary_background çağır
                 generate_ai_summary_background(
                     result_id=result.id,
                     result_type='supplier_batch_async',
@@ -703,7 +795,7 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             })
             db.commit()
         
-        # ✅ Trend Summary'yi yenile
+        # ✅ 6. Trend Summary yenile
         try:
             refresh_trend_summary(user_id, country)
             logger.info(f"✅ Async Trend Summary yenilendi: {task_id}")
@@ -714,101 +806,7 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
         
     except Exception as e:
         print(f"❌ Async tedarikçi analizi hatası: {e}")
-        update_async_task_status(db, task_id, 'failed', str(e))
-        db.rollback()
-
-# app/api/endpoints/supplier.py - DOSYA SONUNA EKLE
-
-def generate_ai_summary_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
-    """Arka planda AI özeti oluşturur"""
-    try:
-        from app.database import SessionLocal
-        from app.models import User
-        
-        db2 = SessionLocal()
-        try:
-            user = db2.query(User).filter(User.id == user_id).first()
-            if not user:
-                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
-                return
-            
-            result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
-            if result and result.ai_summary is None:
-                logger.info(f"🔄 AI özeti oluşturuluyor: {result_type} (ID: {result_id})")
-                
-                user_country = user.billing_country or country or "TR"
-                language = get_language_from_country(user_country)
-                
-                engine = AISummaryEngine(language=language)
-                summary = engine.build_summary(result_type, result.data)
-                
-                result.ai_summary = summary
-                result.ai_status = "completed"
-                result.ai_version = engine.ai_version
-                result.ai_created_at = datetime.utcnow()
-                result.ai_prompt_version = engine.prompt_version
-                db2.commit()
-                
-                logger.info(f"✅ AI özeti tamamlandı: {result_type} (ID: {result_id}, Dil: {language})")
-        finally:
-            db2.close()
-    except Exception as e:
-        logger.error(f"❌ AI özeti oluşturma hatası: {e}")
         import traceback
         traceback.print_exc()
-
-# ============================================================
-# 📌 TREND SUMMARY YENİLEME FONKSİYONU
-# ============================================================
-
-def refresh_trend_summary(user_id: int, country: str = "TR"):
-    """Trend Summary'yi yenile"""
-    try:
-        from app.database import SessionLocal
-        from app.models import User
-        
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
-                return
-            
-            language = get_language_from_country(country)
-            trend_engine = TrendSummaryEngine(language=language)
-            exec_engine = ExecutiveSummaryEngine(language=language)
-            
-            # Son analizleri al
-            recent_analyses = trend_engine.get_recent_analyses(db, user_id)
-            if not recent_analyses:
-                logger.info(f"ℹ️ Trend için yeterli analiz yok: {user_id}")
-                return
-            
-            # Trend Summary oluştur
-            trend_summary = trend_engine.build_trend_summary(recent_analyses)
-            
-            # Executive Summary oluştur
-            executive_summary = exec_engine.build_executive_summary(
-                trend_summary=trend_summary,
-                previous_executive=user.executive_summary
-            )
-            
-            # Kaydet
-            user.trend_summary = trend_summary
-            user.trend_updated_at = datetime.utcnow()
-            user.executive_summary = executive_summary
-            user.executive_updated_at = datetime.utcnow()
-            db.commit()
-            
-            logger.info(f"✅ Trend & Executive Summary yenilendi: User {user_id}")
-            
-        except Exception as e:
-            logger.error(f"❌ Trend yenileme hatası (User {user_id}): {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            db.close()
-            
-    except Exception as e:
-        logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
-
+        update_async_task_status(db, task_id, 'failed', str(e))
+        db.rollback()

@@ -1,3 +1,5 @@
+# app/api/endpoints/forecast.py - TAM VE GÜNCEL (ACTIVE DATASET BAZLI)
+
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -7,7 +9,9 @@ import os
 import requests
 from app.database import get_db
 from app.models import User, UploadedData, AnalysisResult, Notification
-
+from app.services.active_dataset import get_active_dataset_service
+from app.services.pricing_engine import PricingEngine
+from app.schemas.credit import PricingRequest
 from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.forecast import DemandForecaster
@@ -15,7 +19,6 @@ from app.analysis.pattern import AdvancedDemandAnalyzer
 from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
 from app.services.llm_service import get_llm_service
 from app.auth import get_current_user
-from app.api.endpoints.upload import get_user_upload_data
 from datetime import datetime, timedelta
 import numpy as np
 import logging
@@ -33,7 +36,6 @@ from app.api.dependencies import (
     process_pricing_with_dataset,
     get_active_dataset
 )
-from app.schemas.credit import PricingResponse
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +46,7 @@ pattern_analyzer = AdvancedDemandAnalyzer()
 forecaster = DemandForecaster(seasonal_periods=52)
 forecaster.set_pattern_analyzer(pattern_analyzer)
 
-# 🆕 AI Engine instance
+# AI Engine instance
 ai_engine = AISummaryEngine()
 
 
@@ -109,13 +111,11 @@ def update_async_task_status(db: Session, task_id: str, status: str, message: st
     db.commit()
 
 
-# 🆕 AI ÖZETİ ARKA PLANDA OLUŞTUR
-
 def generate_ai_summary_background(
     result_id: int,
     result_type: str,
     user_id: int,
-    country: str = "TR"  # ✅ country parametresini EKLE
+    country: str = "TR"
 ):
     """Arka planda AI özeti oluşturur"""
     try:
@@ -133,7 +133,6 @@ def generate_ai_summary_background(
             if result and result.ai_summary is None:
                 logger.info(f"🔄 AI özeti oluşturuluyor: {result_type} (ID: {result_id})")
                 
-                # ✅ country parametresini kullan
                 user_country = user.billing_country or country or "TR"
                 language = get_language_from_country(user_country)
                 
@@ -158,8 +157,57 @@ def generate_ai_summary_background(
         import traceback
         traceback.print_exc()
 
+
+def refresh_trend_summary(user_id: int, country: str = "TR"):
+    """Trend Summary'yi yenile"""
+    try:
+        from app.database import SessionLocal
+        from app.models import User
+        
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            language = get_language_from_country(country)
+            trend_engine = TrendSummaryEngine(language=language)
+            exec_engine = ExecutiveSummaryEngine(language=language)
+            
+            recent_analyses = trend_engine.get_recent_analyses(db, user_id)
+            if not recent_analyses:
+                logger.info(f"ℹ️ Trend için yeterli analiz yok: {user_id}")
+                return
+            
+            trend_summary = trend_engine.build_trend_summary(recent_analyses)
+            
+            executive_summary = exec_engine.build_executive_summary(
+                trend_summary=trend_summary,
+                previous_executive=user.executive_summary
+            )
+            
+            user.trend_summary = trend_summary
+            user.trend_updated_at = datetime.utcnow()
+            user.executive_summary = executive_summary
+            user.executive_updated_at = datetime.utcnow()
+            db.commit()
+            
+            logger.info(f"✅ Trend & Executive Summary yenilendi: User {user_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Trend yenileme hatası (User {user_id}): {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
+
+
 # ============================================================
-# 📌 SENKRON FORECAST
+# 📌 SENKRON FORECAST - ACTIVE DATASET BAZLI
 # ============================================================
 
 @router.post("/forecast/batch")
@@ -170,35 +218,33 @@ def batch_forecast(
     db: Session = Depends(get_db)
 ):
     """
-    Toplu forecast analizi - Pattern ile zenginleştirilmiş
-    🆕 Pricing Engine ile dinamik ücretlendirme
+    Toplu forecast analizi - ACTIVE DATASET BAZLI!
     """
     try:
-        # 1. Cache'den verileri al
-        cached_data = get_user_upload_data(current_user.id)
-        if not cached_data:
-            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        # ✅ ACTIVE DATASET'ten verileri al
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(current_user.id)
         
-        upload_id = cached_data.get('upload_id')
-        
-        # 2. Dataset'i al veya oluştur
-        from app.services.dataset_builder import DatasetBuilder
-        builder = DatasetBuilder(db)
-        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
-        
-        if not dataset:
-            dataset = builder.build_from_cache(
-                user_id=current_user.id,
-                cached_data=cached_data,
-                upload_id=upload_id,
-                source_type="excel",
-                source_name=cached_data.get('file_name', 'unknown.xlsx')
+        if not stats['has_data']:
+            raise HTTPException(
+                status_code=404, 
+                detail="Aktif dataset bulunamadı! Lütfen önce Excel yükleyip dataset oluşturun."
             )
         
-        # 3. Pricing Engine ile ücretlendirme
-        from app.services.pricing_engine import PricingEngine
-        from app.schemas.credit import PricingRequest
+        upload_id = stats['upload_id']
+        dataset_id = stats['dataset_id']
         
+        # ✅ Active dataset'ten materials'i al
+        materials = active_service.get_active_materials(current_user.id)
+        if not materials:
+            raise HTTPException(status_code=404, detail="Dataset'te malzeme bulunamadı!")
+        
+        # ✅ Active dataset'i al (pricing için)
+        dataset = active_service.get_active_dataset(current_user.id)
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
+        
+        # ✅ Pricing Engine ile ücretlendirme
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/forecast/batch",
@@ -220,11 +266,7 @@ def batch_forecast(
                 detail=pricing_response.message or "Pricing işlemi başarısız"
             )
         
-        # 4. Analizi çalıştır (mevcut kod)
-        materials = cached_data.get('materials', [])
-        if not materials:
-            raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
-        
+        # ✅ Analizi çalıştır
         results = []
         for material in materials:
             try:
@@ -320,14 +362,13 @@ def batch_forecast(
                 })
                 
             except Exception as e:
-                print(f"❌ Malzeme {material.get('code', '')} tahmin hatası: {e}")
+                logger.error(f"❌ Malzeme {material.get('code', '')} tahmin hatası: {e}")
                 continue
         
         if not results:
             raise HTTPException(status_code=400, detail="Hiçbir malzeme için tahmin yapılamadı!")
         
-        # 5. Sonuçları kaydet
-        # ✅ 1. result_data'yı hazırla (dashboard_summary OLMADAN)
+        # ✅ 1. result_data hazırla (dashboard_summary OLMADAN)
         result_data = {
             'success': True,
             'total': len(results),
@@ -337,12 +378,12 @@ def batch_forecast(
             'pattern_analysis': True
         }
         
-        # ✅ 2. AnalysisResult'u oluştur (data ile birlikte)
+        # ✅ 2. AnalysisResult oluştur
         analysis_result = AnalysisResult(
             user_id=current_user.id,
             upload_id=upload_id,
             result_type='forecast_batch',
-            data=result_data,  # dashboard_summary yok
+            data=result_data,
             params={
                 'horizon': request.horizon,
                 'model_type': request.model_type,
@@ -361,9 +402,9 @@ def batch_forecast(
         # ✅ 3. Kaydet ve ID al
         db.add(analysis_result)
         db.commit()
-        db.refresh(analysis_result)  # ← ID burada
+        db.refresh(analysis_result)
         
-        # ✅ 4. ŞİMDİ dashboard_summary oluştur (analysis_result.id hazır)
+        # ✅ 4. dashboard_summary oluştur
         dashboard_summary = build_forecast_dashboard_summary(
             results=results,
             analysis_id=analysis_result.id,
@@ -394,7 +435,6 @@ def batch_forecast(
         
         db.commit()
         db.refresh(analysis_result)
-        
         
         # AI Özetini arka planda oluştur
         background_tasks.add_task(
@@ -428,52 +468,51 @@ def batch_forecast(
         raise
     except Exception as e:
         db.rollback()
+        logger.error(f"❌ Forecast hatası: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
+
 # ============================================================
-# 📌 ASYNC FORECAST
+# 📌 ASYNC FORECAST - ACTIVE DATASET BAZLI
 # ============================================================
 
 @router.post("/forecast/batch/async")
 def start_async_forecast(
-    request: ForecastRequest,  # ✅ ForecastRequest tipinde
+    request: ForecastRequest,
     background_tasks: BackgroundTasks,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    Async forecast - Pattern ile zenginleştirilmiş
-    🆕 Pricing Engine ile dinamik ücretlendirme
+    Async forecast - ACTIVE DATASET BAZLI!
     """
     try:
-        # 1. Cache'den verileri al
-        cached_data = get_user_upload_data(current_user.id)
-        if not cached_data:
-            raise HTTPException(status_code=404, detail="Henüz Excel dosyası yüklenmemiş!")
+        # ✅ ACTIVE DATASET'ten verileri al
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(current_user.id)
         
-        upload_id = cached_data.get('upload_id')
-        materials = cached_data.get('materials', [])
-        if not materials:
-            raise HTTPException(status_code=404, detail="Yüklenen veride malzeme bulunamadı!")
-        
-        # 2. Dataset'i al veya oluştur
-        from app.services.dataset_builder import DatasetBuilder
-        builder = DatasetBuilder(db)
-        dataset = builder.get_dataset_by_upload_id(upload_id, current_user.id)
-        
-        if not dataset:
-            dataset = builder.build_from_cache(
-                user_id=current_user.id,
-                cached_data=cached_data,
-                upload_id=upload_id,
-                source_type="excel",
-                source_name=cached_data.get('file_name', 'unknown.xlsx')
+        if not stats['has_data']:
+            raise HTTPException(
+                status_code=404, 
+                detail="Aktif dataset bulunamadı! Lütfen önce Excel yükleyip dataset oluşturun."
             )
         
-        # 3. Pricing Engine ile ücretlendirme (Async'de hemen düş)
-        from app.services.pricing_engine import PricingEngine
-        from app.schemas.credit import PricingRequest
+        upload_id = stats['upload_id']
+        dataset_id = stats['dataset_id']
         
+        # ✅ Active dataset'ten materials'i al
+        materials = active_service.get_active_materials(current_user.id)
+        if not materials:
+            raise HTTPException(status_code=404, detail="Dataset'te malzeme bulunamadı!")
+        
+        # ✅ Active dataset'i al (pricing için)
+        dataset = active_service.get_active_dataset(current_user.id)
+        if not dataset:
+            raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
+        
+        # ✅ Pricing Engine ile ücretlendirme (Async'de hemen düş)
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/forecast/batch/async",
@@ -495,10 +534,10 @@ def start_async_forecast(
                 detail=pricing_response.message or "Pricing işlemi başarısız"
             )
         
-        # 4. Task ID oluştur
+        # Task ID oluştur
         task_id = str(uuid.uuid4())
         
-        # 5. Initial record'u kaydet
+        # Initial record'u kaydet
         initial_data = {
             'status': 'processing',
             'message': 'Forecast analizi başlatıldı...',
@@ -537,7 +576,7 @@ def start_async_forecast(
         db.add(initial_record)
         db.commit()
         
-        # 6. Async job'u arka planda başlat
+        # Async job'u arka planda başlat
         background_tasks.add_task(
             run_async_forecast_job,
             task_id=task_id,
@@ -560,29 +599,32 @@ def start_async_forecast(
         raise
     except Exception as e:
         db.rollback()
+        logger.error(f"❌ Async Forecast başlatma hatası: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
 
-# ============================================================
-# 📌 ASYNC FORECAST JOB
-# ============================================================
 
 # ============================================================
-# 📌 ASYNC FORECAST JOB - TAM DÜZELTİLMİŞ
+# 📌 ASYNC FORECAST JOB - ACTIVE DATASET BAZLI
 # ============================================================
 
 def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: ForecastRequest, db: Session):
-    """Async forecast işini gerçekleştirir."""
+    """Async forecast işini gerçekleştirir - ACTIVE DATASET BAZLI!"""
     try:
         print(f"🔄 Async forecast başladı: Task ID {task_id}")
         
-        cached_data = get_user_upload_data(user_id)
-        if not cached_data:
-            update_async_task_status(db, task_id, 'failed', 'Veri bulunamadı')
+        # ✅ ACTIVE DATASET'ten verileri al
+        active_service = get_active_dataset_service(db)
+        stats = active_service.get_dataset_stats(user_id)
+        
+        if not stats['has_data']:
+            update_async_task_status(db, task_id, 'failed', 'Aktif dataset bulunamadı')
             return
         
-        materials = cached_data.get('materials', [])
+        materials = active_service.get_active_materials(user_id)
         if not materials:
-            update_async_task_status(db, task_id, 'failed', 'Malzeme bulunamadı')
+            update_async_task_status(db, task_id, 'failed', 'Dataset\'te malzeme bulunamadı')
             return
         
         results = []
@@ -685,24 +727,20 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 update_async_progress(db, task_id, progress, f'{progress}% tamamlandı', len(results))
                 
             except Exception as e:
-                print(f"❌ Malzeme {material.get('code', '')} tahmin hatası (Task {task_id}): {e}")
+                logger.error(f"❌ Malzeme {material.get('code', '')} tahmin hatası (Task {task_id}): {e}")
                 continue
         
         if not results:
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
         
-        # ============================================================
-        # 📌 AYNI KAYDI GÜNCELLE (analysis_results)
-        # ============================================================
-        
-                        # ✅ 1. result_data hazırla (dashboard_summary YOK)
+        # ✅ 1. result_data hazırla
         result_data = {
             'success': True,
             'total': len(results),
-            'results': results,                         # ← Forecast'a özel
-            'horizon': request.horizon,                 # ← Forecast'a özel
-            'model_type': request.model_type,           # ← Forecast'a özel
+            'results': results,
+            'horizon': request.horizon,
+            'model_type': request.model_type,
             'task_id': task_id,
             'status': 'completed',
             'message': 'Forecast analizi tamamlandı!',
@@ -738,7 +776,7 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 'total_materials': len(results),
                 'updated_at': datetime.utcnow()
             })
-        db.commit()              
+            db.commit()
         
         # Öğrenme verilerini güncelle
         if results:
@@ -761,9 +799,7 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         # ✅ Sonucu tekrar al (ID için)
         result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
         
-        # ============================================================
-        # 📌 BİLDİRİM OLUŞTUR
-        # ============================================================
+        # ✅ Bildirim oluştur
         try:
             notification = Notification(
                 user_id=user_id,
@@ -777,28 +813,20 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         except Exception as e:
             print(f"⚠️ Bildirim hatası: {e}")
         
-        # ============================================================
-        # 📌 AI SUMMARY + TREND + EXECUTIVE (Hepsi Arka Planda)
-        # ============================================================
-
+        # ✅ AI SUMMARY + TREND + EXECUTIVE
         try:
-            # 1. Kullanıcı bilgilerini al
             user = db.query(User).filter(User.id == user_id).first()
             country = user.billing_country if user else 'TR'
             language = get_language_from_country(country)
             
-            # ✅ Sonucu al (result_data yerine doğrudan result.data kullan)
             result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
             
             if result:
-                # ✅ result_type'ı result.result_type'den al
                 result_type = result.result_type
                 
-                # 2. AI Summary oluştur
                 engine = AISummaryEngine(language=language)
-                summary = engine.build_summary(result_type, result.data)  # ✅ result.data kullan
+                summary = engine.build_summary(result_type, result.data)
                 
-                # 3. AnalysisResult'u güncelle
                 result.ai_summary = summary
                 result.ai_status = "completed"
                 result.ai_version = engine.ai_version
@@ -809,12 +837,11 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 result.message = 'Tamamlandı!'
                 result.total_materials = len(results)
                 result.updated_at = datetime.utcnow()
-                result.data = result_data  # ✅ Zaten güncellenmiş data
+                result.data = result_data
                 
                 db.commit()
                 logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
                 
-                # 4. Trend + Executive Summary yenile (Direkt çağır - arka planda)
                 refresh_trend_summary(user_id, country)
                 logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
                 
@@ -834,60 +861,3 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         print(f"❌ Async forecast hatası (Task {task_id}): {e}")
         update_async_task_status(db, task_id, 'failed', str(e))
         db.rollback()
-
-
-
-# ============================================================
-# 📌 TREND SUMMARY YENİLEME FONKSİYONU
-# ============================================================
-
-def refresh_trend_summary(user_id: int, country: str = "TR"):
-    """Trend Summary'yi yenile"""
-    try:
-        from app.database import SessionLocal
-        from app.models import User
-        
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter(User.id == user_id).first()
-            if not user:
-                logger.warning(f"❌ Kullanıcı bulunamadı: {user_id}")
-                return
-            
-            language = get_language_from_country(country)
-            trend_engine = TrendSummaryEngine(language=language)
-            exec_engine = ExecutiveSummaryEngine(language=language)
-            
-            # Son analizleri al
-            recent_analyses = trend_engine.get_recent_analyses(db, user_id)
-            if not recent_analyses:
-                logger.info(f"ℹ️ Trend için yeterli analiz yok: {user_id}")
-                return
-            
-            # Trend Summary oluştur
-            trend_summary = trend_engine.build_trend_summary(recent_analyses)
-            
-            # Executive Summary oluştur
-            executive_summary = exec_engine.build_executive_summary(
-                trend_summary=trend_summary,
-                previous_executive=user.executive_summary
-            )
-            
-            # Kaydet
-            user.trend_summary = trend_summary
-            user.trend_updated_at = datetime.utcnow()
-            user.executive_summary = executive_summary
-            user.executive_updated_at = datetime.utcnow()
-            db.commit()
-            
-            logger.info(f"✅ Trend & Executive Summary yenilendi: User {user_id}")
-            
-        except Exception as e:
-            logger.error(f"❌ Trend yenileme hatası (User {user_id}): {e}")
-            import traceback
-            traceback.print_exc()
-        finally:
-            db.close()
-            
-    except Exception as e:
-        logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
