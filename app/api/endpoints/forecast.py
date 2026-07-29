@@ -23,19 +23,14 @@ from datetime import datetime, timedelta
 import numpy as np
 import logging
 
-from app.services.dashboard_summary_builder import (
-    build_forecast_dashboard_summary,
-    build_safety_stock_dashboard_summary,
-    build_simulation_dashboard_summary,
-    build_backtest_dashboard_summary,
-    build_supplier_dashboard_summary
-)
-
 from app.api.dependencies import (
     get_or_create_dataset_from_upload,
     process_pricing_with_dataset,
     get_active_dataset
 )
+from app.services.learning_engine import LearningEngine
+from app.services.ai.ai_decision_engine import AIDecisionEngine
+from app.services.dashboard_builder import get_dashboard_builder
 
 logger = logging.getLogger(__name__)
 
@@ -205,6 +200,89 @@ def refresh_trend_summary(user_id: int, country: str = "TR"):
     except Exception as e:
         logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
 
+def generate_ai_decision_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
+    """
+    Arka planda AI Decision Engine ile karar oluşturur.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import User, AnalysisResult
+        from app.services.ai.ai_decision_engine import AIDecisionEngine
+        from app.analysis.ai_summary_engine import get_language_from_country
+        
+        db2 = SessionLocal()
+        try:
+            user = db2.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
+            if not result:
+                logger.error(f"❌ Analiz sonucu bulunamadı: {result_id}")
+                return
+            
+            language = get_language_from_country(country or user.billing_country or "TR")
+            
+            # AI Decision Engine ile karar oluştur
+            decision_engine = AIDecisionEngine(language=language)
+            decision = decision_engine.generate_decision(
+                analysis_type=result_type,
+                analysis_data=result.data
+            )
+            
+            # Kararı veriye ekle
+            data = result.data or {}
+            data['ai_decision'] = decision
+            result.data = data
+            
+            result.ai_status = "decision_completed"
+            result.ai_created_at = datetime.utcnow()
+            db2.commit()
+            
+            logger.info(f"✅ AI Decision oluşturuldu: {result_type} (ID: {result_id})")
+            
+            # ✅ Learning Engine'i tetikle
+            try:
+                learning_engine = LearningEngine(db2, user_id)
+                learning_engine.analyze_and_learn({
+                    'result_type': result_type,
+                    'data': result.data
+                })
+                logger.info(f"✅ Learning Engine tamamlandı: {result_id}")
+            except Exception as e:
+                logger.error(f"❌ Learning Engine hatası: {e}")
+            
+        finally:
+            db2.close()
+    except Exception as e:
+        logger.error(f"❌ AI Decision oluşturma hatası: {e}")
+        import traceback
+        traceback.print_exc()
+
+def trigger_learning_engine_background(user_id: int, result_id: int, result_type: str):
+    """
+    Arka planda Learning Engine'i tetikler.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import AnalysisResult
+        from app.services.learning_engine import LearningEngine
+        
+        db = SessionLocal()
+        try:
+            result = db.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
+            if result:
+                engine = LearningEngine(db, user_id)
+                engine.analyze_and_learn({
+                    'result_type': result_type,
+                    'data': result.data
+                })
+                logger.info(f"✅ Learning Engine tetiklendi: {result_id}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"❌ Learning Engine background hatası: {e}")
 
 # ============================================================
 # 📌 SENKRON FORECAST - ACTIVE DATASET BAZLI
@@ -368,7 +446,7 @@ def batch_forecast(
         if not results:
             raise HTTPException(status_code=400, detail="Hiçbir malzeme için tahmin yapılamadı!")
         
-        # ✅ 1. result_data hazırla (dashboard_summary OLMADAN)
+                # ✅ 1. result_data hazırla (dashboard_summary OLMADAN)
         result_data = {
             'success': True,
             'total': len(results),
@@ -404,12 +482,13 @@ def batch_forecast(
         db.commit()
         db.refresh(analysis_result)
         
-        # ✅ 4. dashboard_summary oluştur
-        dashboard_summary = build_forecast_dashboard_summary(
-            results=results,
+        # ✅ 4. YENİ: Dashboard Builder ile summary oluştur
+        builder = get_dashboard_builder(db, current_user.id)
+        dashboard_summary = builder._build_summary_from_decision(
+            result_type='forecast_batch',
             analysis_id=analysis_result.id,
-            dataset_id=dataset.id,
-            horizon=request.horizon
+            ai_decision=result_data.get('ai_decision', {}),
+            data=result_data
         )
         
         # ✅ 5. dashboard_summary'yi ekle ve güncelle
@@ -436,20 +515,21 @@ def batch_forecast(
         db.commit()
         db.refresh(analysis_result)
         
-        # AI Özetini arka planda oluştur
+        # ✅ AI Decision'ı arka planda oluştur (AI Summary'dan sonra)
         background_tasks.add_task(
-            generate_ai_summary_background,
+            generate_ai_decision_background,
             analysis_result.id,
             'forecast_batch',
             current_user.id,
             current_user.billing_country or 'TR'
         )
-
-        # Trend Summary'yi arka planda yenile
+        
+        # ✅ Learning Engine'i arka planda tetikle
         background_tasks.add_task(
-            refresh_trend_summary,
+            trigger_learning_engine_background,
             current_user.id,
-            current_user.billing_country or 'TR'
+            analysis_result.id,
+            'forecast_batch'
         )
         
         return {
@@ -609,6 +689,10 @@ def start_async_forecast(
 # 📌 ASYNC FORECAST JOB - ACTIVE DATASET BAZLI
 # ============================================================
 
+# app/api/endpoints/forecast.py - ASYNC JOB TAM GÜNCELLEME
+# run_async_forecast_job fonksiyonunun TAMAMI
+
+
 def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: ForecastRequest, db: Session):
     """Async forecast işini gerçekleştirir - ACTIVE DATASET BAZLI!"""
     try:
@@ -754,12 +838,13 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
         ).first()
         
         if existing:
-            # ✅ 3. dashboard_summary oluştur
-            dashboard_summary = build_forecast_dashboard_summary(
-                results=results,
+            # ✅ 3. YENİ: Dashboard Builder ile summary oluştur
+            builder = get_dashboard_builder(db, user_id)
+            dashboard_summary = builder._build_summary_from_decision(
+                result_type='forecast_batch_async',
                 analysis_id=existing.id,
-                dataset_id=0,
-                horizon=request.horizon
+                ai_decision=result_data.get('ai_decision', {}),
+                data=result_data
             )
             
             # ✅ 4. dashboard_summary'yi ekle
@@ -851,6 +936,50 @@ def run_async_forecast_job(task_id: str, user_id: int, upload_id: str, request: 
                 AnalysisResult.task_id == task_id
             ).update({
                 'ai_status': 'failed',
+                'ai_created_at': datetime.utcnow(),
+            })
+            db.commit()
+        
+        # ✅ AI DECISION + LEARNING ENGINE (YENİ)
+        try:
+            result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
+            if result:
+                from app.services.ai.ai_decision_engine import AIDecisionEngine
+                from app.services.learning_engine import LearningEngine
+                from app.analysis.ai_summary_engine import get_language_from_country
+                
+                user = db.query(User).filter(User.id == user_id).first()
+                language = get_language_from_country(user.billing_country or "TR")
+                
+                # AI Decision oluştur
+                decision_engine = AIDecisionEngine(language=language)
+                decision = decision_engine.generate_decision(
+                    analysis_type=result.result_type,
+                    analysis_data=result.data
+                )
+                
+                # Kararı veriye ekle
+                data = result.data or {}
+                data['ai_decision'] = decision
+                result.data = data
+                db.commit()
+                logger.info(f"✅ Async AI Decision oluşturuldu: {task_id}")
+                
+                # Learning Engine'i tetikle
+                learning_engine = LearningEngine(db, user_id)
+                learning_engine.analyze_and_learn({
+                    'result_type': result.result_type,
+                    'data': result.data
+                })
+                db.commit()
+                logger.info(f"✅ Async Learning Engine tamamlandı: {task_id}")
+                
+        except Exception as e:
+            logger.error(f"❌ Async AI Decision/Learning hatası: {e}")
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'ai_status': 'decision_failed',
                 'ai_created_at': datetime.utcnow(),
             })
             db.commit()

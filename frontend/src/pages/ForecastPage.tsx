@@ -1,5 +1,5 @@
-// frontend/src/pages/ForecastPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
-// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
+// frontend/src/pages/ForecastPage.tsx - TAM VE GÜNCEL
+// Yeni bileşenler: DecisionReasoning, TechnicalAnalysisDetail, LearningScoreBadge
 
 import { useState, useEffect, useRef } from 'react';
 import {
@@ -43,6 +43,9 @@ import {
   RadioGroup,
   FormControlLabel,
   Radio,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import {
   ShowChart,
@@ -73,6 +76,8 @@ import {
   Assessment,
   Psychology,
   AccountBalanceWallet,
+  ExpandMore,
+  Warning as WarningIcon,
 } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
@@ -91,6 +96,105 @@ import {
   Area,
 } from 'recharts';
 import { usePricingPreview, updateActiveDatasetId } from '../hooks/usePricing';
+
+// ✅ YENİ BİLEŞENLER
+import DecisionReasoning from '../components/Results/DecisionReasoning';
+import TechnicalAnalysisDetail from '../components/Results/TechnicalAnalysisDetail';
+import LearningScoreBadge from '../components/Dashboard/LearningScoreBadge';
+
+// ✅ AI Neden Bu Kararı Verdi? - Bileşeni
+const AIReasoningSection = ({ result }: { result: ForecastResult }) => {
+  const aiDecision = (result as any).ai_decision;
+  
+  if (!aiDecision) {
+    return null;
+  }
+
+  const reasoning = {
+    recommended_ss: 0, // Forecast için SS yok
+    current_ss: 0,
+    reasons: aiDecision.reasons || [
+      (result.model_rmse || 0) > 30 ? 'RMSE yüksek' : '',
+      result.outlier_info?.has_outliers ? 'Aykırı değerler var' : '',
+      result.trend_direction === 'Artış' ? 'Yükselen trend' : '',
+      result.trend_direction === 'Azalış' ? 'Azalan trend' : '',
+      result.pattern === 'ARALIKLI_YUKSEK' ? 'Aralıklı talep' : '',
+    ].filter(Boolean),
+    conclusion: aiDecision.decision === 'change_forecast_model' 
+      ? `En iyi model: ${result.best_model_label} önerildi.` 
+      : aiDecision.decision === 'maintain_current'
+      ? 'Mevcut model yeterli.'
+      : 'Detaylı analiz önerilir.',
+    confidence: aiDecision.confidence || 0.5,
+    factors: {
+      cv: result.cv || 0,
+      lead_time: 0,
+      intermittent: result.pattern === 'ARALIKLI_YUKSEK' || result.pattern === 'ARALIKLI_DUSUK',
+      seasonal: result.model_params?.seasonal_periods ? true : false,
+      risk_score: result.model_rmse ? Math.min(1, result.model_rmse / 100) : 0.5,
+      pattern: result.pattern_label || 'DEGISKEN',
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 1 }}>
+      <DecisionReasoning
+        materialCode={result.material_code}
+        reasoning={reasoning}
+      />
+    </Box>
+  );
+};
+
+// ✅ Teknik Analiz Bölümü - Accordion içinde
+const TechnicalAnalysisSection = ({ result }: { result: ForecastResult }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const technicalData = {
+    material_code: result.material_code,
+    cv: result.cv || 0,
+    pattern: result.pattern || 'DEGISKEN',
+    pattern_label: result.pattern_label || 'Değişken',
+    pattern_color: result.pattern_color || 'default',
+    abc: 'C',
+    abc_label: 'Düşük Maliyetli',
+    xyz: result.cv && result.cv < 0.3 ? 'X' : result.cv && result.cv < 0.6 ? 'Y' : 'Z',
+    xyz_label: result.cv && result.cv < 0.3 ? 'Düzenli Talep' : result.cv && result.cv < 0.6 ? 'Değişken Talep' : 'Düzensiz Talep',
+    forecast_model: result.selected_model || 'auto',
+    forecast_model_label: result.best_model_label || 'Otomatik',
+    seasonality: result.model_params?.seasonal_periods ? true : false,
+    seasonality_label: result.model_params?.seasonal_periods ? 'Güçlü' : 'Yok',
+    seasonality_strength: result.model_params?.seasonal_periods ? 0.7 : 0,
+    trend_direction: result.trend_direction || 'Yok',
+    trend_percent: result.trend_percent || 0,
+    lead_time_days: 14,
+    zero_ratio: result.zero_ratio || 0,
+    risk_score: result.model_rmse ? Math.min(1, result.model_rmse / 100) : 0.5,
+    risk_level: (result.model_rmse || 0) < 20 ? 'Düşük' : (result.model_rmse || 0) < 40 ? 'Orta' : 'Yüksek',
+  };
+
+  return (
+    <Accordion 
+      expanded={expanded} 
+      onChange={() => setExpanded(!expanded)}
+      sx={{ 
+        mt: 1, 
+        '&:before': { display: 'none' },
+        border: '1px solid #e8f0fe',
+        borderRadius: 1,
+      }}
+    >
+      <AccordionSummary expandIcon={<ExpandMore />}>
+        <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.7rem', color: '#1f4e79' }}>
+          📊 Teknik Analizi Göster
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 1 }}>
+        <TechnicalAnalysisDetail data={technicalData} />
+      </AccordionDetails>
+    </Accordion>
+  );
+};
 
 interface ForecastResult {
   material_code: string;
@@ -112,6 +216,21 @@ interface ForecastResult {
   model_params: Record<string, any>;
   outlier_info: { has_outliers: boolean; outlier_count: number; outliers: any[] };
   historical_data?: number[];
+  pattern?: string;
+  pattern_label?: string;
+  pattern_color?: string;
+  cv?: number;
+  zero_ratio?: number;
+  ai_decision?: {
+    decision: string;
+    priority: string;
+    confidence: number;
+    reasons: string[];
+    expected_impact: Record<string, string>;
+    next_review_days: number;
+    explanation: string;
+    analysis_type: string;
+  };
 }
 
 interface HistoryItem {
@@ -120,7 +239,6 @@ interface HistoryItem {
   data: any;
 }
 
-// ✅ Analiz Aşamaları Interface
 interface AnalysisStep {
   label: string;
   description: string;
@@ -128,7 +246,6 @@ interface AnalysisStep {
   timestamp?: string;
 }
 
-// ✅ Analiz Özeti Interface
 interface AnalysisSummary {
   totalMaterials: number;
   mostUsedModel: string;
@@ -144,7 +261,6 @@ interface AnalysisSummary {
   seasonalityLevel: string;
 }
 
-// ✅ AI Yorumu Interface
 interface AIComment {
   summary: string;
   trend: string;
@@ -152,6 +268,73 @@ interface AIComment {
   confidence: string;
   recommendation: string;
 }
+
+// ✅ Model Detayları
+interface ModelDetail {
+  key: string;
+  label: string;
+  icon: React.ReactNode;
+  short: string;
+  tooltip: {
+    title: string;
+    when: string;
+    example: string;
+    advantage: string;
+  };
+  isRecommended?: boolean;
+}
+
+const modelDetails: ModelDetail[] = [
+  {
+    key: 'holt_winters',
+    label: 'Holt-Winters',
+    icon: <Timeline fontSize="small" />,
+    short: 'Mevsimsel talep',
+    tooltip: {
+      title: 'Holt-Winters Yöntemi',
+      when: 'Mevsimsel desenlere sahip ürünler (52+ hafta veri).',
+      example: 'Mevsimlik ürünler, tatil dönemi satışları, yılbaşı ürünleri.',
+      advantage: 'Mevsimsel dalgalanmaları yakalar, trend ve mevsimselliği birlikte modeller.',
+    },
+  },
+  {
+    key: 'arima',
+    label: 'ARIMA',
+    icon: <Analytics fontSize="small" />,
+    short: 'Otoregresif',
+    tooltip: {
+      title: 'ARIMA Yöntemi',
+      when: 'Trend ve otokorelasyon gösteren ürünler (26+ hafta veri).',
+      example: 'Büyüyen ürünler, düzenli satış trendi olan ürünler.',
+      advantage: 'Geçmiş değerlerle geleceği tahmin eder, istatistiksel olarak güçlüdür.',
+    },
+  },
+  {
+    key: 'simple',
+    label: 'Basit MA',
+    icon: <ShowChart fontSize="small" />,
+    short: 'Hızlı tahmin',
+    tooltip: {
+      title: 'Basit Hareketli Ortalama',
+      when: 'Az veri veya hızlı tahmin ihtiyacı (4+ hafta veri).',
+      example: 'Yeni ürünler, az geçmişi olan ürünler, hızlı analiz.',
+      advantage: 'Basit ve hızlı, az veri ile çalışabilir.',
+    },
+  },
+  {
+    key: 'auto',
+    label: 'Otomatik',
+    icon: <AutoAwesome fontSize="small" />,
+    short: '⭐ Varsayılan Öneri',
+    tooltip: {
+      title: 'Otomatik Model Seçimi',
+      when: 'Tüm ürünler için uygun, en çok önerilen yöntem.',
+      example: 'Tüm ürün grupları için ideal başlangıç noktası.',
+      advantage: '4 modeli de değerlendirir, talep yapısına en uygun olanı seçer.',
+    },
+    isRecommended: true,
+  },
+];
 
 // ✅ Analiz Aşamaları Bileşeni
 const AnalysisProgress = ({ 
@@ -225,73 +408,6 @@ const AnalysisProgress = ({
   );
 };
 
-// ✅ Model Detayları
-interface ModelDetail {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  short: string;
-  tooltip: {
-    title: string;
-    when: string;
-    example: string;
-    advantage: string;
-  };
-  isRecommended?: boolean;
-}
-
-const modelDetails: ModelDetail[] = [
-  {
-    key: 'holt_winters',
-    label: 'Holt-Winters',
-    icon: <Timeline fontSize="small" />,
-    short: 'Mevsimsel talep',
-    tooltip: {
-      title: 'Holt-Winters Yöntemi',
-      when: 'Mevsimsel desenlere sahip ürünler (52+ hafta veri).',
-      example: 'Mevsimlik ürünler, tatil dönemi satışları, yılbaşı ürünleri.',
-      advantage: 'Mevsimsel dalgalanmaları yakalar, trend ve mevsimselliği birlikte modeller.',
-    },
-  },
-  {
-    key: 'arima',
-    label: 'ARIMA',
-    icon: <Analytics fontSize="small" />,
-    short: 'Otoregresif',
-    tooltip: {
-      title: 'ARIMA Yöntemi',
-      when: 'Trend ve otokorelasyon gösteren ürünler (26+ hafta veri).',
-      example: 'Büyüyen ürünler, düzenli satış trendi olan ürünler.',
-      advantage: 'Geçmiş değerlerle geleceği tahmin eder, istatistiksel olarak güçlüdür.',
-    },
-  },
-  {
-    key: 'simple',
-    label: 'Basit MA',
-    icon: <ShowChart fontSize="small" />,
-    short: 'Hızlı tahmin',
-    tooltip: {
-      title: 'Basit Hareketli Ortalama',
-      when: 'Az veri veya hızlı tahmin ihtiyacı (4+ hafta veri).',
-      example: 'Yeni ürünler, az geçmişi olan ürünler, hızlı analiz.',
-      advantage: 'Basit ve hızlı, az veri ile çalışabilir.',
-    },
-  },
-  {
-    key: 'auto',
-    label: 'Otomatik',
-    icon: <AutoAwesome fontSize="small" />,
-    short: '⭐ Varsayılan Öneri',
-    tooltip: {
-      title: 'Otomatik Model Seçimi',
-      when: 'Tüm ürünler için uygun, en çok önerilen yöntem.',
-      example: 'Tüm ürün grupları için ideal başlangıç noktası.',
-      advantage: '4 modeli de değerlendirir, talep yapısına en uygun olanı seçer.',
-    },
-    isRecommended: true,
-  },
-];
-
 export default function ForecastPage() {
   const { user, fetchUser } = useAuth();
   const [hasUploadedData, setHasUploadedData] = useState(false);
@@ -314,6 +430,8 @@ export default function ForecastPage() {
   const [weekCount, setWeekCount] = useState(0);
   const [lastUploadDate, setLastUploadDate] = useState<string | null>(null);
 
+  const [selectedReasoning, setSelectedReasoning] = useState<ForecastResult | null>(null);
+
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('Hazır');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -327,7 +445,6 @@ export default function ForecastPage() {
   
   const intervalIdRef = useRef<number | null>(null);
   const queryClient = useQueryClient();
-
 
   // ✅ Normal Analiz Aşamaları State'leri
   const [steps, setSteps] = useState<AnalysisStep[]>([
@@ -350,7 +467,7 @@ export default function ForecastPage() {
   const [asyncActiveStep, setAsyncActiveStep] = useState(-1);
   const [isAsyncComplete, setIsAsyncComplete] = useState(false);
 
- // 🆕 Dataset ID için state
+  // 🆕 Dataset ID için state
   const [activeDatasetId, setActiveDatasetId] = useState<number | null>(() => {
     const saved = localStorage.getItem('activeDatasetId');
     return saved ? parseInt(saved) : null;
@@ -358,7 +475,7 @@ export default function ForecastPage() {
 
   // 🆕 Pricing Preview Hook
   const { data: pricingPreview, isLoading: pricingLoading } = usePricingPreview(
-    '/api/safety-stock/batch',
+    '/api/forecast/batch',
     activeDatasetId || undefined
   );
 
@@ -395,14 +512,12 @@ export default function ForecastPage() {
     setIsCheckingData(true);
     try {
       const res = await api.get('/api/upload/status');
-      console.log('📦 Upload status:', res.data);
       const hasData = res.data.has_data === true;
       setHasUploadedData(hasData);
       setMaterialCount(res.data.materials_count || 0);
       setWeekCount(res.data.week_count || 0);
       setLastUploadDate(res.data.last_upload_date || null);
       if (!hasData) {
-        console.log('❌ Veri bulunamadı, kontrol tamamlandı.');
         setError('Henüz Excel dosyası yüklenmemiş. Lütfen önce Dashboard\'dan dosya yükleyin.');
       }
     } catch (error) {
@@ -414,7 +529,6 @@ export default function ForecastPage() {
     }
   };
 
-  // fetchAndLoadResult fonksiyonunu tanımla
   const handleFetchAndLoad = (id: number) => {
     fetchAndLoadResult(id, setResults, setPage, setSuccess, setError, setLoading);
   };
@@ -423,7 +537,6 @@ export default function ForecastPage() {
     checkAndLoadAnalysis('forecast', handleFetchAndLoad);
   }, []);
 
-  // ✅ Adım güncelleme fonksiyonu
   const updateStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
     setSteps(prev => prev.map((step, i) => {
       if (i === index) {
@@ -439,7 +552,6 @@ export default function ForecastPage() {
     setActiveStep(index);
   };
 
-  // ✅ Async Adım güncelleme
   const updateAsyncStep = (index: number, status: 'pending' | 'active' | 'completed' | 'error', description?: string) => {
     setAsyncSteps(prev => prev.map((step, i) => {
       if (i === index) {
@@ -455,7 +567,6 @@ export default function ForecastPage() {
     setAsyncActiveStep(index);
   };
 
-  // ✅ Aşamaları sıfırla
   const resetSteps = () => {
     setSteps(prev => prev.map(step => ({
       ...step,
@@ -466,7 +577,6 @@ export default function ForecastPage() {
     setIsAnalysisComplete(false);
   };
 
-  // ✅ Async aşamaları sıfırla
   const resetAsyncSteps = () => {
     setAsyncSteps(prev => prev.map(step => ({
       ...step,
@@ -477,7 +587,6 @@ export default function ForecastPage() {
     setIsAsyncComplete(false);
   };
 
-  // ✅ Tüm aşamaları temizle
   const clearAllSteps = () => {
     resetSteps();
     resetAsyncSteps();
@@ -487,10 +596,8 @@ export default function ForecastPage() {
     setAiComment(null);
   };
 
-  // ✅ Sleep helper
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-  // ✅ Analiz Özeti oluştur
   const generateSummary = (resultsData: ForecastResult[]) => {
     if (!resultsData || resultsData.length === 0) return null;
 
@@ -542,7 +649,6 @@ export default function ForecastPage() {
     };
   };
 
-  // ✅ AI Yorumu oluştur
   const generateAIComment = (summary: AnalysisSummary) => {
     if (!summary) return null;
 
@@ -584,7 +690,6 @@ export default function ForecastPage() {
     };
   };
 
-  // ✅ Normal Analiz Başlat
   const startAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -654,7 +759,6 @@ export default function ForecastPage() {
     }
   };
 
-  // ✅ Async Analiz Başlat
   const startAsyncAnalysis = async () => {
     clearAllSteps();
     setIsProcessing(true);
@@ -720,7 +824,6 @@ export default function ForecastPage() {
         setTimeout(() => setSuccess(null), 5000);
         await fetchUser();
         
-        // ✅ Yeni: credit_cost ve balance_after'i göster
         if (data.credit_cost !== undefined) {
           setSnackbar({
             open: true,
@@ -801,7 +904,6 @@ export default function ForecastPage() {
     },
   });
 
-  // 📌 Async İlerleme Kontrol
   const checkAsyncProgress = async (taskId: string) => {
     if (!taskId) return;
     try {
@@ -862,106 +964,60 @@ export default function ForecastPage() {
   };
 
   const fetchHistory = async () => {
-      setLoading(true);
-      try {
-          const res = await api.get('/api/upload/results', {
-              params: { 
-                  result_type: 'forecast_batch', 
-                  limit: 10000 
-              }
-          });
+    setLoading(true);
+    try {
+      const res = await api.get('/api/upload/results', {
+        params: { 
+          result_type: 'forecast_batch', 
+          limit: 10000 
+        }
+      });
 
-          if (res.data.success) {
-              const rawResults = res.data.results || [];
-              console.log(`📊 ${rawResults.length} sonuç bulundu`);
-              
-              // ✅ SADECE BATCH kayıtlarını al
-              const batchResults = rawResults.filter((item: any) => item.is_batch === true);
-              
-              console.log(`📊 ${batchResults.length} batch sonucu bulundu`);
-              
-              const historyItems = batchResults.map((item: any) => {
-                  const data = item.data || {};
-                  const totalMaterials = item.total_materials || data.total || 0;
-                  
-                  // ✅ Model ve horizon bilgilerini al
-                  const model = data?.selected_model || data?.model_type || 'Otomatik';
-                  const horizonVal = data?.horizon || 4;
-                  
-                  // Model label'ları
-                  const modelLabelsLocal: Record<string, string> = {
-                      'holt_winters': 'Holt-Winters',
-                      'arima': 'ARIMA',
-                      'simple': 'Basit MA',
-                      'auto': 'Otomatik',
-                  };
-                  const modelLabel = modelLabelsLocal[model] || model;
-                  
-                  // ✅ Rapor adını zenginleştir
-                  const reportName = `Talep Tahmini (${modelLabel}) - ${horizonVal} Hafta (${totalMaterials} Malzeme)`;
-                  
-                  return {
-                      id: item.id,
-                      created_at: item.created_at,
-                      data: {
-                          total: totalMaterials,
-                          results: data.results || [],
-                          report_name: reportName,
-                          status: item.status || 'completed',
-                          model: model,
-                          horizon: horizonVal,
-                      }
-                  };
-              });
-              
-              setHistoryData(historyItems);
-              setHistoryDialogOpen(true);
-              setError(null);
-          } else {
-              setError('Geçmiş sonuçlar yüklenemedi');
-          }
-      } catch (err: any) {
-          console.error('❌ Geçmiş hatası:', err);
-          setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
-      } finally {
-          setLoading(false);
+      if (res.data.success) {
+        const rawResults = res.data.results || [];
+        const batchResults = rawResults.filter((item: any) => item.is_batch === true);
+        
+        const historyItems = batchResults.map((item: any) => {
+          const data = item.data || {};
+          const totalMaterials = item.total_materials || data.total || 0;
+          const model = data?.selected_model || data?.model_type || 'Otomatik';
+          const horizonVal = data?.horizon || 4;
+          
+          const modelLabelsLocal: Record<string, string> = {
+            'holt_winters': 'Holt-Winters',
+            'arima': 'ARIMA',
+            'simple': 'Basit MA',
+            'auto': 'Otomatik',
+          };
+          const modelLabel = modelLabelsLocal[model] || model;
+          const reportName = `Talep Tahmini (${modelLabel}) - ${horizonVal} Hafta (${totalMaterials} Malzeme)`;
+          
+          return {
+            id: item.id,
+            created_at: item.created_at,
+            data: {
+              total: totalMaterials,
+              results: data.results || [],
+              report_name: reportName,
+              status: item.status || 'completed',
+              model: model,
+              horizon: horizonVal,
+            }
+          };
+        });
+        
+        setHistoryData(historyItems);
+        setHistoryDialogOpen(true);
+        setError(null);
+      } else {
+        setError('Geçmiş sonuçlar yüklenemedi');
       }
-  };
-
-  // ✅ Rapor adını belirleme fonksiyonu
-  const getReportName = (items: any[]): string => {
-    if (!items || items.length === 0) return 'Talep Tahmini';
-    
-    const firstItem = items[0];
-    const resultType = firstItem?.result_type || firstItem?.data?.result_type || '';
-    const resultData = firstItem?.data || {};
-    
-    // ✅ result_type'a göre rapor adı
-    if (resultType === 'forecast_batch' || resultType === 'forecast_batch_async') {
-      const model = resultData?.selected_model || resultData?.model_type || 'Otomatik';
-      const horizonVal = resultData?.horizon || 4;
-      return `Talep Tahmini (${modelLabels[model] || model}) - ${horizonVal} Hafta`;
+    } catch (err: any) {
+      console.error('❌ Geçmiş hatası:', err);
+      setError(err.response?.data?.detail || 'Geçmiş sonuçlar yüklenemedi');
+    } finally {
+      setLoading(false);
     }
-    
-    if (resultType === 'safety_stock_batch' || resultType === 'safety_stock_batch_async') {
-      const serviceLevel = resultData?.service_level || 0.95;
-      return `Emniyet Stoğu (%${(serviceLevel * 100).toFixed(0)})`;
-    }
-    
-    if (resultType === 'simulation_batch' || resultType === 'simulation_batch_async') {
-      return 'Monte Carlo Simülasyonu';
-    }
-    
-    if (resultType === 'backtest_batch' || resultType === 'backtest_batch_async') {
-      return 'Backtest Analizi';
-    }
-    
-    if (resultType === 'supplier_batch' || resultType === 'supplier_batch_async') {
-      return 'Tedarikçi Analizi';
-    }
-    
-    // ✅ Varsayılan
-    return 'Talep Tahmini';
   };
 
   const handleViewHistory = (item: HistoryItem) => {
@@ -1035,7 +1091,6 @@ export default function ForecastPage() {
     }
   };
 
-  // ✅ 3 Kategori - Yeşil, Turuncu, Kırmızı
   const getMapeStatus = (mape: number) => {
     if (mape < 30) return { color: '#2e7d32', label: '✅ İyi', bgColor: '#e8f5e9', borderColor: '#a5d6a7' };
     if (mape < 50) return { color: '#ed6c02', label: '⚠️ Orta', bgColor: '#fff3e0', borderColor: '#ffcc80' };
@@ -1099,7 +1154,6 @@ export default function ForecastPage() {
     );
   };
 
-  // ✅ ModelParams Bileşeni
   const ModelParams = ({ result }: { result: ForecastResult }) => {
     const params = result.model_params;
     if (!params || Object.keys(params).length === 0) {
@@ -1196,7 +1250,7 @@ export default function ForecastPage() {
     );
   };
 
-  // ✅ Hero Header Bileşeni
+  // ✅ Hero Header
   const HeroHeader = () => (
     <Card sx={{ mb: 3, borderRadius: 2, bgcolor: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)', border: '1px solid #d0e0ff' }}>
       <CardContent sx={{ py: 2.5, px: 3 }}>
@@ -1311,7 +1365,6 @@ export default function ForecastPage() {
     );
   };
 
-  // ✅ Hangi aşamaların gösterileceğini belirle
   const isNormalAnalysisActive = activeStep >= 0 && !isAsyncComplete && !activeAsyncTask;
   const isAsyncAnalysisActive = asyncActiveStep >= 0 || isAsyncComplete;
 
@@ -1332,6 +1385,11 @@ export default function ForecastPage() {
           {snackbar.message}
         </Alert>
       </Snackbar>
+
+      {/* Learning Score Badge - ÜSTTE */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+        <LearningScoreBadge variant="compact" />
+      </Box>
 
       {/* ✅ Hero Header */}
       <HeroHeader />
@@ -1657,7 +1715,71 @@ export default function ForecastPage() {
             </CardContent>
           </Card>
 
-          {/* ✅ Analiz Özeti (varsa) */}
+          {/* ✅ Kredi Bakiyesi ve Maliyet Önizleme */}
+          <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
+            <CardContent sx={{ py: 1.5, px: 2 }}>
+              <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <AccountBalanceWallet sx={{ fontSize: 20, color: '#f57c00' }} />
+                    <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                      Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
+                    </Typography>
+                  </Box>
+                </Grid>
+                
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingLoading ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                        Maliyet hesaplanıyor...
+                      </Typography>
+                    </Box>
+                  ) : pricingPreview && pricingPreview.estimated_credit_cost > 0 ? (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <AttachMoney sx={{ fontSize: 18, color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }} />
+                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                        Tahmini Maliyet: <strong style={{ color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }}>
+                          {pricingPreview.estimated_credit_cost} Kredi
+                        </strong>
+                      </Typography>
+                      {!pricingPreview.is_sufficient && (
+                        <Chip 
+                          label="Yetersiz Bakiye!" 
+                          size="small" 
+                          color="error" 
+                          sx={{ height: 20, fontSize: '0.55rem' }}
+                        />
+                      )}
+                      {pricingPreview.is_sufficient && pricingPreview.processing_score > 0 && (
+                        <Chip 
+                          label={`Score: ${pricingPreview.processing_score}`} 
+                          size="small" 
+                          variant="outlined"
+                          sx={{ height: 18, fontSize: '0.5rem' }}
+                        />
+                      )}
+                    </Box>
+                  ) : (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
+                      {activeDatasetId ? 'Analiz sonrası maliyet görünecek' : 'Dataset oluşturun'}
+                    </Typography>
+                  )}
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 4 }}>
+                  {pricingPreview && pricingPreview.data_points > 0 && (
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block', textAlign: 'right' }}>
+                      📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} veri noktası
+                    </Typography>
+                  )}
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
+
+          {/* Analiz Özeti (varsa) */}
           {analysisSummary && (
             <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#e8f5e9', border: '1px solid #a5d6a7' }}>
               <CardContent sx={{ py: 1.5, px: 2 }}>
@@ -1700,7 +1822,6 @@ export default function ForecastPage() {
       {/* ✅ 4 MODEL - Zenginleştirilmiş */}
       <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#fafcff', border: '1px solid #e8f0fe' }}>
         <CardContent sx={{ py: 1.5, px: 2 }}>
-          {/* ✅ Bilgi Kutusu */}
           <Card sx={{ mb: 2, borderRadius: 2, bgcolor: '#f0f7ff', border: '1px solid #d0e0ff' }}>
             <CardContent sx={{ py: 1.5, px: 2 }}>
               <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5 }}>
@@ -1718,7 +1839,6 @@ export default function ForecastPage() {
             </CardContent>
           </Card>
 
-          {/* ✅ Model Kartları */}
           <Grid container spacing={1.5}>
             {modelDetails.map((model) => (
               <Grid size={{ xs: 6, sm: 3 }} key={model.key}>
@@ -1835,7 +1955,6 @@ export default function ForecastPage() {
             ))}
           </Grid>
 
-          {/* ✅ Güven mesajı */}
           <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'center' }}>
             <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#6b7280', textAlign: 'center' }}>
               💡 Bu analizde 4 model paralel çalıştırılır. En düşük hata oranına sahip model otomatik seçilir.
@@ -1843,88 +1962,7 @@ export default function ForecastPage() {
           </Box>
         </CardContent>
       </Card>
-          {/* ✅ Kredi Bakiyesi ve Maliyet Önizleme */}
-          <Card sx={{ mb: 2, bgcolor: 'grey.50', border: '1px solid #e8f0fe', borderRadius: 2 }}>
-            <CardContent sx={{ py: 1.5, px: 2 }}>
-              <Grid container spacing={1.5} sx={{ alignItems: 'center' }}>
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <AccountBalanceWallet sx={{ fontSize: 20, color: '#f57c00' }} />
-                    <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                      Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
-                    </Typography>
-                  </Box>
-                </Grid>
-                
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  {pricingLoading ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <CircularProgress size={16} />
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                        Maliyet hesaplanıyor...
-                      </Typography>
-                    </Box>
-                  ) : pricingPreview && pricingPreview.estimated_credit_cost > 0 ? (
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <AttachMoney sx={{ fontSize: 18, color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }} />
-                      <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                        Tahmini Maliyet: <strong style={{ color: pricingPreview.is_sufficient ? '#2e7d32' : '#d32f2f' }}>
-                          {pricingPreview.estimated_credit_cost} Kredi
-                        </strong>
-                      </Typography>
-                      {!pricingPreview.is_sufficient && (
-                        <Chip 
-                          label="Yetersiz Bakiye!" 
-                          size="small" 
-                          color="error" 
-                          sx={{ height: 20, fontSize: '0.55rem' }}
-                        />
-                      )}
-                      {pricingPreview.is_sufficient && pricingPreview.processing_score > 0 && (
-                        <Chip 
-                          label={`Score: ${pricingPreview.processing_score}`} 
-                          size="small" 
-                          variant="outlined"
-                          sx={{ height: 18, fontSize: '0.5rem' }}
-                        />
-                      )}
-                      {pricingPreview.calculation_method === 'dataset_complexity' && (
-                        <Chip 
-                          label="🧩 Complex" 
-                          size="small" 
-                          variant="outlined"
-                          sx={{ height: 16, fontSize: '0.45rem', color: '#9c27b0' }}
-                        />
-                      )}
-                    </Box>
-                  ) : (
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>
-                      {activeDatasetId ? 'Analiz sonrası maliyet görünecek' : 'Dataset oluşturun'}
-                    </Typography>
-                  )}
-                </Grid>
 
-                <Grid size={{ xs: 12, sm: 4 }}>
-                  {pricingPreview && pricingPreview.calculation_method === 'dataset_complexity' && pricingPreview.breakdown ? (
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block' }}>
-                        🧩 Dataset Complexity: {pricingPreview.breakdown.total || 0}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.5rem', display: 'block' }}>
-                        📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} 
-                        {pricingPreview.breakdown.relation && ` + ${pricingPreview.breakdown.relation.score} ilişki`}
-                        {pricingPreview.breakdown.lookup && ` + ${pricingPreview.breakdown.lookup.score} referans`}
-                      </Typography>
-                    </Box>
-                  ) : pricingPreview && pricingPreview.data_points > 0 ? (
-                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem', display: 'block', textAlign: 'right' }}>
-                      📊 {pricingPreview.product_count} ürün × {pricingPreview.period_count} dönem = {pricingPreview.data_points} veri noktası
-                    </Typography>
-                  ) : null}
-                </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
       {/* ✅ Sonuçlar */}
       {results.length > 0 ? (
         <Card sx={{ borderRadius: 2 }}>
@@ -1954,9 +1992,9 @@ export default function ForecastPage() {
                     <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Outlier</TableCell>
                     <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Trend</TableCell>
                     <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">RMSE</TableCell>
-                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Başarı</TableCell>
-                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">H1</TableCell>
-                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="right">H{Math.min(horizon, 4)}</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">AI Kararı</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Açıklama</TableCell>
+                    <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">Güven</TableCell>
                     <TableCell sx={{ fontSize: '0.7rem', fontWeight: 600, color: '#1f4e79' }} align="center">İncele</TableCell>
                   </TableRow>
                 </TableHead>
@@ -1964,6 +2002,7 @@ export default function ForecastPage() {
                   {paginatedResults.map((result, idx) => {
                     const status = getMapeStatus(result.model_rmse || 999);
                     const modelColor = modelColors[result.selected_model] || '#1976d2';
+                    const aiDecision = (result as any).ai_decision;
                     
                     return (
                       <TableRow key={idx} hover sx={{ '&:hover': { bgcolor: '#f8faff' } }}>
@@ -2029,26 +2068,33 @@ export default function ForecastPage() {
                           {result.model_rmse?.toFixed(2) || '-'}
                         </TableCell>
                         <TableCell align="center">
-                          <Tooltip title={status.label} arrow>
-                            <Chip
-                              label={status.label}
-                              size="small"
-                              sx={{
-                                height: 20,
-                                fontSize: '0.55rem',
-                                fontWeight: 600,
-                                bgcolor: status.bgColor,
-                                color: status.color,
-                                border: `1px solid ${status.borderColor}`,
-                              }}
-                            />
-                          </Tooltip>
+                          <Chip
+                            label={aiDecision?.decision === 'change_forecast_model' ? '📊 Model Değiştir' :
+                                   aiDecision?.decision === 'maintain_current' ? '✅ Koru' :
+                                   aiDecision?.decision === 'investigate_variability' ? '🔍 Araştır' : '🔍 İncele'}
+                            size="small"
+                            color={aiDecision?.decision === 'change_forecast_model' ? 'warning' :
+                                   aiDecision?.decision === 'maintain_current' ? 'success' : 'default'}
+                            sx={{ height: 18, fontSize: '0.5rem' }}
+                          />
                         </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}>
-                          {result.forecast[0]?.toFixed(0) || '-'}
+                        <TableCell align="center">
+                          <Button
+                            size="small"
+                            variant="text"
+                            onClick={() => setSelectedReasoning(result)}
+                            sx={{ fontSize: '0.5rem', textTransform: 'none', minWidth: 'auto' }}
+                          >
+                            Neden?
+                          </Button>
                         </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 'bold', fontSize: '0.7rem' }}>
-                          {result.forecast[Math.min(horizon, 4) - 1]?.toFixed(0) || '-'}
+                        <TableCell align="center">
+                          <Chip
+                            label={`%${Math.round((aiDecision?.confidence || 0.5) * 100)}`}
+                            size="small"
+                            color={(aiDecision?.confidence || 0) > 0.7 ? 'success' : 'warning'}
+                            sx={{ height: 18, fontSize: '0.45rem', fontWeight: 600 }}
+                          />
                         </TableCell>
                         <TableCell align="center">
                           <Button
@@ -2097,6 +2143,40 @@ export default function ForecastPage() {
           </Card>
         )
       )}
+
+      {/* ✅ AI Neden Bu Kararı Verdi? - Dialog */}
+      <Dialog
+        open={!!selectedReasoning}
+        onClose={() => setSelectedReasoning(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.95rem' }}>
+              🤖 AI Karar Açıklaması
+            </Typography>
+            <IconButton onClick={() => setSelectedReasoning(null)} size="small">
+              <Close fontSize="small" />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ py: 2 }}>
+          {selectedReasoning && (
+            <Box>
+              <AIReasoningSection result={selectedReasoning} />
+              <Box sx={{ mt: 2 }}>
+                <TechnicalAnalysisSection result={selectedReasoning} />
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1.5 }}>
+          <Button onClick={() => setSelectedReasoning(null)} size="small" sx={{ fontSize: '0.7rem', textTransform: 'none' }}>
+            Kapat
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* 📊 Model Karşılaştırma Dialog */}
       <Dialog open={showComparison} onClose={() => setShowComparison(false)} maxWidth="md" fullWidth>

@@ -17,7 +17,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     polar_customer_id = Column(String, nullable=True, index=True)
     
-    # 🆕 FATURA BİLGİLERİ
+    # Fatura Bilgileri
     billing_address = Column(String, nullable=True)
     billing_city = Column(String, nullable=True)
     billing_state = Column(String, nullable=True)
@@ -27,11 +27,11 @@ class User(Base):
     tax_office = Column(String, nullable=True)
     identity_number = Column(String, nullable=True)
         
-    # 🆕🆕 TREND & EXECUTIVE SUMMARY (YENİ)
-    trend_summary = Column(JSONB, nullable=True)           # Trend Summary
-    trend_updated_at = Column(DateTime, nullable=True)     # Trend güncellenme zamanı
-    executive_summary = Column(JSONB, nullable=True)       # Executive Summary
-    executive_updated_at = Column(DateTime, nullable=True) # Executive güncellenme zamanı
+    # Trend & Executive Summary
+    trend_summary = Column(JSONB, nullable=True)
+    trend_updated_at = Column(DateTime, nullable=True)
+    executive_summary = Column(JSONB, nullable=True)
+    executive_updated_at = Column(DateTime, nullable=True)
 
 
 class Sector(Base):
@@ -89,8 +89,9 @@ class MaterialSupplier(Base):
     is_primary = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 # ============================================================
-# ✅ GÜNCELLENMİŞ AnalysisResult (TEK TABLO - HEM SENKRON HEM ASYNC)
+# ✅ GÜNCELLENMİŞ AnalysisResult (UI ALANLARI KALDIRILDI)
 # ============================================================
 
 class AnalysisResult(Base):
@@ -106,32 +107,34 @@ class AnalysisResult(Base):
     upload_id = Column(String, nullable=True, index=True)
     result_type = Column(String, nullable=False, index=True)
     
-    # 📌 TÜM VERİ (JSONB)
+    # TÜM VERİ (JSONB)
     data = Column(JSONB, nullable=False)
     params = Column(JSONB, default={})
     
-    # 📌 ASYNC TAKİP (NULL ise senkron)
+    # ASYNC TAKİP (NULL ise senkron)
     task_id = Column(String, nullable=True, index=True)
     status = Column(String, nullable=True)  # processing, completed, failed
     progress = Column(Integer, default=0)
     message = Column(String, nullable=True)
     
-    # 📌 METADATA
+    # METADATA
     total_materials = Column(Integer, default=0)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
     
-    # 🆕 AI ALANLARI
-    ai_summary = Column(JSONB, nullable=True)          # AI özeti (tüm ürünleri kapsayan)
-    ai_status = Column(String, nullable=True)          # 'pending', 'completed', 'failed'
-    ai_version = Column(String, nullable=True)         # AI model sürümü (ör. 'gemini-1.5-flash')
-    ai_created_at = Column(DateTime, nullable=True)    # Oluşturulma zamanı
-    ai_prompt_version = Column(String, nullable=True)  # Prompt sürümü (versiyon yönetimi için)
+    # AI ALANLARI
+    ai_summary = Column(JSONB, nullable=True)
+    ai_status = Column(String, nullable=True)  # 'pending', 'completed', 'failed'
+    ai_version = Column(String, nullable=True)
+    ai_created_at = Column(DateTime, nullable=True)
+    ai_prompt_version = Column(String, nullable=True)
     
-    # ✅ İlişki
+    # ✅ UI alanları KALDIRILDI (label, color, badge, ui_text yok)
+    
     user = relationship("User")
+
 
 class UserLearningData(Base):
     __tablename__ = "user_learning_data"
@@ -208,17 +211,16 @@ class UserTokenTransaction(Base):
 
 
 # ============================================
-# 🆕 POLAR ENTEGRASYONU İÇİN YENİ MODELLER
+# POLAR ENTEGRASYONU
 # ============================================
 
 class CreditPackage(Base):
-    """Kredi paketleri - Polar Product ID ile eşleştirme"""
     __tablename__ = "credit_packages"
     id = Column(Integer, primary_key=True, index=True)
-    polar_product_id = Column(String, unique=True, index=True, nullable=False)  # prod_xxx
-    name = Column(String, nullable=False)  # "Starter", "Growth", "Business"
-    credits = Column(Integer, nullable=False)  # 100, 250, 500
-    price_tl = Column(Float, nullable=False)  # 1990, 4490, 7990
+    polar_product_id = Column(String, unique=True, index=True, nullable=False)
+    name = Column(String, nullable=False)
+    credits = Column(Integer, nullable=False)
+    price_tl = Column(Float, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -228,120 +230,107 @@ class CreditTransaction(Base):
     __tablename__ = "credit_transactions"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Integer, nullable=False)  # Kredi miktarı
-    price = Column(Float, nullable=True)      # KDV'siz fiyat (TL)
-    tax = Column(Float, nullable=True, default=0)  # 🆕 KDV tutarı
+    amount = Column(Integer, nullable=False)
+    price = Column(Float, nullable=True)
+    tax = Column(Float, nullable=True, default=0)
     transaction_type = Column(String, nullable=False)  # "purchase", "refund", "bonus"
     polar_order_id = Column(String, nullable=True, index=True)
     polar_product_id = Column(String, nullable=True)
     description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-# app/models.py - En alta ekleyin
 
 class SupportTicket(Base):
-    """Destek talepleri"""
     __tablename__ = "support_tickets"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     subject = Column(String, nullable=False)
     message = Column(Text, nullable=False)
-    priority = Column(String, default="medium")  # low, medium, high
-    status = Column(String, default="open")  # open, in_progress, resolved, closed
+    priority = Column(String, default="medium")
+    status = Column(String, default="open")
     created_at = Column(DateTime, default=datetime.utcnow)
     resolved_at = Column(DateTime, nullable=True)
-    
-    # user = relationship("User")  # İlişki kaldırıldı (mevcut yapıya uygun)
+
 
 # ============================================
-# 🆕 ANALYSIS INPUTS (KALICI VERİ SAKLAMA)
+# ANALYSIS INPUTS
 # ============================================
 
 class AnalysisInput(Base):
-    """Kullanıcı tarafından yüklenen Excel verileri (Kalıcı)"""
     __tablename__ = "analysis_inputs"
-    
     id = Column(Integer, primary_key=True, index=True)
-    upload_id = Column(String, unique=True, index=True, nullable=False)  # UUID
+    upload_id = Column(String, unique=True, index=True, nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     file_name = Column(String, nullable=False)
     file_size = Column(Integer, default=0)
-    data = Column(JSON, nullable=False)  # Tüm Excel verisi (materials, suppliers, mapping)
+    data = Column(JSON, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
-# app/models.py - En sona (SupportTicket'ten sonra) EKLEYİN
-
 # ============================================
-# 🆕 ANALYSIS BATCH RESULTS (TEK KAYIT)
+# ANALYSIS BATCH RESULTS
 # ============================================
 
 class AnalysisBatchResult(Base):
-    """Batch analiz sonuçları - Tüm veri TEK kayıtta"""
     __tablename__ = "analysis_batch_results"
-    
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    upload_id = Column(String, nullable=True, index=True)  # Hangi upload'dan geldiği
-    result_type = Column(String, nullable=False, index=True)  # forecast_batch, safety_stock_batch, etc.
-    
-    # 📌 TEK JSON'da TÜM veri
-    result_data = Column(JSON, nullable=False)  # Tüm malzemelerin sonuçları
+    upload_id = Column(String, nullable=True, index=True)
+    result_type = Column(String, nullable=False, index=True)
+    result_data = Column(JSON, nullable=False)
     params = Column(JSON, default={})
-    
     total_materials = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
 
 
 # ============================================
-# 🆕 ANALYSIS MATERIAL SUMMARY (Hafif Özet)
+# ANALYSIS MATERIAL SUMMARY
 # ============================================
 
 class AnalysisMaterialSummary(Base):
-    """Malzeme bazlı analiz özetleri - Sadece önemli metrikler"""
     __tablename__ = "analysis_material_summary"
-    
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    upload_id = Column(String, nullable=True, index=True)  # Hangi upload'dan geldiği
-    batch_id = Column(Integer, ForeignKey("analysis_batch_results.id"), nullable=True)  # Hangi batch'ten
-    
+    upload_id = Column(String, nullable=True, index=True)
+    batch_id = Column(Integer, ForeignKey("analysis_batch_results.id"), nullable=True)
     material_code = Column(String, nullable=False, index=True)
     material_group = Column(String, nullable=True)
     result_type = Column(String, nullable=False, index=True)
-    
-    # 📌 Sadece ÖZET veri (hafif - AI için)
-    summary = Column(JSON, nullable=False)  # {pattern, cv, trend, service_level, ...}
-    
+    summary = Column(JSON, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
 
-# ============================================================
-# 🆕 PROCESSING CREDIT MİMARİSİ - YENİ MODELLER
-# ============================================================
-    
-    # Durum
+
+# ============================================
+# PROCESSING CREDIT MİMARİSİ
+# ============================================
+
+class EndpointProfile(Base):
+    __tablename__ = "endpoint_profiles"
+    id = Column(Integer, primary_key=True, index=True)
+    endpoint = Column(String, unique=True, nullable=False, index=True)
+    method = Column(String, default="POST")
+    base_credit = Column(Integer, default=1)
+    pricing_type = Column(String, default="DATA_POINTS")
+    algorithm_weight = Column(Float, default=1.0)
+    avg_time_per_unit = Column(Float, default=0.0)
+    dataset_config = Column(JSONB, default={}, nullable=False)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Metadata
     description = Column(String, nullable=True)
     version = Column(String, default="1.0")
 
+
 class ProcessingScoreRange(Base):
-    """
-    Processing Score -> İşlem Kredisi eşleştirme tablosu
-    """
     __tablename__ = "processing_score_ranges"
-    
     id = Column(Integer, primary_key=True, index=True)
-    min_score = Column(Integer, nullable=False)  # Minimum Processing Score
-    max_score = Column(Integer, nullable=False)  # Maksimum Processing Score
-    credit_cost = Column(Integer, nullable=False)  # Bu aralığa denk gelen İşlem Kredisi
+    min_score = Column(Integer, nullable=False)
+    max_score = Column(Integer, nullable=False)
+    credit_cost = Column(Integer, nullable=False)
     description = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -349,127 +338,64 @@ class ProcessingScoreRange(Base):
 
 
 class AnalysisDataset(Base):
-    """
-    Dataset tablosu - Her analiz için oluşturulan veri kümesi
-    """
     __tablename__ = "analysis_datasets"
-    
     id = Column(Integer, primary_key=True, index=True)
-    upload_id = Column(String, nullable=True, index=True)  # Upload'dan gelen ID
+    upload_id = Column(String, nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
-    # Dataset metrikleri
-    product_count = Column(Integer, default=0)  # Ürün sayısı
-    period_count = Column(Integer, default=0)  # Dönem sayısı (hafta)
-    data_points = Column(Integer, default=0)  # ProductCount × PeriodCount
-    
-    # Dataset içeriği (JSON)
+    product_count = Column(Integer, default=0)
+    period_count = Column(Integer, default=0)
+    data_points = Column(Integer, default=0)
     dataset_data = Column(JSONB, nullable=False, default={})
-    
-    # Metadata
-    source_type = Column(String, default="excel")  # excel, api, erp, csv
+    source_type = Column(String, default="excel")
     source_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True)
-    
-    # İlişki
     user = relationship("User")
 
 
 class ProcessingTransaction(Base):
-    """
-    İşlem Kredisi harcama log tablosu
-    """
     __tablename__ = "processing_transactions"
-    
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     dataset_id = Column(Integer, ForeignKey("analysis_datasets.id"), nullable=True)
     endpoint = Column(String, nullable=False)
-    
-    # Hesaplama detayları
     processing_score = Column(Integer, nullable=False)
     credit_cost = Column(Integer, nullable=False)
     balance_after = Column(Integer, nullable=False)
-    
-    # Performance
-    elapsed_time_ms = Column(Float, nullable=True)  # Gerçek işlem süresi (ms)
-    avg_time_per_unit_ms = Column(Float, nullable=True)  # Birim başına ortalama süre
-    
-    # Metadata
-    status = Column(String, default="completed")  # completed, failed
+    elapsed_time_ms = Column(Float, nullable=True)
+    avg_time_per_unit_ms = Column(Float, nullable=True)
+    status = Column(String, default="completed")
     error_message = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # İlişki
     user = relationship("User")
     dataset = relationship("AnalysisDataset")
 
-# ============================================================
-# 🆕 ENDPOINT PROFILE MODELİ
-# ============================================================
 
-class EndpointProfile(Base):
-    """
-    Endpoint profil tablosu - Her endpoint'in fiyatlandırma profili
-    """
-    __tablename__ = "endpoint_profiles"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    endpoint = Column(String, unique=True, nullable=False, index=True)
-    method = Column(String, default="POST")
-    
-    # Ücretlendirme parametreleri
-    base_credit = Column(Integer, default=1)
-    pricing_type = Column(String, default="DATA_POINTS")  # FIXED, DATA_POINTS, DATA_POINTS_ITERATION, AI_USAGE, CUSTOM, COMPLEX
-    algorithm_weight = Column(Float, default=1.0)
-    avg_time_per_unit = Column(Float, default=0.0)
-    
-    # 🆕 Dataset konfigürasyonu (JSONB)
-    dataset_config = Column(JSONB, default={}, nullable=False)
-    # Örnek:
-    # {
-    #   "datasets": [
-    #     {"table": "materials", "weight": 1.0, "type": "data_points"},
-    #     {"table": "material_suppliers", "weight": 1.5, "type": "relation"},
-    #     {"table": "suppliers", "weight": 0.5, "type": "lookup"}
-    #   ]
-    # }
-    
-    # Durum
-    is_active = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
-    # Metadata
-    description = Column(String, nullable=True)
-    version = Column(String, default="1.0")
-
-# app/models.py - DOSYA SONUNA EKLE
-
-# ============================================================
-# 🆕 SMART IMPORT ENGINE - VALIDATION MODELS
-# ============================================================
+# ============================================
+# SMART IMPORT ENGINE - VALIDATION MODELS
+# ============================================
 
 class ValidationRule(Base):
-    """Veri doğrulama kuralları - Admin panelinden yönetilir"""
     __tablename__ = "validation_rules"
-    
     id = Column(Integer, primary_key=True, index=True)
-    rule_type = Column(String, nullable=False, index=True)  # column_check, data_type, business_rule, consistency
-    table_name = Column(String, nullable=True)  # Temel_Veriler, Tedarikciler, Malzeme_Tedarikciler
+    rule_type = Column(String, nullable=False, index=True)
+    table_name = Column(String, nullable=True)
     column_name = Column(String, nullable=True)
     rule_config = Column(JSONB, nullable=False, default={})
-    severity = Column(String, default="warning")  # error, warning, info
+    severity = Column(String, default="warning")
     is_active = Column(Boolean, default=True)
     description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+# ✅ GÜNCELLENMİŞ AnalysisImpactRule (UI ALANLARI KALDIRILDI)
 class AnalysisImpactRule(Base):
-    """Analiz etki kuralları - Hangi alan hangi analizi etkiler"""
+    """
+    Analiz etki kuralları - Hangi alan hangi analizi etkiler
+    UI alanları (label, color, badge, ui_text) KALDIRILDI
+    """
     __tablename__ = "analysis_impact_rules"
     
     id = Column(Integer, primary_key=True, index=True)
@@ -477,21 +403,19 @@ class AnalysisImpactRule(Base):
     field_name = Column(String, nullable=False)
     importance = Column(String, nullable=False)  # critical, recommended, optional, not_used
     description = Column(String, nullable=True)
-    min_weeks_required = Column(Integer, nullable=True)  # Forecast için 12, Safety Stock için 8, vb.
+    min_weeks_required = Column(Integer, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class NormalizationRule(Base):
-    """Akıllı veri standardizasyonu kuralları"""
     __tablename__ = "normalization_rules"
-    
     id = Column(Integer, primary_key=True, index=True)
     rule_name = Column(String, nullable=False)
-    pattern = Column(String, nullable=False)  # regex pattern
+    pattern = Column(String, nullable=False)
     replacement = Column(String, nullable=True)
-    confidence_threshold = Column(Float, default=0.8)  # 0-1 arası, bu eşiğin altı otomatik düzeltilmez
+    confidence_threshold = Column(Float, default=0.8)
     is_active = Column(Boolean, default=True)
     description = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -499,15 +423,57 @@ class NormalizationRule(Base):
 
 
 class ValidationResult(Base):
-    """Import Wizard sonuçları - Geçici olarak saklanır"""
     __tablename__ = "validation_results"
-    
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, nullable=False, index=True)
     upload_id = Column(String, nullable=False, index=True)
-    step = Column(Integer, default=1)  # 1-6 arası
+    step = Column(Integer, default=1)
     result_data = Column(JSONB, nullable=False, default={})
-    status = Column(String, default="in_progress")  # in_progress, completed, failed
+    status = Column(String, default="in_progress")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    expires_at = Column(DateTime, nullable=True)  # 24 saat sonra temizlenir
+    expires_at = Column(DateTime, nullable=True)
+
+
+# ============================================================
+# 🆕 COMPANY LEARNING MEMORY - YENİ MODEL
+# ============================================================
+
+class CompanyLearningMemory(Base):
+    """
+    Şirket Hafızası - Learning Engine tarafından öğrenilen davranış kalıpları
+    """
+    __tablename__ = "company_learning_memory"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # Kural Bilgileri
+    rule_id = Column(String, unique=True, nullable=False, index=True)  # summer_packaging_peak, accessory_intermittent, vb.
+    rule_name = Column(String, nullable=False)
+    rule_type = Column(String, nullable=False)  # seasonal, intermittent, lead_time, trend, supplier, successful_method
+    
+    # Kural Detayları
+    description = Column(Text, nullable=True)
+    pattern_data = Column(JSONB, nullable=True)  # Örnek: {"group": "Ambalaj", "months": [6,7,8], "increase_rate": 0.35}
+    
+    # İstatistikler
+    confidence_score = Column(Float, default=0.0)  # 0-1 arası
+    usage_count = Column(Integer, default=0)
+    success_count = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+    
+    # Zaman Bilgileri
+    first_seen_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
+    
+    # Durum
+    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)  # Doğrulanmış kural
+    
+    # Metadata
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # İlişki
+    user = relationship("User")

@@ -1,4 +1,4 @@
-// frontend/src/pages/DashboardPage.tsx - TAM VE GÜNCEL (IMPORT WIZARD ENTEGRE)
+// frontend/src/pages/DashboardPage.tsx - TAM VE GÜNCEL (YENİ BİLEŞENLERLE)
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
@@ -73,8 +73,12 @@ import {
   CriticalItem,
 } from '../types/dashboard';
 
-// ✅ Import Wizard
+// ✅ YENİ BİLEŞENLER
 import ImportWizard from '../components/ImportWizard';
+import LearningScoreBadge from '../components/Dashboard/LearningScoreBadge';
+import AIContextPanel from '../components/Dashboard/AIContextPanel';
+import ExecutiveSummary from '../components/Dashboard/ExecutiveSummary';
+import TodaysDecision from '../components/Dashboard/TodaysDecision';
 
 // ============================================================
 // 📌 INTERFACES
@@ -308,7 +312,6 @@ const getChangePrefix = (change: number) => {
 // 📊 API FONKSİYONLARI (OPTİMİZE EDİLMİŞ)
 // ============================================================
 
-// ✅ Tüm dashboard verilerini tek bir query'de birleştir
 const fetchAllDashboardData = async () => {
   const [summary, aiRec, alerts, change] = await Promise.all([
     api.get('/api/dashboard/summary').catch(() => ({ data: { success: false, data: { modules: {} } } })),
@@ -328,157 +331,6 @@ const fetchAllDashboardData = async () => {
 // ============================================================
 // 📊 BİLEŞENLER
 // ============================================================
-
-// ✅ AI Executive - Koşullu Gösterim
-const AIExecutiveCard = ({
-  data,
-  loading,
-  hasData,
-  userName,
-  onReadMore,
-  onUpload,
-}: {
-  data: AIExecutiveData | null;
-  loading: boolean;
-  hasData: boolean;
-  userName: string;
-  onReadMore: () => void;
-  onUpload: () => void;
-}) => {
-  if (loading) {
-    return (
-      <Card sx={{ borderRadius: 3, border: '1px solid #e8f0fe', height: '100%' }}>
-        <CardContent sx={{ py: 1.5, px: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-            <Skeleton variant="circular" width={40} height={40} />
-            <Box sx={{ flex: 1 }}>
-              <Skeleton variant="text" width="40%" height={20} />
-              <Skeleton variant="text" width="80%" height={14} />
-              <Skeleton variant="text" width="60%" height={14} />
-            </Box>
-          </Box>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // ✅ VERİSİ OLMAYAN KULLANICI - Hoş Geldiniz
-  if (!hasData || !data) {
-    return (
-      <Card sx={{ 
-        borderRadius: 3, 
-        border: '1px solid #e8f0fe',
-        background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)',
-        height: '100%',
-      }}>
-        <CardContent sx={{ py: 2.5, px: 3 }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2.5 }}>
-            <Avatar sx={{ bgcolor: '#1f4e79', width: 44, height: 44 }}>
-              <Bot width={22} height={22} color="white" />
-            </Avatar>
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, color: '#1f4e79', mb: 0.5, fontSize: '1.1rem' }}>
-                Merhaba {userName}, Stokonomi'ye Hoş Geldiniz 👋
-              </Typography>
-              <Typography variant="body1" sx={{ color: '#374151', mb: 0.5, fontSize: '0.9rem' }}>
-                Ben Stokonomi AI. Birkaç dakika içinde şirketinizi tanıyacak 
-                ve size özel stok yönetimi önerileri oluşturmaya başlayacağım.
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#6b7280', fontSize: '0.8rem', mb: 1.5 }}>
-                İlk adım olarak veri dosyanızı yükleyelim.
-              </Typography>
-              <Button
-                variant="contained"
-                startIcon={<CloudUpload sx={{ fontSize: 18 }} />}
-                onClick={onUpload}
-                sx={{
-                  bgcolor: '#1f4e79',
-                  '&:hover': { bgcolor: '#1a3d5c' },
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  px: 2.5,
-                  py: 0.5,
-                  fontSize: '0.75rem',
-                }}
-              >
-                Veri Yükle
-              </Button>
-            </Box>
-          </Box>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  // ✅ VERİSİ OLAN KULLANICI - AI Executive Summary
-  const summaryText = data.summary || 'Analizleriniz başarıyla tamamlandı. Detaylar için aşağıdaki kartları inceleyin.';
-  const summaryLines = summaryText.split('.').filter(s => s.trim());
-  const displaySummary = summaryLines.slice(0, 3).join('. ');
-  const hasMore = summaryLines.length > 3;
-
-  return (
-    <Card sx={{ 
-      borderRadius: 3, 
-      border: '1px solid #d0e0ff',
-      background: 'linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%)',
-      height: '100%',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      <Box sx={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, bgcolor: '#1f4e79' }} />
-      
-      <CardContent sx={{ py: 1.5, px: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
-          <Avatar sx={{ bgcolor: '#1f4e79', width: 40, height: 40 }}>
-            <Bot width={20} height={20} color="white" />
-          </Avatar>
-          
-          <Box sx={{ flex: 1 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
-              <Typography variant="body2" sx={{ color: '#1f4e79', fontWeight: 600, fontSize: '0.7rem', letterSpacing: '0.3px' }}>
-                👔 Yönetici Özeti
-              </Typography>
-              <Chip 
-                label={`${Math.round((data.confidence || 0) * 100)}% Güven`}
-                size="small"
-                sx={{ height: 18, fontSize: '0.5rem', bgcolor: '#e8f0fe', color: '#1f4e79' }}
-              />
-            </Box>
-            
-            <Typography variant="body2" sx={{ color: '#1f4e79', fontWeight: 500, fontSize: '0.85rem', lineHeight: 1.5, mb: 0.5 }}>
-              {displaySummary}
-              {hasMore && (
-                <Button
-                  variant="text"
-                  size="small"
-                  onClick={onReadMore}
-                  sx={{
-                    color: '#1f4e79',
-                    fontWeight: 600,
-                    fontSize: '0.7rem',
-                    textTransform: 'none',
-                    p: 0,
-                    ml: 0.5,
-                    minWidth: 'auto',
-                    '&:hover': { bgcolor: 'transparent', textDecoration: 'underline' },
-                  }}
-                >
-                  Devamını Oku →
-                </Button>
-              )}
-            </Typography>
-            
-            {data.last_analysis_date && (
-              <Typography variant="caption" sx={{ fontSize: '0.6rem', color: '#6b7280' }}>
-                Son analiz: {data.last_analysis_date}
-              </Typography>
-            )}
-          </Box>
-        </Box>
-      </CardContent>
-    </Card>
-  );
-};
 
 // ✅ Executive Summary Drawer
 const ExecutiveDrawer = ({
@@ -639,7 +491,6 @@ const AIStrategicRecommendation = ({
     );
   }
 
-  // ✅ VERİ YOKSA - Bilgilendirme mesajı göster
   if (!data || !data.has_recommendation || !data.recommendation) {
     return (
       <Card sx={{
@@ -674,7 +525,6 @@ const AIStrategicRecommendation = ({
   const priorityLabel = rec.priority_label || getPriorityLabel(rec.priority);
   const colorHex = getPriorityColorHex(rec.priority);
 
-  // ✅ Navigasyon handler
   const handleNavigate = () => {
     console.log('🔍 AI Öneri Navigasyon:', {
       targetPage: rec.target_page,
@@ -947,7 +797,6 @@ const ChangeSection = ({
     );
   }
 
-  // ✅ VERİ YOKSA - Bilgilendirme mesajı göster
   if (!changes || !changes.has_changes || Object.keys(changes.changes || {}).length === 0) {
     return (
       <Card sx={{
@@ -1129,7 +978,6 @@ const GainsSection = ({
     );
   }
 
-  // ✅ VERİ YOKSA - Bilgilendirme mesajı göster
   if (!gains || gains.length === 0) {
     return (
       <Card sx={{
@@ -1226,7 +1074,6 @@ const ActionDialog = ({
     onClose();
   };
 
-  // critical_items'den gösterilecek kolonları belirle
   const getTableColumns = (items: CriticalItem[]) => {
     if (!items || items.length === 0) return [];
     
@@ -1654,7 +1501,6 @@ const AttentionRequired = ({
     );
   }
 
-  // ✅ VERİ YOKSA - Bilgilendirme mesajı göster
   if (!items || items.length === 0) {
     return (
       <Card sx={{
@@ -1751,12 +1597,6 @@ const AttentionRequired = ({
     </Card>
   );
 };
-
-// ============================================================
-// 📌 IMPORT WIZARD DIALOG (ESKİ) - KALDIR
-// ============================================================
-
-// ❌ Eski ImportWizardDialog kaldırıldı, yerine yeni ImportWizard kullanılıyor
 
 // ============================================================
 // 📌 ANA DASHBOARD COMPONENT
@@ -2280,7 +2120,6 @@ export default function DashboardPage() {
     setWizardOpen(false);
     setWizardFile(null);
     setSuccessMessage('✅ Dataset başarıyla oluşturuldu!');
-    // Verileri yenile
     fetchDatasetStatus();
     fetchAIExecutiveSummary();
     refetchDashboard();
@@ -2350,17 +2189,35 @@ export default function DashboardPage() {
         {/* SOL SÜTUN - %70 */}
         <Grid size={{ xs: 12, md: 8 }}>
           <Stack spacing={2.5}>
-            {/* 1. Executive Summary / Hoş Geldiniz */}
-            <AIExecutiveCard
-              data={aiExecutive}
+            {/* 1. Learning Score Badge - ÜSTTE */}
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <LearningScoreBadge variant="compact" />
+            </Box>
+
+            {/* 2. Executive Summary */}
+            <ExecutiveSummary
+              data={aiExecutive ? {
+                summary: aiExecutive.summary || 'Analiz sonuçlarınız burada görünecek.',
+                details: {
+                  total_products: 0,
+                  critical_products: 0,
+                  avg_risk_score: 0,
+                  avg_service_level: 0,
+                  riskiest_group: '-',
+                  top_problem: aiExecutive.details?.[0] || 'Henüz problem tespit edilmedi.',
+                  top_recommendation: aiExecutive.executive_recommendations?.[0] || 'Henüz öneri yok.',
+                },
+                confidence: aiExecutive.confidence || 0,
+                last_analysis_date: aiExecutive.last_analysis_date || 'Bugün',
+              } : null}
               loading={aiLoading}
-              hasData={hasData}
-              userName={userName}
               onReadMore={() => setExecutiveDrawerOpen(true)}
-              onUpload={() => handleOpenWizard()}
             />
 
-            {/* 2. AI Strategic Recommendation */}
+            {/* 3. Bugünün Kararı */}
+            <TodaysDecision />
+
+            {/* 4. AI Strategic Recommendation */}
             {aiRecommendationData && aiRecommendationData.has_recommendation && (
               <AIStrategicRecommendation
                 data={aiRecommendationData}
@@ -2369,27 +2226,30 @@ export default function DashboardPage() {
               />
             )}
 
-            {/* 3. Analysis Highlights */}
+            {/* 5. Analysis Highlights */}
             <AnalysisHighlights
               modules={dashboardSummaryData?.data?.modules}
               loading={summaryLoading}
               onOpen={handleNavigateWithContext}
             />
 
-            {/* 4. Son Analizden Bu Yana Ne Değişti? */}
+            {/* 6. AI İşletmenizi Tanıyor */}
+            <AIContextPanel maxItems={6} />
+
+            {/* 7. Son Analizden Bu Yana Ne Değişti? */}
             <ChangeSection changes={changeData} loading={changeLoading} />
 
-            {/* 5. İşletme Kazanımları */}
+            {/* 8. İşletme Kazanımları */}
             <GainsSection gains={gains} loading={changeLoading} />
 
-            {/* 6. Aksiyon Gerektiren Konular */}
+            {/* 9. Aksiyon Gerektiren Konular */}
             <AttentionRequired 
               items={attentionItems} 
               loading={attentionLoading} 
               onItemClick={handleActionItemClick}
             />
 
-            {/* 7. Quick Analysis */}
+            {/* 10. Quick Analysis */}
             <QuickAnalysisGrid onNavigate={navigateTo} loading={loading} />
           </Stack>
         </Grid>
@@ -2397,14 +2257,17 @@ export default function DashboardPage() {
         {/* SAĞ SÜTUN - %30 */}
         <Grid size={{ xs: 12, md: 4 }}>
           <Stack spacing={2.5}>
-            {/* 8. Active Dataset */}
+            {/* Learning Score Detaylı */}
+            <LearningScoreBadge variant="full" showDetails />
+
+            {/* Active Dataset */}
             <DatasetStatusCard
               dataset={datasetStatus}
               loading={datasetLoading}
               onUpload={() => handleOpenWizard()}
             />
 
-            {/* 9. Recent Analyses */}
+            {/* Recent Analyses */}
             <RecentAnalysesList
               historyItems={historyItems}
               loading={historyLoading}

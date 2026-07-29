@@ -1,5 +1,4 @@
-// frontend/src/pages/SimulationPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
-// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
+// frontend/src/pages/SimulationPage.tsx - TAM VE DÜZELTİLMİŞ
 
 import { useState, useEffect } from 'react';
 import {
@@ -36,9 +35,13 @@ import {
   Slider,
   Avatar,
   alpha,
+  // ✅ EKSİK IMPORT'LAR
   Stepper,
   Step,
   StepLabel,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import {
   Timeline,
@@ -66,12 +69,23 @@ import {
   Psychology,
   ShowChart,
   AccountBalanceWallet,
+  ExpandMore,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { usePricingPreview } from '../hooks/usePricing';
 import { fetchAndLoadResult, checkAndLoadAnalysis } from '../utils/loadAnalysisResult';
+
+// ✅ YENİ BİLEŞENLER
+import DecisionReasoning from '../components/Results/DecisionReasoning';
+import TechnicalAnalysisDetail from '../components/Results/TechnicalAnalysisDetail';
+import LearningScoreBadge from '../components/Dashboard/LearningScoreBadge';
+
+// ============================================================
+// 📌 INTERFACES
+// ============================================================
+
 interface SimulationResult {
   material_code: string;
   group: string;
@@ -89,6 +103,17 @@ interface SimulationResult {
   recommendations: string[];
   current_rop: number;
   recommended_rop: number;
+  // ✅ YENİ ALANLAR
+  ai_decision?: {
+    decision: string;
+    priority: string;
+    confidence: number;
+    reasons: string[];
+    expected_impact: Record<string, string>;
+    next_review_days: number;
+    explanation: string;
+    analysis_type: string;
+  };
 }
 
 interface HistoryItem {
@@ -97,12 +122,11 @@ interface HistoryItem {
   data: any;
 }
 
-interface AIComment {
-  summary: string;
-  performance: string;
-  risk: string;
-  recommendation: string;
-  confidence: string;
+interface AnalysisStep {
+  label: string;
+  description: string;
+  status: 'pending' | 'active' | 'completed' | 'error';
+  timestamp?: string;
 }
 
 interface AnalysisSummary {
@@ -116,14 +140,117 @@ interface AnalysisSummary {
   adaptiveUsedCount: number;
 }
 
-interface AnalysisStep {
-  label: string;
-  description: string;
-  status: 'pending' | 'active' | 'completed' | 'error';
-  timestamp?: string;
+interface AIComment {
+  summary: string;
+  performance: string;
+  risk: string;
+  recommendation: string;
+  confidence: string;
 }
 
-// ✅ Analiz Aşamaları Bileşeni
+// ============================================================
+// 📌 AI REASONING SECTION BİLEŞENİ
+// ============================================================
+
+const AIReasoningSection = ({ result }: { result: SimulationResult }) => {
+  const aiDecision = result.ai_decision;
+  
+  if (!aiDecision) {
+    return null;
+  }
+
+  const reasoning = {
+    recommended_ss: result.recommended_rop || 0,
+    current_ss: result.current_rop || 0,
+    reasons: aiDecision.reasons || [
+      result.service_level < 90 ? 'Servis seviyesi düşük' : '',
+      result.tail_risk > 0.5 ? 'Tail risk yüksek' : '',
+      result.stockout_probability > 10 ? 'Stok tükenme riski yüksek' : '',
+      result.cvar_95 > 100 ? 'CVaR riski yüksek' : '',
+    ].filter(Boolean),
+    conclusion: aiDecision.decision === 'increase_safety_stock' 
+      ? 'ROP ve SS artırılmalı.' 
+      : aiDecision.decision === 'maintain_current'
+      ? 'Mevcut politika yeterli.'
+      : 'Detaylı analiz önerilir.',
+    confidence: aiDecision.confidence || 0.5,
+    factors: {
+      cv: 0,
+      lead_time: 0,
+      intermittent: false,
+      seasonal: false,
+      risk_score: result.tail_risk || 0,
+      pattern: result.tail_risk > 0.5 ? 'Yüksek Risk' : 'Düşük Risk',
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 1 }}>
+      <DecisionReasoning
+        materialCode={result.material_code}
+        reasoning={reasoning}
+      />
+    </Box>
+  );
+};
+
+// ============================================================
+// 📌 TEKNİK ANALİZ BÖLÜMÜ - ACCORDION
+// ============================================================
+
+const TechnicalAnalysisSection = ({ result }: { result: SimulationResult }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const technicalData = {
+    material_code: result.material_code,
+    cv: result.tail_risk || 0,
+    pattern: result.tail_risk > 0.5 ? 'YUKSEK_RISK' : 'DUSUK_RISK',
+    pattern_label: result.tail_risk > 0.5 ? 'Yüksek Risk' : 'Düşük Risk',
+    pattern_color: result.tail_risk > 0.5 ? 'error' : 'success',
+    abc: 'C',
+    abc_label: 'Simülasyon',
+    xyz: result.tail_risk > 0.5 ? 'Z' : 'X',
+    xyz_label: result.tail_risk > 0.5 ? 'Yüksek Risk' : 'Düşük Risk',
+    forecast_model: 'n/a',
+    forecast_model_label: 'Simülasyon',
+    seasonality: false,
+    seasonality_label: 'Yok',
+    seasonality_strength: 0,
+    trend_direction: result.service_level > 95 ? 'Artış' : 'Azalış',
+    trend_percent: 0,
+    lead_time_days: 14,
+    zero_ratio: 0,
+    risk_score: result.tail_risk || 0,
+    risk_level: result.tail_risk > 0.5 ? 'Yüksek' : 'Düşük',
+  };
+
+  return (
+    <Accordion 
+      expanded={expanded} 
+      onChange={() => setExpanded(!expanded)}
+      sx={{ 
+        mt: 1, 
+        '&:before': { display: 'none' },
+        border: '1px solid #e8f0fe',
+        borderRadius: 1,
+      }}
+    >
+      <AccordionSummary expandIcon={<ExpandMore />}>
+        <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.7rem', color: '#1f4e79' }}>
+          📊 Teknik Analizi Göster
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 1 }}>
+        <TechnicalAnalysisDetail data={technicalData} />
+      </AccordionDetails>
+    </Accordion>
+  );
+};
+
+// ============================================================
+// 📌 ANALİZ AŞAMALARI BİLEŞENİ
+// ============================================================
+
 const AnalysisProgress = ({ 
   steps, 
   activeStep, 
@@ -194,6 +321,7 @@ const AnalysisProgress = ({
     </Box>
   );
 };
+
 
 export default function SimulationPage() {
   const { user, fetchUser } = useAuth();

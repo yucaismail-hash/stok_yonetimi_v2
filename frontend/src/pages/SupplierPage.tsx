@@ -1,6 +1,3 @@
-// frontend/src/pages/SupplierPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
-// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
-
 import { useState, useEffect } from 'react';
 import {
   Box,
@@ -35,6 +32,10 @@ import {
   Stack,
   Avatar,
   alpha,
+  // ✅ EKSİK IMPORT'LAR
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import {
   LocalShipping,
@@ -63,12 +64,24 @@ import {
   TrendingDown,
   Pending,
   AccountBalanceWallet,
+  // ✅ EKSİK IMPORT
+  ExpandMore,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useAuth } from '../hooks/useAuth';
 import { usePricingPreview } from '../hooks/usePricing';
 import { fetchAndLoadResult, checkAndLoadAnalysis } from '../utils/loadAnalysisResult';
+
+// ✅ YENİ BİLEŞENLER
+import DecisionReasoning from '../components/Results/DecisionReasoning';
+import TechnicalAnalysisDetail from '../components/Results/TechnicalAnalysisDetail';
+import LearningScoreBadge from '../components/Dashboard/LearningScoreBadge';
+
+// ============================================================
+// 📌 INTERFACES
+// ============================================================
+
 interface SupplierResult {
   supplier_id: string;
   name: string;
@@ -83,6 +96,17 @@ interface SupplierResult {
   risk_level: string;
   performance_level: string;
   recommendation: string;
+  // ✅ YENİ ALANLAR
+  ai_decision?: {
+    decision: string;
+    priority: string;
+    confidence: number;
+    reasons: string[];
+    expected_impact: Record<string, string>;
+    next_review_days: number;
+    explanation: string;
+    analysis_type: string;
+  };
 }
 
 interface HistoryItem {
@@ -117,7 +141,109 @@ interface AIComment {
   confidence: string;
 }
 
-// ✅ Analiz Aşamaları Bileşeni
+// ============================================================
+// 📌 AI REASONING SECTION BİLEŞENİ
+// ============================================================
+
+const AIReasoningSection = ({ result }: { result: SupplierResult }) => {
+  const aiDecision = result.ai_decision;
+  
+  if (!aiDecision) {
+    return null;
+  }
+
+  const reasoning = {
+    recommended_ss: 0,
+    current_ss: 0,
+    reasons: aiDecision.reasons || [
+      result.risk_score > 0.7 ? 'Yüksek risk skoru' : '',
+      result.performance_score < 0.4 ? 'Düşük performans' : '',
+      result.ontime_rate < 80 ? 'Zamanında teslimat oranı düşük' : '',
+      result.lt_mean > 21 ? 'Lead Time uzun' : '',
+    ].filter(Boolean),
+    conclusion: aiDecision.decision === 'review_supplier' 
+      ? 'Tedarikçi gözden geçirilmeli.' 
+      : aiDecision.decision === 'maintain_current'
+      ? 'Mevcut tedarikçi performansı yeterli.'
+      : 'Detaylı analiz önerilir.',
+    confidence: aiDecision.confidence || 0.5,
+    factors: {
+      cv: 0,
+      lead_time: result.lt_mean || 14,
+      intermittent: false,
+      seasonal: false,
+      risk_score: result.risk_score || 0,
+      pattern: result.performance_level || 'ORTA',
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 1 }}>
+      <DecisionReasoning
+        materialCode={result.supplier_id}
+        reasoning={reasoning}
+      />
+    </Box>
+  );
+};
+
+// ============================================================
+// 📌 TEKNİK ANALİZ BÖLÜMÜ - ACCORDION
+// ============================================================
+
+const TechnicalAnalysisSection = ({ result }: { result: SupplierResult }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const technicalData = {
+    material_code: result.supplier_id,
+    cv: result.risk_score || 0,
+    pattern: result.performance_level || 'ORTA',
+    pattern_label: result.performance_level || 'Orta',
+    pattern_color: result.performance_level === 'İYİ' ? 'success' : result.performance_level === 'ORTA' ? 'warning' : 'error',
+    abc: 'C',
+    abc_label: 'Tedarikçi',
+    xyz: result.risk_level === 'DÜŞÜK' ? 'X' : result.risk_level === 'ORTA' ? 'Y' : 'Z',
+    xyz_label: result.risk_level === 'DÜŞÜK' ? 'Düşük Risk' : result.risk_level === 'ORTA' ? 'Orta Risk' : 'Yüksek Risk',
+    forecast_model: 'n/a',
+    forecast_model_label: 'Tedarikçi',
+    seasonality: false,
+    seasonality_label: 'Yok',
+    seasonality_strength: 0,
+    trend_direction: result.performance_level === 'İYİ' ? 'Artış' : 'Azalış',
+    trend_percent: 0,
+    lead_time_days: result.lt_mean || 14,
+    zero_ratio: 0,
+    risk_score: result.risk_score || 0,
+    risk_level: result.risk_level || 'Düşük',
+  };
+
+  return (
+    <Accordion 
+      expanded={expanded} 
+      onChange={() => setExpanded(!expanded)}
+      sx={{ 
+        mt: 1, 
+        '&:before': { display: 'none' },
+        border: '1px solid #e8f0fe',
+        borderRadius: 1,
+      }}
+    >
+      <AccordionSummary expandIcon={<ExpandMore />}>
+        <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.7rem', color: '#1f4e79' }}>
+          📊 Teknik Analizi Göster
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 1 }}>
+        <TechnicalAnalysisDetail data={technicalData} />
+      </AccordionDetails>
+    </Accordion>
+  );
+};
+
+// ============================================================
+// 📌 ANALİZ AŞAMALARI BİLEŞENİ
+// ============================================================
+
 const AnalysisProgress = ({ 
   steps, 
   activeStep, 
@@ -188,6 +314,11 @@ const AnalysisProgress = ({
     </Box>
   );
 };
+
+// ============================================================
+// 📌 ANA SAYFA BİLEŞENİ
+// ============================================================
+
 
 export default function SupplierPage() {
   const { user, fetchUser } = useAuth();

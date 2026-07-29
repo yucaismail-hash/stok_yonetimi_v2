@@ -11,7 +11,7 @@ from app.api.endpoints import (notifications, tasks, upload,
                                forecast, simulate, report, pattern, 
                                safety_stock, backtest, supplier, learning, 
                                export, payment, profile, sectors, cost,
-                                 pricing, polar, dashboard, import_wizard)
+                                 pricing, polar, dashboard, import_wizard, learning_memory)
 
 from app.auth import auth_router
 from app.admin import router as admin_router
@@ -231,6 +231,7 @@ app.include_router(polar.router, prefix="/api", tags=["polar"])
 app.include_router(dashboard.router, prefix="/api", tags=["dashboard"])
 app.include_router(pricing.router, prefix="/api", tags=["pricing"])
 app.include_router(import_wizard.router, prefix="/api", tags=["import-wizard"])
+app.include_router(learning_memory.router, prefix="/api", tags=["Learning"])
 
 # ============================================
 # Public Endpoint'ler (Success / Cancel)

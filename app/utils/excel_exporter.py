@@ -1,3 +1,6 @@
+# app/utils/excel_exporter.py - TAM DOSYA (GÜNCELLENMİŞ)
+# 7 Sayfalı Excel Raporu
+
 import pandas as pd
 import numpy as np
 from datetime import datetime
@@ -5,31 +8,425 @@ from typing import Dict, List, Any, Optional
 import io
 import os
 
+
 class ExcelExporter:
-    """Excel raporlama ve dışa aktarma modülü"""
+    """Excel raporlama ve dışa aktarma modülü - 7 Sayfa"""
     
     def __init__(self):
         self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     
-    def export_recommendations(self, material_code: str, material_data: Dict,
-                              simulation_result: Dict, ai_analysis: Dict,
-                              optimized_params: Dict) -> io.BytesIO:
+    def export_bulk_report(
+        self, 
+        materials_data: List[Dict], 
+        learning_rules: List[Dict] = None,
+        ai_decision: Dict = None,
+        executive_summary: Dict = None
+    ) -> io.BytesIO:
         """
-        Malzeme için önerileri Excel olarak dışa aktar
+        Tüm malzemeler için toplu rapor oluştur - 7 SAYFA
+        
+        Sayfa 1: Yönetici Özeti
+        Sayfa 2: Kritik Ürünler
+        Sayfa 3: Tüm Sonuçlar
+        Sayfa 4: AI Kararları
+        Sayfa 5: İşletme Hafızası (Learning Engine)
+        Sayfa 6: Teknik Analiz
+        Sayfa 7: AI Açıklamaları
+        
+        Args:
+            materials_data: Malzeme analiz sonuçları listesi
+            learning_rules: Learning Engine'den gelen kurallar (opsiyonel)
+            ai_decision: AI Decision Engine'den gelen karar (opsiyonel)
+            executive_summary: Yönetici özeti (opsiyonel)
+        
+        Returns:
+            io.BytesIO: Excel dosyası
+        """
+        output = io.BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            
+            # ============================================================
+            # 📄 SAYFA 1: Yönetici Özeti
+            # ============================================================
+            self._create_executive_summary_sheet(
+                writer, 
+                materials_data, 
+                executive_summary,
+                ai_decision
+            )
+            
+            # ============================================================
+            # 📄 SAYFA 2: Kritik Ürünler
+            # ============================================================
+            self._create_critical_products_sheet(writer, materials_data)
+            
+            # ============================================================
+            # 📄 SAYFA 3: Tüm Sonuçlar
+            # ============================================================
+            self._create_all_results_sheet(writer, materials_data)
+            
+            # ============================================================
+            # 📄 SAYFA 4: AI Kararları
+            # ============================================================
+            self._create_ai_decisions_sheet(writer, materials_data)
+            
+            # ============================================================
+            # 📄 SAYFA 5: İşletme Hafızası (Learning Engine)
+            # ============================================================
+            self._create_learning_memory_sheet(writer, learning_rules)
+            
+            # ============================================================
+            # 📄 SAYFA 6: Teknik Analiz
+            # ============================================================
+            self._create_technical_analysis_sheet(writer, materials_data)
+            
+            # ============================================================
+            # 📄 SAYFA 7: AI Açıklamaları
+            # ============================================================
+            self._create_ai_explanations_sheet(writer, materials_data)
+        
+        output.seek(0)
+        return output
+    
+    # ============================================================
+    # 📄 SAYFA 1: Yönetici Özeti
+    # ============================================================
+    
+    def _create_executive_summary_sheet(
+        self, 
+        writer: pd.ExcelWriter, 
+        materials_data: List[Dict],
+        executive_summary: Dict = None,
+        ai_decision: Dict = None
+    ):
+        """Sayfa 1: Yönetici Özeti"""
+        
+        if not materials_data:
+            df_empty = pd.DataFrame({'Bilgi': ['Henüz analiz verisi yok']})
+            df_empty.to_excel(writer, sheet_name='Yönetici Özeti', index=False)
+            return
+        
+        total = len(materials_data)
+        
+        # Metrikleri hesapla
+        high_risk_count = len([m for m in materials_data if m.get('risk_level') == 'Yüksek'])
+        critical_count = len([m for m in materials_data if m.get('risk_score', 0) > 0.7])
+        avg_risk = sum(m.get('risk_score', 0) for m in materials_data) / total if total > 0 else 0
+        avg_service = sum(m.get('service_level', 95) for m in materials_data) / total if total > 0 else 95
+        
+        # En riskli grup
+        groups = {}
+        for m in materials_data:
+            group = m.get('group', 'GENEL')
+            risk = m.get('risk_score', 0)
+            if group not in groups:
+                groups[group] = {'count': 0, 'total_risk': 0}
+            groups[group]['count'] += 1
+            groups[group]['total_risk'] += risk
+        
+        riskiest_group = max(groups.items(), key=lambda x: x[1]['total_risk'] / x[1]['count'])[0] if groups else '-'
+        
+        # En önemli problem
+        top_problem = ''
+        if high_risk_count > total * 0.2:
+            top_problem = f'{high_risk_count} ürün yüksek riskli'
+        elif critical_count > total * 0.1:
+            top_problem = f'{critical_count} ürün kritik seviyede'
+        else:
+            top_problem = 'Risk seviyesi genel olarak yönetilebilir'
+        
+        # AI önerisi
+        top_recommendation = ''
+        if ai_decision:
+            top_recommendation = ai_decision.get('explanation', 'Analiz tamamlandı')
+        elif high_risk_count > 0:
+            top_recommendation = f'{high_risk_count} yüksek riskli ürün için acil aksiyon önerilir'
+        else:
+            top_recommendation = 'Mevcut politika başarılı, düzenli takip önerilir'
+        
+        # Özet verisi
+        summary_data = {
+            'Rapor Tarihi': datetime.now().strftime('%d.%m.%Y %H:%M'),
+            'Analiz Edilen Ürün Sayısı': total,
+            'Kritik Ürün Sayısı': critical_count,
+            'Ortalama Risk Seviyesi': f'{avg_risk:.2f}',
+            'Ortalama Servis Seviyesi': f'%{avg_service:.1f}',
+            'En Riskli Grup': riskiest_group,
+            'En Önemli Problem': top_problem,
+            'AI İlk Önerisi': top_recommendation,
+            'Yüksek Riskli Ürün': high_risk_count,
+            'Orta Riskli Ürün': total - high_risk_count - len([m for m in materials_data if m.get('risk_level') == 'Düşük']),
+            'Düşük Riskli Ürün': len([m for m in materials_data if m.get('risk_level') == 'Düşük']),
+        }
+        
+        # AI Yorumu (varsa)
+        if executive_summary:
+            summary_data['AI Yönetici Özeti'] = executive_summary.get('summary', '')
+        
+        df_summary = pd.DataFrame([summary_data])
+        df_summary.to_excel(writer, sheet_name='Yönetici Özeti', index=False)
+        
+        # KPI Tablosu
+        kpi_data = [
+            {'KPI': '📊 Analiz Edilen Ürün', 'Değer': total, 'Durum': '✅'},
+            {'KPI': '⚠️ Kritik Ürün', 'Değer': critical_count, 'Durum': '🔴' if critical_count > 5 else '🟡' if critical_count > 2 else '🟢'},
+            {'KPI': '📈 Ortalama Risk', 'Değer': f'{avg_risk:.2f}', 'Durum': '🔴' if avg_risk > 0.5 else '🟡' if avg_risk > 0.3 else '🟢'},
+            {'KPI': '🎯 Ortalama Servis', 'Değer': f'%{avg_service:.1f}', 'Durum': '🟢' if avg_service > 95 else '🟡' if avg_service > 90 else '🔴'},
+            {'KPI': '🏷️ En Riskli Grup', 'Değer': riskiest_group, 'Durum': '⚠️'},
+        ]
+        df_kpi = pd.DataFrame(kpi_data)
+        df_kpi.to_excel(writer, sheet_name='Yönetici Özeti', startrow=3, index=False)
+    
+    # ============================================================
+    # 📄 SAYFA 2: Kritik Ürünler
+    # ============================================================
+    
+    def _create_critical_products_sheet(self, writer: pd.ExcelWriter, materials_data: List[Dict]):
+        """Sayfa 2: Kritik Ürünler - Yalnızca yüksek riskli ürünler"""
+        
+        critical_items = [m for m in materials_data if m.get('risk_level') == 'Yüksek' or m.get('risk_score', 0) > 0.5]
+        
+        if not critical_items:
+            df_empty = pd.DataFrame({'Bilgi': ['Kritik ürün bulunmuyor.']})
+            df_empty.to_excel(writer, sheet_name='Kritik Ürünler', index=False)
+            return
+        
+        rows = []
+        for m in critical_items:
+            rows.append({
+                'Malzeme Kodu': m.get('material_code', ''),
+                'Malzeme Grubu': m.get('group', ''),
+                'Risk Skoru': round(m.get('risk_score', 0), 3),
+                'Risk Seviyesi': m.get('risk_level', ''),
+                'CV (Değişim Katsayısı)': round(m.get('cv', 0), 4),
+                'Zero Ratio': round(m.get('zero_ratio', 0), 4),
+                'Pattern': m.get('pattern_label', ''),
+                'Önerilen SS': round(m.get('recommended_value', 0), 0),
+                'Mevcut SS': round(m.get('current_ss', 0), 0) if m.get('current_ss') else '-',
+                'AI Kararı': m.get('ai_decision', {}).get('decision', '-'),
+                'Güven Skoru': f"%{int(m.get('ai_decision', {}).get('confidence', 0) * 100)}" if m.get('ai_decision') else '-',
+            })
+        
+        df_critical = pd.DataFrame(rows)
+        df_critical.to_excel(writer, sheet_name='Kritik Ürünler', index=False)
+    
+    # ============================================================
+    # 📄 SAYFA 3: Tüm Sonuçlar
+    # ============================================================
+    
+    def _create_all_results_sheet(self, writer: pd.ExcelWriter, materials_data: List[Dict]):
+        """Sayfa 3: Tüm Sonuçlar - Detaylı tablo"""
+        
+        if not materials_data:
+            df_empty = pd.DataFrame({'Bilgi': ['Henüz sonuç yok']})
+            df_empty.to_excel(writer, sheet_name='Tüm Sonuçlar', index=False)
+            return
+        
+        rows = []
+        for m in materials_data:
+            row = {
+                'Malzeme Kodu': m.get('material_code', ''),
+                'Malzeme Grubu': m.get('group', ''),
+                'ABC': m.get('abc', '-'),
+                'XYZ': m.get('xyz', '-'),
+                'Pattern': m.get('pattern_label', ''),
+                'CV': round(m.get('cv', 0), 4),
+                'Zero Ratio': round(m.get('zero_ratio', 0), 4),
+                'Trend': m.get('trend_direction', ''),
+                'Mevsimsellik': '✅' if m.get('has_seasonality') else '❌',
+                'Aralıklı Talep': '✅' if m.get('is_intermittent') else '❌',
+                'Önerilen SS Metodu': m.get('recommended_method_label', ''),
+                'Önerilen SS': round(m.get('recommended_value', 0), 0),
+                'Risk Skoru': round(m.get('risk_score', 0), 3),
+                'Risk Seviyesi': m.get('risk_level', ''),
+                'AI Kararı': m.get('ai_decision', {}).get('decision', '-'),
+                'Güven': f"%{int(m.get('ai_decision', {}).get('confidence', 0) * 100)}" if m.get('ai_decision') else '-',
+            }
+            rows.append(row)
+        
+        df_results = pd.DataFrame(rows)
+        df_results.to_excel(writer, sheet_name='Tüm Sonuçlar', index=False)
+    
+    # ============================================================
+    # 📄 SAYFA 4: AI Kararları
+    # ============================================================
+    
+    def _create_ai_decisions_sheet(self, writer: pd.ExcelWriter, materials_data: List[Dict]):
+        """Sayfa 4: AI Kararları - Ürün bazında AI kararları"""
+        
+        if not materials_data:
+            df_empty = pd.DataFrame({'Bilgi': ['Henüz AI kararı yok']})
+            df_empty.to_excel(writer, sheet_name='AI Kararları', index=False)
+            return
+        
+        rows = []
+        for m in materials_data:
+            ai_decision = m.get('ai_decision', {})
+            
+            # Karar metni
+            decision_text = ai_decision.get('decision', 'bekleniyor')
+            decision_map = {
+                'increase_safety_stock': '📈 Emniyet Stoğunu Artır',
+                'decrease_safety_stock': '📉 Emniyet Stoğunu Azalt',
+                'change_forecast_model': '🔄 Tahmin Modelini Değiştir',
+                'review_supplier': '🔍 Tedarikçiyi Gözden Geçir',
+                'investigate_variability': '📊 Değişkenliği Araştır',
+                'seasonal_adjustment': '🌊 Mevsimsel Ayarla',
+                'maintain_current': '✅ Mevcut Durumu Koru',
+                'urgent_action': '🚨 Acil Aksiyon',
+                'normal_monitoring': '📋 Normal Takip'
+            }
+            
+            rows.append({
+                'Malzeme Kodu': m.get('material_code', ''),
+                'AI Kararı': decision_map.get(decision_text, decision_text),
+                'Öncelik': ai_decision.get('priority', 'medium').upper(),
+                'Güven Skoru': f"%{int(ai_decision.get('confidence', 0) * 100)}",
+                'Gerekçe': ' | '.join(ai_decision.get('reasons', ['-'])),
+                'Beklenen Etki': ai_decision.get('expected_impact', {}).get('stockout_risk', '-'),
+                'Sonraki İnceleme': f"{ai_decision.get('next_review_days', 30)} gün",
+                'Açıklama': ai_decision.get('explanation', ''),
+            })
+        
+        df_decisions = pd.DataFrame(rows)
+        df_decisions.to_excel(writer, sheet_name='AI Kararları', index=False)
+    
+    # ============================================================
+    # 📄 SAYFA 5: İşletme Hafızası (Learning Engine)
+    # ============================================================
+    
+    def _create_learning_memory_sheet(self, writer: pd.ExcelWriter, learning_rules: List[Dict] = None):
+        """Sayfa 5: İşletme Hafızası - Learning Engine tarafından öğrenilen davranışlar"""
+        
+        if not learning_rules:
+            df_empty = pd.DataFrame({
+                'Bilgi': ['Henüz öğrenilmiş davranış yok.'],
+                'Açıklama': ['Analiz yaptıkça AI işletmenizi tanımaya başlayacak.']
+            })
+            df_empty.to_excel(writer, sheet_name='İşletme Hafızası', index=False)
+            return
+        
+        rows = []
+        for rule in learning_rules:
+            rows.append({
+                'Kural ID': rule.get('rule_id', ''),
+                'Kural Adı': rule.get('rule_name', ''),
+                'Tip': rule.get('rule_type', ''),
+                'Açıklama': rule.get('description', ''),
+                'Güven Skoru': f"%{int(rule.get('confidence_score', 0) * 100)}",
+                'Kullanım Sayısı': rule.get('usage_count', 0),
+                'Doğrulandı': '✅' if rule.get('is_verified') else '⏳',
+                'İlk Görülme': rule.get('first_seen_at', ''),
+                'Son Görülme': rule.get('last_seen_at', ''),
+                'Pattern Data': str(rule.get('pattern_data', {}))[:200],
+            })
+        
+        df_learning = pd.DataFrame(rows)
+        df_learning.to_excel(writer, sheet_name='İşletme Hafızası', index=False)
+    
+    # ============================================================
+    # 📄 SAYFA 6: Teknik Analiz
+    # ============================================================
+    
+    def _create_technical_analysis_sheet(self, writer: pd.ExcelWriter, materials_data: List[Dict]):
+        """Sayfa 6: Teknik Analiz - CV, Pattern, ABC, XYZ, Forecast, Trend, Seasonality, Lead Time, Zero Ratio"""
+        
+        if not materials_data:
+            df_empty = pd.DataFrame({'Bilgi': ['Henüz teknik analiz verisi yok']})
+            df_empty.to_excel(writer, sheet_name='Teknik Analiz', index=False)
+            return
+        
+        rows = []
+        for m in materials_data:
+            rows.append({
+                'Malzeme Kodu': m.get('material_code', ''),
+                'CV (Değişim Katsayısı)': round(m.get('cv', 0), 4),
+                'Pattern': m.get('pattern_label', ''),
+                'ABC': m.get('abc', '-'),
+                'XYZ': m.get('xyz', '-'),
+                'Forecast Model': m.get('forecast_model_label', ''),
+                'Trend': m.get('trend_direction', ''),
+                'Trend %': round(m.get('trend_percent', 0), 1),
+                'Sezonsallık': m.get('seasonality_label', ''),
+                'Sezonsallık Gücü': round(m.get('seasonality_strength', 0), 2),
+                'Lead Time': m.get('lead_time_days', '-'),
+                'Zero Ratio': round(m.get('zero_ratio', 0), 4),
+                'Aralıklı Talep': '✅' if m.get('is_intermittent') else '❌',
+                'Risk Skoru': round(m.get('risk_score', 0), 3),
+                'Risk Seviyesi': m.get('risk_level', ''),
+            })
+        
+        df_technical = pd.DataFrame(rows)
+        df_technical.to_excel(writer, sheet_name='Teknik Analiz', index=False)
+    
+    # ============================================================
+    # 📄 SAYFA 7: AI Açıklamaları
+    # ============================================================
+    
+    def _create_ai_explanations_sheet(self, writer: pd.ExcelWriter, materials_data: List[Dict]):
+        """Sayfa 7: AI Açıklamaları - Her ürün için AI'nın ayrıntılı değerlendirmesi"""
+        
+        if not materials_data:
+            df_empty = pd.DataFrame({'Bilgi': ['Henüz AI açıklaması yok']})
+            df_empty.to_excel(writer, sheet_name='AI Açıklamaları', index=False)
+            return
+        
+        rows = []
+        for m in materials_data:
+            ai_decision = m.get('ai_decision', {})
+            
+            # Nedenler
+            reasons = ai_decision.get('reasons', ['-'])
+            reasons_text = '\n'.join([f'• {r}' for r in reasons])
+            
+            rows.append({
+                'Malzeme Kodu': m.get('material_code', ''),
+                'Malzeme Grubu': m.get('group', ''),
+                'AI Kararı': ai_decision.get('decision', 'bekleniyor'),
+                'Güven Skoru': f"%{int(ai_decision.get('confidence', 0) * 100)}",
+                'Nedenler': reasons_text,
+                'Detaylı Açıklama': ai_decision.get('explanation', ''),
+                'Beklenen Etki': ai_decision.get('expected_impact', {}).get('stockout_risk', '-'),
+                'Önerilen Aksiyon': ai_decision.get('decision', '-'),
+                'Sonraki İnceleme': f"{ai_decision.get('next_review_days', 30)} gün",
+            })
+        
+        df_explanations = pd.DataFrame(rows)
+        df_explanations.to_excel(writer, sheet_name='AI Açıklamaları', index=False)
+    
+    # ============================================================
+    # 📌 ESKİ FONKSİYONLAR (Uyumluluk için)
+    # ============================================================
+    
+    def export_recommendations(
+        self, 
+        material_code: str, 
+        material_data: Dict,
+        simulation_result: Dict, 
+        ai_analysis: Dict,
+        optimized_params: Dict
+    ) -> io.BytesIO:
+        """
+        Tek malzeme için önerileri Excel olarak dışa aktar (Eski fonksiyon)
         """
         output = io.BytesIO()
         
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             # 1. Özet Sayfası
-            summary_data = self._create_summary_sheet(material_code, material_data, 
-                                                      simulation_result, ai_analysis, 
-                                                      optimized_params)
+            summary_data = self._create_summary_sheet(
+                material_code, material_data, 
+                simulation_result, ai_analysis, 
+                optimized_params
+            )
             summary_df = pd.DataFrame([summary_data])
             summary_df.to_excel(writer, sheet_name='Özet', index=False)
             
             # 2. Detaylı Analiz Sayfası
-            detail_df = self._create_detail_sheet(material_data, simulation_result, 
-                                                  ai_analysis, optimized_params)
+            detail_df = self._create_detail_sheet(
+                material_data, simulation_result, 
+                ai_analysis, optimized_params
+            )
             detail_df.to_excel(writer, sheet_name='Detaylı Analiz', index=False)
             
             # 3. Haftalık Talep Sayfası
@@ -53,9 +450,9 @@ class ExcelExporter:
         return output
     
     def _create_summary_sheet(self, material_code: str, material_data: Dict,
-                             simulation_result: Dict, ai_analysis: Dict,
-                             optimized_params: Dict) -> Dict:
-        """Özet sayfası oluştur"""
+                              simulation_result: Dict, ai_analysis: Dict,
+                              optimized_params: Dict) -> Dict:
+        """Özet sayfası oluştur (Eski)"""
         service_level = simulation_result.get('service_level_actual', 0)
         stockout_prob = np.mean(simulation_result.get('stockout_probability', [0]))
         cvar_95 = simulation_result.get('cvar_95', 0)
@@ -71,8 +468,7 @@ class ExcelExporter:
             'Mevcut EOQ': material_data.get('eoq', 0),
             'Önerilen EOQ': optimized_params.get('optimal_eoq', 0),
             'AI Önerilen Safety Stock': ai_analysis.get('ai_ss', 0),
-            'Optimize Edilmiş Safety Stock': optimized_params.get('safety_stock', 0),
-            'Mevcut ROP (Tahmini)': optimized_params.get('lead_time_demand', 0) + optimized_params.get('safety_stock', 0),
+            'Önerilen Safety Stock': optimized_params.get('safety_stock', 0),
             'Önerilen ROP': optimized_params.get('optimal_rop', 0),
             'Servis Seviyesi (Gerçekleşen)': f"{service_level*100:.1f}%",
             'Servis Seviyesi (Hedef)': "95%",
@@ -81,17 +477,15 @@ class ExcelExporter:
             'Tail Risk': round(tail_risk, 2),
             'Patern': ai_analysis.get('pattern', ''),
             'CV (Değişim Katsayısı)': round(ai_analysis.get('cv', 0), 4),
-            'Tarihsel Veri Haftası': len(material_data.get('historical_demand', [])),
             'Risk Seviyesi': optimized_params.get('risk_level', ''),
             'AI Çarpan': optimized_params.get('pattern_multiplier', 1.0)
         }
     
     def _create_detail_sheet(self, material_data: Dict, simulation_result: Dict,
                             ai_analysis: Dict, optimized_params: Dict) -> pd.DataFrame:
-        """Detaylı analiz sayfası oluştur"""
+        """Detaylı analiz sayfası oluştur (Eski)"""
         data = []
         
-        # Talep istatistikleri
         historical = material_data.get('historical_demand', [])
         if historical:
             non_zero = [d for d in historical if d > 0]
@@ -120,7 +514,6 @@ class ExcelExporter:
                 'Birim': ''
             })
         
-        # Lead Time bilgileri
         data.append({
             'Kategori': 'Tedarik Bilgileri',
             'Parametre': 'Lead Time',
@@ -134,7 +527,6 @@ class ExcelExporter:
             'Birim': 'Adet'
         })
         
-        # SS Metodları
         if 'simulation_results' in simulation_result:
             sim = simulation_result['simulation_results']
             methods = {
@@ -156,7 +548,7 @@ class ExcelExporter:
         return pd.DataFrame(data)
     
     def _create_demand_sheet(self, material_data: Dict) -> pd.DataFrame:
-        """Haftalık talep sayfası oluştur"""
+        """Haftalık talep sayfası oluştur (Eski)"""
         historical = material_data.get('historical_demand', [])
         df = pd.DataFrame({
             'Hafta': list(range(1, len(historical) + 1)),
@@ -165,10 +557,9 @@ class ExcelExporter:
         return df
     
     def _create_simulation_sheet(self, simulation_result: Dict) -> pd.DataFrame:
-        """Simülasyon sonuçları sayfası oluştur"""
+        """Simülasyon sonuçları sayfası oluştur (Eski)"""
         sim = simulation_result.get('simulation_results', {})
         
-        # Haftalık verileri al
         avg_stock = sim.get('avg_stock', [])
         stockout_prob = sim.get('stockout_probability', [])
         expected_shortage = sim.get('expected_shortage', [])
@@ -182,18 +573,10 @@ class ExcelExporter:
             'Stok Tükenme Olasılığı': stockout_prob,
             'Beklenen Açık': expected_shortage
         })
-        
-        # Sonuç özeti
-        summary = {
-            'Servis Seviyesi': f"{sim.get('service_level_actual', 0)*100:.1f}%",
-            'CVaR95': round(sim.get('cvar_95', 0), 2),
-            'Stok Tükenme Toplam': f"{np.sum(sim.get('shortage_paths', [[]])):.2f}"
-        }
-        
         return df
     
     def _create_supplier_sheet(self, material_data: Dict) -> pd.DataFrame:
-        """Tedarikçi bilgileri sayfası oluştur"""
+        """Tedarikçi bilgileri sayfası oluştur (Eski)"""
         suppliers = material_data.get('suppliers', [])
         if not suppliers:
             return pd.DataFrame()
@@ -209,7 +592,7 @@ class ExcelExporter:
         return pd.DataFrame(rows)
     
     def _create_action_plan_sheet(self, material_data: Dict, optimized_params: Dict) -> pd.DataFrame:
-        """Aksiyon planı sayfası oluştur"""
+        """Aksiyon planı sayfası oluştur (Eski)"""
         initial_stock = material_data.get('initial_stock', 0)
         recommended_stock = optimized_params.get('recommended_initial_stock', 0)
         current_eoq = material_data.get('eoq', 0)
@@ -259,238 +642,3 @@ class ExcelExporter:
             })
         
         return pd.DataFrame(actions)
-    
-    def export_bulk_report(self, materials_data: List[Dict]) -> io.BytesIO:
-        """
-        Tüm malzemeler için toplu rapor oluştur
-        
-        Args:
-            materials_data: List of material dicts with analysis results
-        
-        Returns:
-            io.BytesIO: Excel dosyası
-        """
-        output = io.BytesIO()
-        
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            # 1. Toplu Özet Sayfası
-            summary_rows = []
-            for material in materials_data:
-                summary_rows.append({
-                    'Malzeme Kodu': material.get('code', ''),
-                    'Malzeme Grubu': material.get('group', ''),
-                    'Mevcut Başlangıç Stoku': material.get('initial_stock', 0),
-                    'Önerilen Başlangıç Stoku': material.get('optimized_stock', material.get('initial_stock', 0)),
-                    'Mevcut EOQ': material.get('eoq', 0),
-                    'Önerilen EOQ': material.get('optimized_eoq', material.get('eoq', 0)),
-                    'Safety Stock (AI)': material.get('ai_ss', 0),
-                    'Önerilen Safety Stock': material.get('optimized_ss', 0),
-                    'Servis Seviyesi (%)': round(material.get('service_level', 0) * 100, 1),
-                    'CV (Değişim Katsayısı)': round(material.get('cv', 0), 4),
-                    'Pattern': material.get('pattern', ''),
-                    'Risk Seviyesi': material.get('risk_level', ''),
-                    'Tail Risk': round(material.get('tail_risk', 0), 2),
-                    'CVaR95': round(material.get('cvar_95', 0), 2),
-                })
-            
-            df_summary = pd.DataFrame(summary_rows)
-            df_summary.to_excel(writer, sheet_name='Toplu Özet', index=False)
-            
-            # 2. Grup Bazlı Özet Sayfası
-            if 'group' in df_summary.columns:
-                group_summary = df_summary.groupby('Malzeme Grubu').agg({
-                    'Malzeme Kodu': 'count',
-                    'Servis Seviyesi (%)': 'mean',
-                    'CV (Değişim Katsayısı)': 'mean',
-                    'Safety Stock (AI)': 'sum',
-                }).reset_index()
-                group_summary.columns = ['Malzeme Grubu', 'Malzeme Sayısı', 'Ortalama Servis (%)', 'Ortalama CV', 'Toplam SS']
-                group_summary.to_excel(writer, sheet_name='Grup Özeti', index=False)
-            
-            # 3. Risk Dağılımı Sayfası
-            risk_dist = df_summary['Risk Seviyesi'].value_counts().reset_index()
-            risk_dist.columns = ['Risk Seviyesi', 'Malzeme Sayısı']
-            risk_dist.to_excel(writer, sheet_name='Risk Dağılımı', index=False)
-            
-            # 4. Pattern Dağılımı Sayfası
-            pattern_dist = df_summary['Pattern'].value_counts().reset_index()
-            pattern_dist.columns = ['Pattern', 'Malzeme Sayısı']
-            pattern_dist.to_excel(writer, sheet_name='Pattern Dağılımı', index=False)
-            
-            # 5. Aksiyon Gerektiren Malzemeler
-            action_needed = df_summary[
-                (df_summary['Servis Seviyesi (%)'] < 90) |
-                (df_summary['Risk Seviyesi'] == 'YÜKSEK')
-            ].copy()
-            if not action_needed.empty:
-                action_needed['Aksiyon'] = action_needed.apply(
-                    lambda row: 'Servis Artır' if row['Servis Seviyesi (%)'] < 90 else 'Risk Azalt',
-                    axis=1
-                )
-                action_needed.to_excel(writer, sheet_name='Aksiyon Gerekenler', index=False)
-            
-            # 6. Özet İstatistikler
-            stats = {
-                'Toplam Malzeme': len(df_summary),
-                'Ortalama Servis Seviyesi': f"{df_summary['Servis Seviyesi (%)'].mean():.1f}%",
-                'Medyan Servis Seviyesi': f"{df_summary['Servis Seviyesi (%)'].median():.1f}%",
-                'Min Servis Seviyesi': f"{df_summary['Servis Seviyesi (%)'].min():.1f}%",
-                'Max Servis Seviyesi': f"{df_summary['Servis Seviyesi (%)'].max():.1f}%",
-                'Ortalama CV': f"{df_summary['CV (Değişim Katsayısı)'].mean():.4f}",
-                'Toplam Safety Stock': f"{df_summary['Safety Stock (AI)'].sum():.0f}",
-                'Yüksek Risk Malzeme': len(df_summary[df_summary['Risk Seviyesi'] == 'YÜKSEK']),
-                'Orta Risk Malzeme': len(df_summary[df_summary['Risk Seviyesi'] == 'ORTA']),
-                'Düşük Risk Malzeme': len(df_summary[df_summary['Risk Seviyesi'] == 'DÜŞÜK']),
-            }
-            df_stats = pd.DataFrame([stats])
-            df_stats.to_excel(writer, sheet_name='Özet İstatistikler', index=False)
-        
-        output.seek(0)
-        return output
-    
-    def _create_summary_sheet(self, material_code: str, material_data: Dict,
-                            simulation_result: Dict, ai_analysis: Dict,
-                            optimized_params: Dict) -> Dict:
-        """Özet sayfası oluştur (Yorumlar ile birlikte)"""
-        service_level = simulation_result.get('service_level_actual', 0)
-        stockout_prob = np.mean(simulation_result.get('stockout_probability', [0]))
-        cvar_95 = simulation_result.get('cvar_95', 0)
-        tail_risk = simulation_result.get('tail_risk', 0)
-        target_service = 0.95
-
-        # ----- AKILLI YORUMLAR -----
-        comments = []
-
-        # 1. Servis Seviyesi Yorumu
-        service_gap = target_service - service_level
-        if service_gap > 0.05:
-            comments.append(
-                f"⚠️ Servis seviyesi %{(service_level*100):.1f} ile hedef %95'in altında. "
-                f"%{(service_gap*100):.1f} puan artış için Safety Stock'u {optimized_params.get('safety_stock', 0):.0f} birime çıkarın."
-            )
-        elif service_gap > 0.02:
-            comments.append(
-                f"📈 Servis seviyesi %{(service_level*100):.1f}, hedefe yakın. "
-                f"Safety Stock'u {optimized_params.get('safety_stock', 0):.0f} birime yükselterek %95'e ulaşabilirsiniz."
-            )
-        else:
-            comments.append(
-                f"✅ Servis seviyesi %{(service_level*100):.1f} ile hedef %95'te. Mevcut politika başarılı."
-            )
-
-        # 2. Stok Tükenme Riski Yorumu
-        if stockout_prob > 0.10:
-            comments.append(
-                f"⚠️ Stok tükenme olasılığı %{(stockout_prob*100):.1f}. "
-                f"ROP değerini {optimized_params.get('optimal_rop', 0):.0f} seviyesine çekerek riski azaltın."
-            )
-        elif stockout_prob > 0.05:
-            comments.append(
-                f"📊 Stok tükenme olasılığı %{(stockout_prob*100):.1f}, kabul edilebilir seviyede. "
-                f"İyileştirme için EOQ'yu {optimized_params.get('optimal_eoq', 0):.0f} olarak güncelleyin."
-            )
-        else:
-            comments.append(
-                f"✅ Stok tükenme olasılığı %{(stockout_prob*100):.1f}, düşük seviyede. Mevcut politika yeterli."
-            )
-
-        # 3. Tail Risk Yorumu
-        if tail_risk > 0.7:
-            comments.append(
-                f"🚨 Tail Risk {tail_risk:.2f} ile çok yüksek. "
-                f"Aşırı talep senaryolarına karşı {optimized_params.get('safety_stock', 0):.0f} birim SS yeterli olmayabilir, "
-                f"ek %30 artış önerilir."
-            )
-        elif tail_risk > 0.4:
-            comments.append(
-                f"⚠️ Tail Risk {tail_risk:.2f} seviyesinde. "
-                f"Kuyruk riski için {optimized_params.get('safety_stock', 0):.0f} birim SS yeterli. "
-                f"Talep desenini izlemeye devam edin."
-            )
-        else:
-            comments.append(
-                f"✅ Tail Risk {tail_risk:.2f} ile düşük seviyede. Mevcut SS yeterli."
-            )
-
-        # 4. CV (Değişkenlik) Yorumu
-        cv = ai_analysis.get('cv', 0)
-        if cv > 0.7:
-            comments.append(
-                f"📉 Talep değişkenliği (CV={cv:.2f}) yüksek. "
-                f"Bu malzeme için {material_data.get('group', '')} grubu özelinde mevsimsel çarpan kullanılması önerilir."
-            )
-        elif cv > 0.4:
-            comments.append(
-                f"📊 Talep değişkenliği (CV={cv:.2f}) orta seviyede. "
-                f"Düzenli takip ve aylık SS güncellemesi önerilir."
-            )
-        else:
-            comments.append(
-                f"✅ Talep değişkenliği (CV={cv:.2f}) düşük. Mevcut politika devam edebilir."
-            )
-
-        # 5. EOQ Yorumu
-        current_eoq = material_data.get('eoq', 0)
-        optimal_eoq = optimized_params.get('optimal_eoq', 0)
-        if optimal_eoq > current_eoq * 1.5:
-            comments.append(
-                f"📦 EOQ mevcut {current_eoq} birimden {optimal_eoq} birime çıkarılmalı. "
-                f"Bu, sipariş maliyetlerini azaltacaktır."
-            )
-        elif optimal_eoq < current_eoq * 0.5:
-            comments.append(
-                f"📦 EOQ mevcut {current_eoq} birimden {optimal_eoq} birime düşürülmeli. "
-                f"Bu, stok tutma maliyetlerini azaltacaktır."
-            )
-        else:
-            comments.append(
-                f"✅ EOQ {current_eoq} birim mevcut seviyede uygun."
-            )
-
-        # 6. Genel Öneri (Kullanıcıya Net Aksiyon)
-        action_summary = []
-        if service_gap > 0.02:
-            action_summary.append("Servis seviyesini artır")
-        if stockout_prob > 0.05:
-            action_summary.append("Stok tükenme riskini azalt")
-        if tail_risk > 0.4:
-            action_summary.append("Tail riski yönet")
-        if cv > 0.7:
-            action_summary.append("Mevsimsel çarpan kullan")
-
-        if action_summary:
-            action_text = "🎯 **Öncelikli Aksiyonlar:** " + ", ".join(action_summary)
-        else:
-            action_text = "✅ Mevcut politika başarılı, aksiyon gerekmemektedir."
-
-        comments.append(action_text)
-
-        # Özet verisini oluştur
-        summary = {
-            'Rapor Tarihi': datetime.now().strftime('%d.%m.%Y %H:%M'),
-            'Malzeme Kodu': material_code,
-            'Malzeme Açıklaması': material_data.get('description', ''),
-            'Malzeme Grubu': material_data.get('group', ''),
-            'Mevcut Başlangıç Stoku': material_data.get('initial_stock', 0),
-            'Önerilen Başlangıç Stoku': optimized_params.get('recommended_initial_stock', 0),
-            'Mevcut EOQ': material_data.get('eoq', 0),
-            'Önerilen EOQ': optimized_params.get('optimal_eoq', 0),
-            'AI Önerilen Safety Stock': ai_analysis.get('ai_ss', 0),
-            'Önerilen Safety Stock': optimized_params.get('safety_stock', 0),
-            'Önerilen ROP': optimized_params.get('optimal_rop', 0),
-            'Servis Seviyesi (Gerçekleşen)': f"{service_level*100:.1f}%",
-            'Servis Seviyesi (Hedef)': "95%",
-            'Stok Tükenme Olasılığı': f"{stockout_prob*100:.1f}%",
-            'CVaR95': round(cvar_95, 2),
-            'Tail Risk': round(tail_risk, 2),
-            'Patern': ai_analysis.get('pattern', ''),
-            'CV (Değişim Katsayısı)': round(ai_analysis.get('cv', 0), 4),
-            'Risk Seviyesi': optimized_params.get('risk_level', ''),
-            'AI Çarpan': optimized_params.get('pattern_multiplier', 1.0)
-        }
-
-        # Yorumları ayrı bir sütun olarak ekleyelim
-        comments_text = "\n".join(comments)
-        summary['📌 Yorum ve Öneriler'] = comments_text
-
-        return summary

@@ -1,4 +1,4 @@
-# app/api/endpoints/dashboard.py
+# app/api/endpoints/dashboard.py - YENİ YAPIYA GÖRE GÜNCELLENMİŞ
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 from app.database import get_db
 from app.models import User, AnalysisResult
 from app.auth import get_current_user
-from app.services.dashboard_summary_engine import get_dashboard_summary_engine, DashboardSummaryEngine
+from app.services.dashboard_builder import get_dashboard_builder
 from app.services.recommendation_engine import RecommendationEngine
 from app.services.ai.llm_service import get_llm_service
 from app.schemas.dashboard import AlertItem
@@ -16,7 +16,7 @@ router = APIRouter()
 
 
 # ============================================================
-# 📌 AI EXECUTIVE SUMMARY - User tablosundan okur (DÜZELTİLDİ)
+# 📌 AI EXECUTIVE SUMMARY
 # ============================================================
 
 @router.get("/dashboard/ai-summary")
@@ -24,27 +24,19 @@ async def get_ai_dashboard_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    AI Executive Summary - User tablosundaki executive_summary alanını okur.
-    """
+    """AI Executive Summary - User tablosundaki executive_summary alanını okur."""
     try:
-        # ✅ DOĞRU: User tablosundan oku
         user = db.query(User).filter(User.id == current_user.id).first()
         if not user:
-            return {
-                'has_data': False,
-                'message': 'Kullanıcı bulunamadı.'
-            }
+            return {'has_data': False, 'message': 'Kullanıcı bulunamadı.'}
         
-        # ✅ executive_summary alanını kontrol et
         if user.executive_summary:
             return {
                 'has_data': True,
-                'executive_summary': user.executive_summary,  # ✅ Ana veri
+                'executive_summary': user.executive_summary,
                 'trend_summary': user.trend_summary,
                 'executive_updated_at': user.executive_updated_at.isoformat() if user.executive_updated_at else None,
                 'trend_updated_at': user.trend_updated_at.isoformat() if user.trend_updated_at else None,
-                # User bilgileri de gönder (frontend'de kullanmak için)
                 'full_name': user.full_name,
                 'email': user.email,
                 'company_name': user.company_name,
@@ -62,10 +54,7 @@ async def get_ai_dashboard_summary(
         print(f"❌ AI Summary hatası: {e}")
         import traceback
         traceback.print_exc()
-        return {
-            'has_data': False,
-            'message': str(e)
-        }
+        return {'has_data': False, 'message': str(e)}
 
 
 @router.get("/dashboard/ai-summary/status")
@@ -91,7 +80,7 @@ async def get_ai_summary_status(
 
 
 # ============================================================
-# 📌 DECISION ENGINE ENDPOINT'LERİ
+# 📌 DASHBOARD SUMMARY - YENİ YAPI
 # ============================================================
 
 @router.get("/dashboard/summary")
@@ -99,102 +88,34 @@ async def get_dashboard_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Dashboard Summary - Tüm analiz sonuçlarının özeti."""
-    engine = get_dashboard_summary_engine(db, current_user.id)
-    summary = engine.get_dashboard_summary()
-    
-    return {
-        'success': True,
-        'data': summary
-    }
-
-
-@router.get("/dashboard/recommendation")
-async def get_dashboard_recommendation(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Dashboard Recommendation - En yüksek öncelikli aksiyon."""
-    summary_engine = get_dashboard_summary_engine(db, current_user.id)
-    dashboard_summary = summary_engine.get_dashboard_summary()
-    
-    rec_engine = RecommendationEngine(db, current_user.id)
-    recommendation = rec_engine.get_top_recommendation(dashboard_summary)
-    
-    return {
-        'success': True,
-        'recommendation': recommendation,
-        'dashboard_summary': dashboard_summary
-    }
-
-# app/api/endpoints/dashboard.py - get_ai_dashboard_recommendation (DÜZELTİLMİŞ)
-
-@router.get("/dashboard/ai-recommendation")
-async def get_ai_dashboard_recommendation(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    AI Presentation - Seçilen aksiyonu açıklar.
-    """
-    summary_engine = get_dashboard_summary_engine(db, current_user.id)
-    dashboard_summary = summary_engine.get_dashboard_summary()
-    
-    rec_engine = RecommendationEngine(db, current_user.id)
-    recommendation = rec_engine.get_top_recommendation(dashboard_summary)
-    
-    if not recommendation:
+    """Dashboard Summary - Yeni Dashboard Builder ile."""
+    try:
+        builder = get_dashboard_builder(db, current_user.id)
+        summary = builder.build_dashboard()
+        
         return {
             'success': True,
-            'has_recommendation': False,
-            'message': 'Henüz yeterli analiz verisi yok.'
+            'data': summary
         }
-    
-    # ✅ AI açıklaması oluştur
-    llm = get_llm_service()
-    
-    # ✅ Prompt'u zenginleştir
-    prompt = f"""
-You are a senior Supply Chain Consultant providing a brief executive recommendation.
-
-**Selected Action:**
-- Analysis: {recommendation['analysis']}
-- Priority: {recommendation['priority']} ({recommendation.get('priority_label', '')})
-- Title: {recommendation['title']}
-- Reason: {recommendation['reason']}
-- Expected Benefit: {recommendation['expected_benefit']}
-- Target Page: {recommendation['target_page']}
-
-**Dashboard Summary:**
-{_format_dashboard_summary(dashboard_summary)}
-
-Write a concise 2-3 sentence executive recommendation that:
-1. States what should be done
-2. Explains why it's important
-3. Mentions the expected benefit
-
-Keep the tone professional, clear, and actionable.
-"""
-    
-    try:
-        ai_response = llm.generate(prompt, temperature=0.3, max_tokens=200)
     except Exception as e:
-        print(f"❌ AI açıklama hatası: {e}")
-        ai_response = f"{recommendation['title']} öneriliyor. {recommendation['reason']}"
-    
-    return {
-        'success': True,
-        'has_recommendation': True,
-        'recommendation': recommendation,
-        'ai_explanation': ai_response,
-        'target_page': recommendation['target_page'],
-        'analysis_id': recommendation['analysis_id'],
-        'analysis_type': recommendation['analysis_type'],
-        'dataset_id': recommendation['dataset_id'],
-    } 
+        print(f"❌ Dashboard summary hatası: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'data': {
+                'modules': {},
+                'top_priority_module': None,
+                'top_priority': 0,
+                'summary': 'Özet oluşturulamadı.',
+                'alerts': [],
+                'updated_at': datetime.utcnow().isoformat()
+            }
+        }
+
 
 # ============================================================
-# 🆕 /alerts ENDPOINT'İ
+# 📌 ALERTS - YENİ YAPI
 # ============================================================
 
 @router.get("/dashboard/alerts")
@@ -204,43 +125,17 @@ async def get_dashboard_alerts(
 ):
     """Tüm modüllerin attention'larını toplar."""
     try:
-        engine = DashboardSummaryEngine(db, current_user.id)
-        alerts = engine.get_all_alerts()
-        
-        # alerts zaten dict listesi ise direkt döndür
-        if alerts and isinstance(alerts[0], dict):
-            return {
-                'success': True,
-                'alerts': alerts
-            }
-        
-        # AlertItem nesnesi ise dict'e çevir
-        alert_items = []
-        for alert in alerts:
-            if hasattr(alert, 'dict'):
-                alert_items.append(alert.dict())
-            elif hasattr(alert, '__dict__'):
-                alert_items.append({
-                    'id': getattr(alert, 'id', ''),
-                    'severity': getattr(alert, 'severity', 'info'),
-                    'title': getattr(alert, 'title', ''),
-                    'description': getattr(alert, 'description', ''),
-                    'action_label': getattr(alert, 'action_label', 'İncele →'),
-                    'action_path': getattr(alert, 'action_path', '/dashboard'),
-                    'priority': getattr(alert, 'priority', 0)
-                })
-            else:
-                alert_items.append(alert)
+        builder = get_dashboard_builder(db, current_user.id)
+        summary = builder.build_dashboard()
         
         return {
             'success': True,
-            'alerts': alert_items
+            'alerts': summary.get('alerts', [])
         }
     except Exception as e:
         import traceback
         print(f"❌ Alert hatası: {e}")
         print(traceback.format_exc())
-        
         return {
             'success': True,
             'alerts': [],
@@ -249,49 +144,168 @@ async def get_dashboard_alerts(
 
 
 # ============================================================
-# 📌 YARDIMCI FONKSİYONLAR
+# 📌 RECOMMENDATION
 # ============================================================
 
-def _format_dashboard_summary(summary: Dict[str, Any]) -> str:
-    lines = []
-    modules = summary.get('modules', {})
-    
-    for key, data in modules.items():
-        if data:
-            priority = data.get('priority', 0)
-            if priority >= 90:
-                priority_label = 'CRITICAL'
-            elif priority >= 70:
-                priority_label = 'HIGH'
-            elif priority >= 40:
-                priority_label = 'MEDIUM'
-            else:
-                priority_label = 'LOW'
-            
-            lines.append(f"- {key.upper()}: {data.get('summary', '')} (Priority: {priority} - {priority_label})")
-    
-    return '\n'.join(lines) if lines else 'No active analysis modules.'
+@router.get("/dashboard/recommendation")
+async def get_dashboard_recommendation(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Dashboard Recommendation - En yüksek öncelikli aksiyon."""
+    try:
+        builder = get_dashboard_builder(db, current_user.id)
+        summary = builder.build_dashboard()
+        
+        rec_engine = RecommendationEngine(db, current_user.id)
+        recommendation = rec_engine.get_top_recommendation(summary)
+        
+        return {
+            'success': True,
+            'recommendation': recommendation,
+            'dashboard_summary': summary
+        }
+    except Exception as e:
+        print(f"❌ Recommendation hatası: {e}")
+        return {
+            'success': False,
+            'recommendation': None,
+            'dashboard_summary': {}
+        }
 
-# app/api/endpoints/dashboard.py - /dashboard/change endpoint'i (DÜZELTİLMİŞ)
+
+@router.get("/dashboard/ai-recommendation")
+async def get_ai_dashboard_recommendation(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """AI Presentation - Seçilen aksiyonu açıklar."""
+    try:
+        builder = get_dashboard_builder(db, current_user.id)
+        summary = builder.build_dashboard()
+        
+        rec_engine = RecommendationEngine(db, current_user.id)
+        recommendation = rec_engine.get_top_recommendation(summary)
+        
+        if not recommendation:
+            return {
+                'success': True,
+                'has_recommendation': False,
+                'message': 'Henüz yeterli analiz verisi yok.'
+            }
+        
+        # AI açıklaması oluştur
+        llm = get_llm_service()
+        
+        prompt = f"""
+You are a senior Supply Chain Consultant providing a brief executive recommendation.
+
+**Selected Action:**
+- Analysis: {recommendation.get('analysis', '')}
+- Priority: {recommendation.get('priority', 0)}
+- Title: {recommendation.get('title', '')}
+- Reason: {recommendation.get('reason', '')}
+- Expected Benefit: {recommendation.get('expected_benefit', '')}
+- Target Page: {recommendation.get('target_page', '')}
+
+Write a concise 2-3 sentence executive recommendation that:
+1. States what should be done
+2. Explains why it's important
+3. Mentions the expected benefit
+
+Keep the tone professional, clear, and actionable.
+"""
+        
+        try:
+            ai_response = llm.generate(prompt, temperature=0.3, max_tokens=200)
+        except Exception as e:
+            print(f"❌ AI açıklama hatası: {e}")
+            ai_response = f"{recommendation.get('title', '')} öneriliyor. {recommendation.get('reason', '')}"
+        
+        return {
+            'success': True,
+            'has_recommendation': True,
+            'recommendation': recommendation,
+            'ai_explanation': ai_response,
+            'target_page': recommendation.get('target_page', '/dashboard'),
+            'analysis_id': recommendation.get('analysis_id'),
+            'analysis_type': recommendation.get('analysis_type'),
+            'dataset_id': recommendation.get('dataset_id'),
+        }
+    except Exception as e:
+        print(f"❌ AI Recommendation hatası: {e}")
+        return {
+            'success': False,
+            'has_recommendation': False,
+            'message': str(e)
+        }
+
+
+# ============================================================
+# 📌 TODAY'S DECISION
+# ============================================================
+
+@router.get("/dashboard/todays-decision")
+async def get_todays_decision(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Bugünün Kararı - AI Decision Engine'den gelen en güncel karar."""
+    try:
+        # En son analiz sonucunu al (AI Decision içeren)
+        result = db.query(AnalysisResult).filter(
+            AnalysisResult.user_id == current_user.id,
+            AnalysisResult.ai_status == 'decision_completed',
+            AnalysisResult.data.isnot(None)
+        ).order_by(AnalysisResult.created_at.desc()).first()
+        
+        if not result:
+            return {
+                'success': True,
+                'has_decision': False,
+                'message': 'Henüz AI kararı oluşturulmamış.'
+            }
+        
+        data = result.data or {}
+        ai_decision = data.get('ai_decision')
+        
+        if not ai_decision:
+            return {
+                'success': True,
+                'has_decision': False,
+                'message': 'Henüz AI kararı oluşturulmamış.'
+            }
+        
+        return {
+            'success': True,
+            'has_decision': True,
+            'decision': ai_decision
+        }
+    except Exception as e:
+        print(f"❌ Bugünün kararı hatası: {e}")
+        return {
+            'success': False,
+            'has_decision': False,
+            'message': str(e)
+        }
+
+
+# ============================================================
+# 📌 CHANGE (SON ANALİZDEN BU YANA NE DEĞİŞTİ?)
+# ============================================================
 
 @router.get("/dashboard/change")
 async def get_dashboard_changes(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Son Analizden Bu Yana Ne Değişti?
-    """
+    """Son Analizden Bu Yana Ne Değişti?"""
     try:
         from app.services.dashboard_change_engine import get_dashboard_change_engine
         
         engine = get_dashboard_change_engine(db, current_user.id)
         changes = engine.get_all_changes()
         gains = engine.get_gains()
-        
-        # ✅ DEBUG: Logla
-        print(f"🔍 Changes: {changes}")
-        print(f"🔍 Gains: {gains}")
         
         return {
             'success': True,
@@ -310,5 +324,3 @@ async def get_dashboard_changes(
             'has_changes': False,
             'error': str(e)
         }
-
-    

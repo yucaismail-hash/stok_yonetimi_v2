@@ -1,7 +1,6 @@
-// frontend/src/pages/BacktestPage.tsx - TAM DOSYA (GÜNCELLENMİŞ)
-// 🆕 Cost query'ler kaldırıldı, credit_cost/balance_after eklendi
+// frontend/src/pages/BacktestPage.tsx - TAM VE DÜZELTİLMİŞ
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -33,6 +32,13 @@ import {
   Snackbar,
   Avatar,
   alpha,
+  // ✅ EKSİK IMPORT'LAR
+  Stepper,
+  Step,
+  StepLabel,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from '@mui/material';
 import {
   School,
@@ -62,6 +68,7 @@ import {
   Star,
   ShowChart,
   AccountBalanceWallet,
+  ExpandMore,
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
@@ -69,30 +76,14 @@ import { useAuth } from '../hooks/useAuth';
 import { usePricingPreview } from '../hooks/usePricing';
 import { fetchAndLoadResult, checkAndLoadAnalysis } from '../utils/loadAnalysisResult';
 
-interface BacktestResult {
-  material_code: string;
-  group: string;
-  best_strategy: string;
-  service_level: number;
-  total_cost: number;
-  holding_cost: number;
-  shortage_cost: number;
-  stockout_probability: number;
-  tail_risk: number;
-  tail_risk_level: string;
-  total_shortage: number;
-  strategies_tested: number;
-  strategy_details: any;
-  recommendation: string;
-  current_rop: number;
-  recommended_rop: number;
-}
+// ✅ YENİ BİLEŞENLER
+import DecisionReasoning from '../components/Results/DecisionReasoning';
+import TechnicalAnalysisDetail from '../components/Results/TechnicalAnalysisDetail';
+import LearningScoreBadge from '../components/Dashboard/LearningScoreBadge';
 
-interface HistoryItem {
-  id: number;
-  created_at: string;
-  data: any;
-}
+// ============================================================
+// 📌 STRATEJİ LABELLARI VE RENKLERİ (DOSYA İÇİNDE TANIMLA)
+// ============================================================
 
 const strategyLabels: Record<string, string> = {
   ai: 'AI',
@@ -115,6 +106,10 @@ const strategyColors: Record<string, string> = {
   simple_moving_avg: '#00897b',
   last_value: '#6d4c41',
 };
+
+// ============================================================
+// 📌 STRATEJİ DETAYLARI (DOSYA İÇİNDE TANIMLA)
+// ============================================================
 
 interface StrategyDetail {
   key: string;
@@ -229,6 +224,253 @@ const strategyDetails: StrategyDetail[] = [
     },
   },
 ];
+
+// ============================================================
+// 📌 INTERFACES
+// ============================================================
+
+interface BacktestResult {
+  material_code: string;
+  group: string;
+  best_strategy: string;
+  service_level: number;
+  total_cost: number;
+  holding_cost: number;
+  shortage_cost: number;
+  stockout_probability: number;
+  tail_risk: number;
+  tail_risk_level: string;
+  total_shortage: number;
+  strategies_tested: number;
+  strategy_details: any;
+  recommendation: string;
+  current_rop: number;
+  recommended_rop: number;
+  ai_decision?: {
+    decision: string;
+    priority: string;
+    confidence: number;
+    reasons: string[];
+    expected_impact: Record<string, string>;
+    next_review_days: number;
+    explanation: string;
+    analysis_type: string;
+  };
+}
+
+interface HistoryItem {
+  id: number;
+  created_at: string;
+  data: any;
+}
+
+interface AnalysisStep {
+  label: string;
+  description: string;
+  status: 'pending' | 'active' | 'completed' | 'error';
+  timestamp?: string;
+}
+
+interface AnalysisSummary {
+  totalMaterials: number;
+  mostUsedModel: string;
+  mostUsedModelPercent: number;
+  avgRMSE: number;
+  trendUpCount: number;
+  trendDownCount: number;
+  modelDistribution: Record<string, number>;
+  bestMaterial: string;
+  worstMaterial: string;
+  bestRMSE: number;
+  worstRMSE: number;
+  seasonalityLevel: string;
+}
+
+interface AIComment {
+  summary: string;
+  trend: string;
+  seasonality: string;
+  confidence: string;
+  recommendation: string;
+}
+
+// ============================================================
+// 📌 AI REASONING SECTION BİLEŞENİ
+// ============================================================
+
+const AIReasoningSection = ({ result }: { result: BacktestResult }) => {
+  const aiDecision = result.ai_decision;
+  
+  if (!aiDecision) {
+    return null;
+  }
+
+  const reasoning = {
+    recommended_ss: result.recommended_rop || 0,
+    current_ss: result.current_rop || 0,
+    reasons: aiDecision.reasons || [
+      result.service_level < 0.85 ? 'Servis seviyesi düşük' : '',
+      result.tail_risk > 0.5 ? 'Tail risk yüksek' : '',
+      result.stockout_probability > 10 ? 'Stok tükenme riski yüksek' : '',
+      result.best_strategy ? `En iyi strateji: ${result.best_strategy}` : '',
+    ].filter(Boolean),
+    conclusion: aiDecision.decision === 'change_forecast_model' 
+      ? `En iyi strateji: ${result.best_strategy}` 
+      : aiDecision.decision === 'maintain_current'
+      ? 'Mevcut strateji yeterli.'
+      : 'Detaylı analiz önerilir.',
+    confidence: aiDecision.confidence || 0.5,
+    factors: {
+      cv: 0,
+      lead_time: 0,
+      intermittent: false,
+      seasonal: false,
+      risk_score: result.tail_risk || 0,
+      pattern: result.tail_risk > 0.5 ? 'Yüksek Risk' : 'Düşük Risk',
+    }
+  };
+
+  return (
+    <Box sx={{ mt: 1 }}>
+      <DecisionReasoning
+        materialCode={result.material_code}
+        reasoning={reasoning}
+      />
+    </Box>
+  );
+};
+
+// ============================================================
+// 📌 TEKNİK ANALİZ BÖLÜMÜ - ACCORDION
+// ============================================================
+
+const TechnicalAnalysisSection = ({ result }: { result: BacktestResult }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const technicalData = {
+    material_code: result.material_code,
+    cv: result.tail_risk || 0,
+    pattern: result.tail_risk > 0.5 ? 'YUKSEK_RISK' : 'DUSUK_RISK',
+    pattern_label: result.tail_risk > 0.5 ? 'Yüksek Risk' : 'Düşük Risk',
+    pattern_color: result.tail_risk > 0.5 ? 'error' : 'success',
+    abc: 'C',
+    abc_label: 'Backtest',
+    xyz: result.tail_risk > 0.5 ? 'Z' : 'X',
+    xyz_label: result.tail_risk > 0.5 ? 'Yüksek Risk' : 'Düşük Risk',
+    forecast_model: result.best_strategy || 'hybrid',
+    forecast_model_label: result.best_strategy || 'Hibrit',
+    seasonality: false,
+    seasonality_label: 'Yok',
+    seasonality_strength: 0,
+    trend_direction: result.service_level > 0.95 ? 'Artış' : 'Azalış',
+    trend_percent: 0,
+    lead_time_days: 14,
+    zero_ratio: 0,
+    risk_score: result.tail_risk || 0,
+    risk_level: result.tail_risk > 0.5 ? 'Yüksek' : 'Düşük',
+  };
+
+  return (
+    <Accordion 
+      expanded={expanded} 
+      onChange={() => setExpanded(!expanded)}
+      sx={{ 
+        mt: 1, 
+        '&:before': { display: 'none' },
+        border: '1px solid #e8f0fe',
+        borderRadius: 1,
+      }}
+    >
+      <AccordionSummary expandIcon={<ExpandMore />}>
+        <Typography variant="caption" sx={{ fontWeight: 500, fontSize: '0.7rem', color: '#1f4e79' }}>
+          📊 Teknik Analizi Göster
+        </Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ p: 1 }}>
+        <TechnicalAnalysisDetail data={technicalData} />
+      </AccordionDetails>
+    </Accordion>
+  );
+};
+
+// ============================================================
+// 📌 ANALİZ AŞAMALARI BİLEŞENİ
+// ============================================================
+
+const AnalysisProgress = ({ 
+  steps, 
+  activeStep, 
+  isComplete,
+  compact = false,
+}: { 
+  steps: AnalysisStep[]; 
+  activeStep: number; 
+  isComplete: boolean;
+  compact?: boolean;
+}) => {
+  return (
+    <Box sx={{ width: '100%' }}>
+      <Stepper 
+        activeStep={activeStep} 
+        orientation="vertical" 
+        sx={{ 
+          '& .MuiStepConnector-line': { display: 'none' },
+          '& .MuiStep-root': { 
+            padding: compact ? '2px 0' : '4px 0',
+          },
+        }}
+      >
+        {steps.map((step, index) => {
+          const isActive = index === activeStep;
+          const isCompleted = index < activeStep || (isComplete && index === activeStep);
+          const isError = step.status === 'error';
+
+          const getStepIcon = () => {
+            if (isError) return <Error color="error" fontSize="small" />;
+            if (isCompleted) return <CheckCircle color="success" fontSize="small" />;
+            if (isActive) return <CircularProgress size={14} />;
+            return <Pending color="disabled" fontSize="small" />;
+          };
+
+          return (
+            <Step key={index} completed={isCompleted}>
+              <StepLabel
+                icon={getStepIcon()}
+                sx={{
+                  '& .MuiStepLabel-label': {
+                    color: isActive ? '#1f4e79' : isCompleted ? '#2e7d32' : '#9e9e9e',
+                    fontWeight: isActive ? 600 : 400,
+                    fontSize: compact ? '0.7rem' : '0.75rem',
+                  },
+                }}
+              >
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                  <Typography variant="body2" sx={{ fontWeight: isActive ? 600 : 400, fontSize: compact ? '0.7rem' : '0.75rem' }}>
+                    {step.label}
+                  </Typography>
+                  {step.timestamp && (
+                    <Typography variant="caption" color="text.secondary" sx={{ ml: 1, fontSize: '0.55rem' }}>
+                      {step.timestamp}
+                    </Typography>
+                  )}
+                </Box>
+                {!compact && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25, fontSize: '0.6rem' }}>
+                    {step.description}
+                  </Typography>
+                )}
+              </StepLabel>
+            </Step>
+          );
+        })}
+      </Stepper>
+    </Box>
+  );
+};
+
+// ============================================================
+// 📌 ANA SAYFA BİLEŞENİ
+// ============================================================
 
 export default function BacktestPage() {
   const { user, fetchUser } = useAuth();

@@ -574,7 +574,7 @@ class ExcelReader:
             if material['product_code'] is None:
                 material['_missing_code'] = True
                 material['_row_number'] = row_idx + 1
-            
+             
             result.append(material)
         
         print(f"🔍 materials işlendi: {len(result)} satır")

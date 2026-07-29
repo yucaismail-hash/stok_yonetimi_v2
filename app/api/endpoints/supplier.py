@@ -19,18 +19,15 @@ from sqlalchemy.orm import Session
 from app.services.active_dataset import get_active_dataset_service
 from app.services.pricing_engine import PricingEngine
 from app.schemas.credit import PricingRequest
-from app.services.dashboard_summary_builder import (
-    build_forecast_dashboard_summary,
-    build_safety_stock_dashboard_summary,
-    build_simulation_dashboard_summary,
-    build_backtest_dashboard_summary,
-    build_supplier_dashboard_summary
-)
+
 from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
 import uuid
 import logging
+from app.services.learning_engine import LearningEngine
+from app.services.ai.ai_decision_engine import AIDecisionEngine
+from app.services.dashboard_builder import get_dashboard_builder
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +104,6 @@ def generate_ai_summary_background(result_id: int, result_type: str, user_id: in
         import traceback
         traceback.print_exc()
 
-
 def refresh_trend_summary(user_id: int, country: str = "TR"):
     """Trend Summary'yi yenile"""
     try:
@@ -157,6 +153,92 @@ def refresh_trend_summary(user_id: int, country: str = "TR"):
             
     except Exception as e:
         logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
+
+def generate_ai_decision_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
+    """
+    Arka planda AI Decision Engine ile karar oluşturur.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import User, AnalysisResult
+        from app.services.ai.ai_decision_engine import AIDecisionEngine
+        from app.analysis.ai_summary_engine import get_language_from_country
+        
+        db2 = SessionLocal()
+        try:
+            user = db2.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            result = db2.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
+            if not result:
+                logger.error(f"❌ Analiz sonucu bulunamadı: {result_id}")
+                return
+            
+            language = get_language_from_country(country or user.billing_country or "TR")
+            
+            # AI Decision Engine ile karar oluştur
+            decision_engine = AIDecisionEngine(language=language)
+            decision = decision_engine.generate_decision(
+                analysis_type=result_type,
+                analysis_data=result.data
+            )
+            
+            # Kararı veriye ekle
+            data = result.data or {}
+            data['ai_decision'] = decision
+            result.data = data
+            
+            # AI Decision alanlarını güncelle
+            result.ai_status = "decision_completed"
+            result.ai_created_at = datetime.utcnow()
+            db2.commit()
+            
+            logger.info(f"✅ AI Decision oluşturuldu: {result_type} (ID: {result_id})")
+            
+            # ✅ Learning Engine'i tetikle
+            try:
+                learning_engine = LearningEngine(db2, user_id)
+                learning_engine.analyze_and_learn({
+                    'result_type': result_type,
+                    'data': result.data
+                })
+                logger.info(f"✅ Learning Engine tamamlandı: {result_id}")
+            except Exception as e:
+                logger.error(f"❌ Learning Engine hatası: {e}")
+            
+        finally:
+            db2.close()
+    except Exception as e:
+        logger.error(f"❌ AI Decision oluşturma hatası: {e}")
+        import traceback
+        traceback.print_exc()
+
+def trigger_learning_engine_background(user_id: int, result_id: int, result_type: str):
+    """
+    Arka planda Learning Engine'i tetikler.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import AnalysisResult
+        from app.services.learning_engine import LearningEngine
+        
+        db = SessionLocal()
+        try:
+            result = db.query(AnalysisResult).filter(AnalysisResult.id == result_id).first()
+            if result:
+                engine = LearningEngine(db, user_id)
+                engine.analyze_and_learn({
+                    'result_type': result_type,
+                    'data': result.data
+                })
+                logger.info(f"✅ Learning Engine tetiklendi: {result_id}")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"❌ Learning Engine background hatası: {e}")
+
 
 
 # ============================================================
@@ -353,32 +435,35 @@ def analyze_suppliers_batch(
         db.commit()
         db.refresh(analysis_result)
         
-        # ✅ 4. dashboard_summary oluştur
-        dashboard_summary = build_supplier_dashboard_summary(
-            suppliers=supplier_results,
+        # ✅ 4. YENİ: Dashboard Builder ile summary oluştur
+        builder = get_dashboard_builder(db, current_user.id)
+        dashboard_summary = builder._build_summary_from_decision(
+            result_type='supplier_batch',
             analysis_id=analysis_result.id,
-            dataset_id=dataset.id
+            ai_decision=result_data.get('ai_decision', {}),
+            data=result_data
         )
         
-        # ✅ 5. Güncelle
+        # ✅ 5. dashboard_summary'yi ekle ve güncelle
         result_data['dashboard_summary'] = dashboard_summary
         analysis_result.data = result_data
         db.commit()
         
-        # AI Özetini arka planda oluştur
+        # ✅ AI Decision'ı arka planda oluştur (AI Summary'dan sonra)
         background_tasks.add_task(
-            generate_ai_summary_background,
+            generate_ai_decision_background,
             analysis_result.id,
             'supplier_batch',
             current_user.id,
             current_user.billing_country or 'TR'
         )
-
-        # Trend Summary'yi arka planda yenile
+        
+        # ✅ Learning Engine'i arka planda tetikle (mevcut kodun sonuna ekleyin)
         background_tasks.add_task(
-            refresh_trend_summary,
+            trigger_learning_engine_background,
             current_user.id,
-            current_user.billing_country or 'TR'
+            analysis_result.id,
+            'supplier_batch'
         )
         
         return {
@@ -726,7 +811,7 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             update_async_task_status(db, task_id, 'failed', 'Hiçbir sonuç üretilemedi')
             return
         
-        # ✅ 1. result_data hazırla
+                # ✅ 1. result_data hazırla
         result_data = {
             'success': True,
             'total': len(supplier_results),
@@ -740,58 +825,34 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             'completed_at': datetime.utcnow().isoformat()
         }
         
-        # ✅ 2. Mevcut kaydı güncelle (task_id ile)
-        db.query(AnalysisResult).filter(
-            AnalysisResult.task_id == task_id
-        ).update({
-            'data': result_data,
-            'status': 'completed',
-            'progress': 100,
-            'message': 'Tamamlandı!',
-            'total_materials': len(supplier_results),
-            'updated_at': datetime.utcnow()
-        })
-        db.commit()
-        
-        # ✅ 3. Result'u tekrar al (ID için)
-        result = db.query(AnalysisResult).filter(
+        # ✅ 2. Mevcut kaydı al
+        existing = db.query(AnalysisResult).filter(
             AnalysisResult.task_id == task_id
         ).first()
         
-        # ✅ 4. Bildirim oluştur
-        try:
-            notification = Notification(
-                user_id=user_id,
-                title=f"✅ Tedarikçi Analizi Tamamlandı!",
-                message=f"Tedarikçi analiz raporunuz başarıyla oluşturuldu. (#{task_id[:8]})",
-                type="success",
-                link="/tasks"
+        if existing:
+            # ✅ 3. YENİ: Dashboard Builder ile summary oluştur
+            builder = get_dashboard_builder(db, user_id)
+            dashboard_summary = builder._build_summary_from_decision(
+                result_type='supplier_batch_async',
+                analysis_id=existing.id,
+                ai_decision=result_data.get('ai_decision', {}),
+                data=result_data
             )
-            db.add(notification)
-            db.commit()
-        except Exception as e:
-            print(f"⚠️ Bildirim hatası: {e}")
-        
-        # ✅ 5. AI Özeti oluştur
-        try:
-            if result:
-                user = db.query(User).filter(User.id == user_id).first()
-                country = user.billing_country if user else 'TR'
-                
-                generate_ai_summary_background(
-                    result_id=result.id,
-                    result_type='supplier_batch_async',
-                    user_id=user_id,
-                    country=country
-                )
-                logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
-        except Exception as e:
-            logger.error(f"❌ Async AI özeti hatası: {e}")
+            
+            # ✅ 4. dashboard_summary'yi ekle
+            result_data['dashboard_summary'] = dashboard_summary
+            
+            # ✅ 5. Güncelle
             db.query(AnalysisResult).filter(
                 AnalysisResult.task_id == task_id
             ).update({
-                'ai_status': 'failed',
-                'ai_created_at': datetime.utcnow(),
+                'data': result_data,
+                'status': 'completed',
+                'progress': 100,
+                'message': 'Tamamlandı!',
+                'total_materials': len(supplier_results),
+                'updated_at': datetime.utcnow()
             })
             db.commit()
         
@@ -801,6 +862,49 @@ def run_async_supplier_job(task_id: str, user_id: int, upload_id: str, db: Sessi
             logger.info(f"✅ Async Trend Summary yenilendi: {task_id}")
         except Exception as e:
             logger.error(f"❌ Async Trend Summary hatası: {e}")
+        
+        # ✅ 7. AI DECISION + LEARNING ENGINE (YENİ)
+        try:
+            if result:
+                from app.services.ai.ai_decision_engine import AIDecisionEngine
+                from app.services.learning_engine import LearningEngine
+                from app.analysis.ai_summary_engine import get_language_from_country
+                
+                user = db.query(User).filter(User.id == user_id).first()
+                language = get_language_from_country(user.billing_country or "TR")
+                
+                # AI Decision oluştur
+                decision_engine = AIDecisionEngine(language=language)
+                decision = decision_engine.generate_decision(
+                    analysis_type=result.result_type,
+                    analysis_data=result.data
+                )
+                
+                # Kararı veriye ekle
+                data = result.data or {}
+                data['ai_decision'] = decision
+                result.data = data
+                db.commit()
+                logger.info(f"✅ Async AI Decision oluşturuldu: {task_id}")
+                
+                # Learning Engine'i tetikle
+                learning_engine = LearningEngine(db, user_id)
+                learning_engine.analyze_and_learn({
+                    'result_type': result.result_type,
+                    'data': result.data
+                })
+                db.commit()
+                logger.info(f"✅ Async Learning Engine tamamlandı: {task_id}")
+                
+        except Exception as e:
+            logger.error(f"❌ Async AI Decision/Learning hatası: {e}")
+            db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).update({
+                'ai_status': 'decision_failed',
+                'ai_created_at': datetime.utcnow(),
+            })
+            db.commit()
         
         print(f"✅ Async tedarikçi analizi tamamlandı: Task ID {task_id}, {len(supplier_results)} tedarikçi")
         
