@@ -266,6 +266,7 @@ def clear_upload_data(
 # ============================================================
 # 📌 GET RESULTS - analysis_results tablosundan
 # ============================================================
+
 @router.get("/upload/results")
 async def get_upload_results(
     result_type: Optional[str] = None,
@@ -320,7 +321,13 @@ async def get_upload_results(
                 'status': r.status or 'completed',
                 'progress': r.progress or 100,
                 'total_materials': r.total_materials or len(items),
-                'data': data
+                'data': data,
+                # ✅ AI SUMMARY ALANLARI EKLENDİ
+                'ai_summary': r.ai_summary,
+                'ai_status': r.ai_status,
+                'ai_version': r.ai_version,
+                'ai_created_at': r.ai_created_at.isoformat() if r.ai_created_at else None,
+                'ai_prompt_version': r.ai_prompt_version
             })
     
     results.sort(key=lambda x: x['created_at'], reverse=True)
@@ -333,7 +340,58 @@ async def get_upload_results(
         "results": results
     }
 
+# app/api/endpoints/upload.py - get_result_by_id (YENİ ENDPOINT)
 
+@router.get("/upload/results/{result_id}")
+async def get_result_by_id(
+    result_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Belirli bir analiz sonucunu ID ile getirir.
+    """
+    try:
+        result = db.query(AnalysisResult).filter(
+            AnalysisResult.id == result_id,
+            AnalysisResult.user_id == current_user.id
+        ).first()
+        
+        if not result:
+            return {
+                'success': False,
+                'error': 'Sonuç bulunamadı',
+                'result': None
+            }
+        
+        data = result.data if isinstance(result.data, dict) else {}
+        
+        return {
+            'success': True,
+            'result': {
+                'id': result.id,
+                'created_at': result.created_at.isoformat() if result.created_at else None,
+                'result_type': result.result_type,
+                'status': result.status,
+                'progress': result.progress,
+                'total_materials': result.total_materials,
+                'data': data,
+                # ✅ AI SUMMARY ALANLARI EKLENDİ
+                'ai_summary': result.ai_summary,
+                'ai_status': result.ai_status,
+                'ai_version': result.ai_version,
+                'ai_created_at': result.ai_created_at.isoformat() if result.ai_created_at else None,
+                'ai_prompt_version': result.ai_prompt_version
+            }
+        }
+    except Exception as e:
+        print(f"❌ Result hatası: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'result': None
+        }
+    
 # ============================================================
 # 📌 DATASET BUILDER ENDPOINT'LERİ
 # ============================================================

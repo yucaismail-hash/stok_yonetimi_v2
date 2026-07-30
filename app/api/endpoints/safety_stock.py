@@ -1,4 +1,7 @@
-# app/api/endpoints/safety_stock.py - TAM VE GÜNCEL (ACTIVE DATASET BAZLI)
+# app/api/endpoints/safety_stock.py - TAM VE DÜZELTİLMİŞ
+# ✅ material_code düzeltildi (product_code kullanılıyor)
+# ✅ description eklendi
+# ✅ AI Summary background task eklendi
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, status
 from pydantic import BaseModel
@@ -22,7 +25,6 @@ import logging
 
 from app.services.learning_engine import LearningEngine
 from app.services.ai.ai_decision_engine import AIDecisionEngine
-
 from app.services.dashboard_builder import get_dashboard_builder
 
 # ✅ LOGGER
@@ -38,15 +40,12 @@ ai_engine = AISummaryEngine()
 # 📌 AKILLI ANALİZ MOTORU - Yardımcı Fonksiyonlar
 # ============================================================
 
-# app/api/endpoints/safety_stock.py - calculate_abc_xyz DÜZELTİLDİ
-
 def calculate_abc_xyz(material: dict, demand: list) -> dict:
     """
     ABC/XYZ analizini hesaplar.
     ABC: Maliyet bazlı (A: %70, B: %20, C: %10)
     XYZ: Talep değişkenliği bazlı (X: CV<0.3, Y: CV<0.6, Z: CV>=0.6)
     """
-    # ✅ unit_cost None ise 0 olarak kabul et
     unit_cost = material.get('unit_cost', 0)
     if unit_cost is None:
         unit_cost = 0
@@ -55,7 +54,6 @@ def calculate_abc_xyz(material: dict, demand: list) -> dict:
     demand_std = np.std(demand) if demand else 0
     cv = demand_std / avg_demand if avg_demand > 0 else 0
     
-    # ABC (Maliyet bazlı)
     if unit_cost > 100:
         abc = 'A'
     elif unit_cost > 30:
@@ -63,7 +61,6 @@ def calculate_abc_xyz(material: dict, demand: list) -> dict:
     else:
         abc = 'C'
     
-    # XYZ (Değişkenlik bazlı)
     if cv < 0.3:
         xyz = 'X'
     elif cv < 0.6:
@@ -80,8 +77,8 @@ def calculate_abc_xyz(material: dict, demand: list) -> dict:
         'xyz_color': 'success' if xyz == 'X' else ('warning' if xyz == 'Y' else 'error'),
     }
 
+
 def check_seasonality(demand: list) -> dict:
-    """Sezonsallık kontrolü yapar (basit yaklaşım)"""
     if len(demand) < 12:
         return {
             'has_seasonality': False,
@@ -115,7 +112,6 @@ def check_seasonality(demand: list) -> dict:
 
 
 def check_trend(demand: list) -> dict:
-    """Trend analizi yapar"""
     if len(demand) < 4:
         return {
             'has_trend': False,
@@ -127,7 +123,6 @@ def check_trend(demand: list) -> dict:
     
     x = np.arange(len(demand))
     y = np.array(demand)
-    
     slope, intercept = np.polyfit(x, y, 1)
     
     slope = float(slope)
@@ -456,10 +451,9 @@ def refresh_trend_summary(user_id: int, country: str = "TR"):
     except Exception as e:
         logger.error(f"❌ Trend yenileme fonksiyonu hatası: {e}")
 
+
 def generate_ai_decision_background(result_id: int, result_type: str, user_id: int, country: str = "TR"):
-    """
-    Arka planda AI Decision Engine ile karar oluşturur.
-    """
+    """Arka planda AI Decision Engine ile karar oluşturur."""
     try:
         from app.database import SessionLocal
         from app.models import User, AnalysisResult
@@ -480,14 +474,12 @@ def generate_ai_decision_background(result_id: int, result_type: str, user_id: i
             
             language = get_language_from_country(country or user.billing_country or "TR")
             
-            # AI Decision Engine ile karar oluştur
             decision_engine = AIDecisionEngine(language=language)
             decision = decision_engine.generate_decision(
                 analysis_type=result_type,
                 analysis_data=result.data
             )
             
-            # Kararı veriye ekle
             data = result.data or {}
             data['ai_decision'] = decision
             result.data = data
@@ -498,7 +490,6 @@ def generate_ai_decision_background(result_id: int, result_type: str, user_id: i
             
             logger.info(f"✅ AI Decision oluşturuldu: {result_type} (ID: {result_id})")
             
-            # ✅ Learning Engine'i tetikle
             try:
                 learning_engine = LearningEngine(db2, user_id)
                 learning_engine.analyze_and_learn({
@@ -518,9 +509,7 @@ def generate_ai_decision_background(result_id: int, result_type: str, user_id: i
 
 
 def trigger_learning_engine_background(user_id: int, result_id: int, result_type: str):
-    """
-    Arka planda Learning Engine'i tetikler.
-    """
+    """Arka planda Learning Engine'i tetikler."""
     try:
         from app.database import SessionLocal
         from app.models import AnalysisResult
@@ -540,6 +529,7 @@ def trigger_learning_engine_background(user_id: int, result_id: int, result_type
             db.close()
     except Exception as e:
         logger.error(f"❌ Learning Engine background hatası: {e}")
+
 
 # ============================================================
 # 📌 SENKRON SAFETY STOCK - AKILLI ANALİZ
@@ -569,17 +559,15 @@ def calculate_safety_stock_batch(
         upload_id = stats['upload_id']
         dataset_id = stats['dataset_id']
         
-        # ✅ Active dataset'ten materials'i al
         materials = active_service.get_active_materials(current_user.id)
         if not materials:
             raise HTTPException(status_code=404, detail="Dataset'te malzeme bulunamadı!")
         
-        # ✅ Active dataset'i al (pricing için)
         dataset = active_service.get_active_dataset(current_user.id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
         
-        # ✅ Pricing Engine ile ücretlendirme
+        # ✅ Pricing Engine
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/safety-stock/batch",
@@ -603,7 +591,6 @@ def calculate_safety_stock_batch(
         
         # ✅ Analizi çalıştır
         service_level = request.get('service_level', 0.95)
-        
         results = []
         
         for material in materials:
@@ -633,8 +620,31 @@ def calculate_safety_stock_batch(
             risk_score = (cv * 0.4 + zero_ratio * 0.3 + (1 - service_level) * 0.3)
             risk_score = min(1.0, risk_score)
             
+            # ✅ AI DECISION OLUŞTUR
+            if risk_score > 0.5:
+                decision = 'increase_safety_stock'
+                priority = 'high'
+            elif risk_score > 0.3:
+                decision = 'maintain_current'
+                priority = 'medium'
+            else:
+                decision = 'decrease_safety_stock'
+                priority = 'low'
+            
+            reasons = []
+            if cv > 0.7:
+                reasons.append('CV yüksek')
+            if lead_time > 21:
+                reasons.append('Lead Time uzun')
+            if intermittent.get('is_intermittent', False):
+                reasons.append('Düzensiz talep')
+            if seasonality.get('has_seasonality', False):
+                reasons.append('Mevsimsel talep')
+            if risk_score > 0.5:
+                reasons.append('Risk skoru yüksek')
+            
             ai_comment = get_ai_comment(
-                material_code=material.get('code', ''),
+                material_code=material.get('product_code', ''),
                 abc_xyz=abc_xyz,
                 pattern=pattern,
                 seasonality=seasonality,
@@ -647,7 +657,9 @@ def calculate_safety_stock_batch(
             )
             
             results.append({
-                'material_code': str(material.get('code', '')),
+                # ✅ DOĞRU: product_code kullan
+                'material_code': str(material.get('product_code', '')),
+                'description': str(material.get('description', '')),
                 'group': str(material.get('group', 'GENEL')),
                 'lead_time_days': int(lead_time),
                 'pattern': str(pattern),
@@ -684,6 +696,19 @@ def calculate_safety_stock_batch(
                 'risk_score': float(risk_score),
                 'risk_level': str('Yüksek' if risk_score > 0.5 else ('Orta' if risk_score > 0.3 else 'Düşük')),
                 'ai_comment': str(ai_comment),
+                'ai_decision': {
+                    'decision': decision,
+                    'priority': priority,
+                    'confidence': 0.85,
+                    'reasons': reasons,
+                    'expected_impact': {
+                        'stockout_risk': '-%25' if decision == 'increase_safety_stock' else '-%10',
+                        'inventory_cost': '+%10' if decision == 'increase_safety_stock' else '-%5'
+                    },
+                    'next_review_days': 30 if decision == 'increase_safety_stock' else 14,
+                    'explanation': f'Risk skoru {risk_score:.2f} nedeniyle {decision} önerildi.',
+                    'analysis_type': 'safety_stock'
+                }
             })
         
         if not results:
@@ -716,17 +741,17 @@ def calculate_safety_stock_batch(
             },
             total_materials=len(results),
             task_id=None,
-            status=None,
+            status='completed',
             progress=100,
             expires_at=datetime.utcnow() + timedelta(days=15)
         )
         
-        # ✅ 3. Kaydet ve ID al
+        # ✅ 3. Kaydet
         db.add(analysis_result)
         db.commit()
         db.refresh(analysis_result)
         
-        # ✅ 4. YENİ: Dashboard Builder ile summary oluştur
+        # ✅ 4. Dashboard Builder
         builder = get_dashboard_builder(db, current_user.id)
         dashboard_summary = builder._build_summary_from_decision(
             result_type='safety_stock_batch',
@@ -735,7 +760,6 @@ def calculate_safety_stock_batch(
             data=result_data
         )
         
-        # ✅ 5. dashboard_summary'yi ekle ve güncelle
         result_data['dashboard_summary'] = dashboard_summary
         analysis_result.data = result_data
         db.commit()
@@ -758,16 +782,25 @@ def calculate_safety_stock_batch(
         db.commit()
         db.refresh(analysis_result)
 
-        # ✅ AI Decision'ı arka planda oluştur (AI Summary'dan sonra)
+        # ✅ AI Decision
         background_tasks.add_task(
-        generate_ai_decision_background,
-        analysis_result.id,
-        'safety_stock_batch',
-        current_user.id,
-        current_user.billing_country or 'TR'
+            generate_ai_decision_background,
+            analysis_result.id,
+            'safety_stock_batch',
+            current_user.id,
+            current_user.billing_country or 'TR'
         )
-        
-        # ✅ Learning Engine'i arka planda tetikle
+
+        # ✅ AI SUMMARY
+        background_tasks.add_task(
+            generate_ai_summary_background,
+            analysis_result.id,
+            'safety_stock_batch',
+            current_user.id,
+            current_user.billing_country or 'TR'
+        )
+
+        # ✅ Learning Engine
         background_tasks.add_task(
             trigger_learning_engine_background,
             current_user.id,
@@ -800,7 +833,7 @@ def calculate_safety_stock_batch(
 
 
 # ============================================================
-# 📌 ASYNC SAFETY STOCK ANALİZİ - ACTIVE DATASET BAZLI
+# 📌 ASYNC SAFETY STOCK ANALİZİ
 # ============================================================
 
 @router.post("/safety-stock/batch/async")
@@ -810,11 +843,8 @@ def start_async_safety_stock(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Async Emniyet Stoğu Analizi - ACTIVE DATASET BAZLI!
-    """
+    """Async Emniyet Stoğu Analizi - ACTIVE DATASET BAZLI!"""
     try:
-        # ✅ ACTIVE DATASET'ten verileri al
         active_service = get_active_dataset_service(db)
         stats = active_service.get_dataset_stats(current_user.id)
         
@@ -827,19 +857,17 @@ def start_async_safety_stock(
         upload_id = stats['upload_id']
         dataset_id = stats['dataset_id']
         
-        # ✅ Active dataset'ten materials'i al
         materials = active_service.get_active_materials(current_user.id)
         if not materials:
             raise HTTPException(status_code=404, detail="Dataset'te malzeme bulunamadı!")
         
-        # ✅ Active dataset'i al (pricing için)
         dataset = active_service.get_active_dataset(current_user.id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
         
         service_level = request.get('service_level', 0.95)
         
-        # ✅ Pricing Engine ile ücretlendirme (Async'de hemen düş)
+        # ✅ Pricing Engine
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/safety-stock/batch/async",
@@ -861,10 +889,8 @@ def start_async_safety_stock(
                 detail=pricing_response.message or "Pricing işlemi başarısız"
             )
         
-        # Task ID oluştur
         task_id = str(uuid.uuid4())
         
-        # Initial record'u kaydet
         initial_data = {
             'status': 'processing',
             'message': 'Emniyet stoğu analizi başlatıldı, işleniyor...',
@@ -901,7 +927,6 @@ def start_async_safety_stock(
         db.add(initial_record)
         db.commit()
         
-        # Async job'u arka planda başlat
         background_tasks.add_task(
             run_async_safety_stock_job,
             task_id=task_id,
@@ -931,12 +956,8 @@ def start_async_safety_stock(
 
 
 # ============================================================
-# 📌 ASYNC SAFETY STOCK JOB - ACTIVE DATASET BAZLI
+# 📌 ASYNC SAFETY STOCK JOB - DÜZELTİLMİŞ
 # ============================================================
-
-# app/api/endpoints/safety_stock.py - ASYNC JOB TAM GÜNCELLEME
-# run_async_safety_stock_job fonksiyonunun TAMAMI
-
 
 def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, service_level: float, db: Session):
     """Async safety stock işini gerçekleştirir - ACTIVE DATASET BAZLI!"""
@@ -988,8 +1009,31 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                 risk_score = (cv * 0.4 + zero_ratio * 0.3 + (1 - service_level) * 0.3)
                 risk_score = min(1.0, risk_score)
                 
+                # ✅ AI DECISION OLUŞTUR - HER BİR ÜRÜN İÇİN
+                if risk_score > 0.5:
+                    decision = 'increase_safety_stock'
+                    priority = 'high'
+                elif risk_score > 0.3:
+                    decision = 'maintain_current'
+                    priority = 'medium'
+                else:
+                    decision = 'decrease_safety_stock'
+                    priority = 'low'
+                
+                reasons = []
+                if cv > 0.7:
+                    reasons.append('CV yüksek')
+                if lead_time > 21:
+                    reasons.append('Lead Time uzun')
+                if intermittent.get('is_intermittent', False):
+                    reasons.append('Düzensiz talep')
+                if seasonality.get('has_seasonality', False):
+                    reasons.append('Mevsimsel talep')
+                if risk_score > 0.5:
+                    reasons.append('Risk skoru yüksek')
+                
                 ai_comment = get_ai_comment(
-                    material_code=material.get('code', ''),
+                    material_code=material.get('product_code', ''),
                     abc_xyz=abc_xyz,
                     pattern=pattern,
                     seasonality=seasonality,
@@ -1002,7 +1046,8 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                 )
                 
                 results.append({
-                    'material_code': str(material.get('code', '')),
+                    'material_code': str(material.get('product_code', '')),
+                    'description': str(material.get('description', '')),
                     'group': str(material.get('group', 'GENEL')),
                     'lead_time_days': int(lead_time),
                     'pattern': str(pattern),
@@ -1039,13 +1084,26 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                     'risk_score': float(risk_score),
                     'risk_level': str('Yüksek' if risk_score > 0.5 else ('Orta' if risk_score > 0.3 else 'Düşük')),
                     'ai_comment': str(ai_comment),
+                    'ai_decision': {
+                        'decision': decision,
+                        'priority': priority,
+                        'confidence': 0.85,
+                        'reasons': reasons,
+                        'expected_impact': {
+                            'stockout_risk': '-%25' if decision == 'increase_safety_stock' else '-%10',
+                            'inventory_cost': '+%10' if decision == 'increase_safety_stock' else '-%5'
+                        },
+                        'next_review_days': 30 if decision == 'increase_safety_stock' else 14,
+                        'explanation': f'Risk skoru {risk_score:.2f} nedeniyle {decision} önerildi.',
+                        'analysis_type': 'safety_stock'
+                    }
                 })
                 
                 progress = int((idx + 1) / total * 100)
                 update_async_progress(db, task_id, progress, f'{progress}% tamamlandı', len(results))
                 
             except Exception as e:
-                logger.error(f"❌ Async safety stock malzeme hatası ({material.get('code', '')}): {e}")
+                logger.error(f"❌ Async safety stock malzeme hatası ({material.get('product_code', '')}): {e}")
                 continue
         
         if not results:
@@ -1072,7 +1130,7 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
         ).first()
         
         if existing:
-            # ✅ 3. YENİ: Dashboard Builder ile summary oluştur
+            # ✅ 3. Dashboard Builder ile summary oluştur
             builder = get_dashboard_builder(db, user_id)
             dashboard_summary = builder._build_summary_from_decision(
                 result_type='safety_stock_batch_async',
@@ -1129,7 +1187,9 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
         except Exception as e:
             logger.error(f"⚠️ Bildirim hatası: {e}")
         
-        # ✅ AI SUMMARY + TREND + EXECUTIVE
+        # ✅ ============================================================
+        # ✅ AI SUMMARY + TREND + EXECUTIVE (DÜZELTİLMİŞ)
+        # ✅ ============================================================
         try:
             user = db.query(User).filter(User.id == user_id).first()
             country = user.billing_country if user else 'TR'
@@ -1138,8 +1198,18 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
             result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
             
             if result:
+                logger.info(f"🔄 Async AI Summary başlatılıyor: {task_id}")
+                logger.info(f"📊 result.data tipi: {type(result.data)}")
+                logger.info(f"📊 result.data içinde 'results' var mı: {'results' in result.data if result.data else False}")
+                
+                if result.data and 'results' in result.data:
+                    logger.info(f"📊 results uzunluğu: {len(result.data['results'])}")
+                else:
+                    logger.warning(f"⚠️ result.data içinde 'results' yok veya data boş!")
+                
                 result_type = result.result_type
                 
+                # ✅ AI Summary oluştur
                 engine = AISummaryEngine(language=language)
                 summary = engine.build_summary(result_type, result.data)
                 
@@ -1163,6 +1233,8 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                 
         except Exception as e:
             logger.error(f"❌ Async AI/Trend hatası: {e}")
+            import traceback
+            traceback.print_exc()
             db.query(AnalysisResult).filter(
                 AnalysisResult.task_id == task_id
             ).update({
@@ -1171,10 +1243,14 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
             })
             db.commit()
         
-        # ✅ AI DECISION + LEARNING ENGINE (YENİ)
+        # ✅ ============================================================
+        # ✅ AI DECISION + LEARNING ENGINE (DÜZELTİLMİŞ)
+        # ✅ ============================================================
         try:
             result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
             if result:
+                logger.info(f"🔄 Async AI Decision başlatılıyor: {task_id}")
+                
                 from app.services.ai.ai_decision_engine import AIDecisionEngine
                 from app.services.learning_engine import LearningEngine
                 from app.analysis.ai_summary_engine import get_language_from_country
@@ -1182,7 +1258,7 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                 user = db.query(User).filter(User.id == user_id).first()
                 language = get_language_from_country(user.billing_country or "TR")
                 
-                # AI Decision oluştur
+                # ✅ AI Decision oluştur
                 decision_engine = AIDecisionEngine(language=language)
                 decision = decision_engine.generate_decision(
                     analysis_type=result.result_type,
@@ -1196,7 +1272,7 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                 db.commit()
                 logger.info(f"✅ Async AI Decision oluşturuldu: {task_id}")
                 
-                # Learning Engine'i tetikle
+                # ✅ Learning Engine'i tetikle
                 learning_engine = LearningEngine(db, user_id)
                 learning_engine.analyze_and_learn({
                     'result_type': result.result_type,
@@ -1207,6 +1283,8 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
                 
         except Exception as e:
             logger.error(f"❌ Async AI Decision/Learning hatası: {e}")
+            import traceback
+            traceback.print_exc()
             db.query(AnalysisResult).filter(
                 AnalysisResult.task_id == task_id
             ).update({
@@ -1219,6 +1297,7 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
         
     except Exception as e:
         logger.error(f"❌ Async safety stock hatası: {e}")
+        import traceback
+        traceback.print_exc()
         update_async_task_status(db, task_id, 'failed', str(e))
         db.rollback()
-

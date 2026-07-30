@@ -37,68 +37,57 @@ export default function KpiCard({
   const cardContent = (
     <Paper
       sx={{
-        p: compact ? 1.25 : 1.5,
+        p: 1,  // ✅ 1.5 → 1 (daha küçük)
         bgcolor: '#fafcff',
         border: '1px solid #e8f0fe',
-        borderRadius: 2,
-        height: compact ? 72 : 88,
+        borderRadius: 1.5,
+        height: 64,  // ✅ 88 → 64 (daha kısa)
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
         transition: 'all 0.2s',
+        overflow: 'hidden',  // ✅ Taşmayı önle
         '&:hover': {
-          boxShadow: 2,
+          boxShadow: 1,
           borderColor: color,
         },
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 0.25 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0 }}>
         {icon && <Box sx={{ color: color, display: 'flex', alignItems: 'center' }}>{icon}</Box>}
         <Typography
           variant="caption"
           sx={{
-            fontSize: compact ? '0.55rem' : '0.6rem',
+            fontSize: '0.5rem',  // ✅ 0.6 → 0.5
             color: '#6b7280',
             fontWeight: 500,
-            letterSpacing: '0.3px',
+            letterSpacing: '0.2px',
             textTransform: 'uppercase',
+            whiteSpace: 'nowrap',  // ✅ Tek satır
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
           }}
         >
           {label}
         </Typography>
       </Box>
 
-      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
-        <Typography
-          variant="h6"
-          sx={{
-            fontWeight: 700,
-            fontSize: compact ? '1.1rem' : '1.25rem',
-            color: color,
-            lineHeight: 1.2,
-          }}
-        >
-          {value}
-        </Typography>
-
-        {change !== undefined && change !== 0 && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25 }}>
-            <ChangeIcon sx={{ fontSize: 14, color: changeColor }} />
-            <Typography
-              variant="caption"
-              sx={{
-                fontSize: compact ? '0.55rem' : '0.6rem',
-                fontWeight: 600,
-                color: changeColor,
-              }}
-            >
-              {change > 0 ? '+' : ''}{change}
-              {changeLabel && ` ${changeLabel}`}
-            </Typography>
-          </Box>
-        )}
-      </Box>
+      <Typography
+        variant="h6"
+        sx={{
+          fontWeight: 700,
+          fontSize: '0.95rem',  // ✅ 1.1 → 0.95
+          color: color,
+          lineHeight: 1.1,
+          whiteSpace: 'nowrap',  // ✅ Tek satır
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        {value}
+      </Typography>
     </Paper>
+
   );
 
   if (tooltip) {

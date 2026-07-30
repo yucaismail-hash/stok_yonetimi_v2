@@ -24,5 +24,8 @@ export type { TableColumn } from './StandardTable';
 
 // Badge Components
 export { default as AIRecommendationBadge } from './AIRecommendationBadge';
-
 export type { AIRecommendationType, AIRecommendationBadgeProps } from './AIRecommendationBadge';
+
+// ✅ AI Assistant Card
+export { default as AIAssistantCard } from './AIAssistantCard';
+export type { AIAssistantData, AIAssistantCardProps } from './AIAssistantCard';
