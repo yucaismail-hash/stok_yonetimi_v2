@@ -1,8 +1,15 @@
+// src/App.tsx
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+// ✅ Theme import (ARTIK ÇALIŞACAK)
+import theme from './theme';
+
+// Layout ve Pages
 import Layout from './components/Layout/Layout';
-import LandingPage from './pages/LandingPage';
+import LandingPage from './pages/LandingPage/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
@@ -15,39 +22,22 @@ import RiskPage from './pages/RiskPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminPage from './pages/AdminPage';
 import TaskListPage from './pages/TaskListPage';
-import useAuth from './hooks/useAuth'; // ✅ default import olarak değiştirildi
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-// 🎨 Theme
-const theme = createTheme({
-  palette: {
-    mode: 'light',
-    primary: {
-      main: '#1976d2',
-    },
-    secondary: {
-      main: '#dc004e',
-    },
-  },
-  typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-  },
-});
+import useAuth from './hooks/useAuth';
 
 const queryClient = new QueryClient();
 
-// 🔒 Private Route Component - Outlet kullanımı için
+// 🔒 Private Route Component
 function PrivateRoute() {
   const { user, isLoading } = useAuth();
-  
+
   if (isLoading) {
     return <div>Yükleniyor...</div>;
   }
-  
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <Layout />;
 }
 
@@ -55,12 +45,12 @@ function PrivateRoute() {
 function AppRoutes() {
   return (
     <Routes>
-      {/* Public Routes - Layout'sız */}
+      {/* Public Routes */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
 
-      {/* 🔒 Private Routes - Layout ile (Outlet kullanıyor) */}
+      {/* Private Routes */}
       <Route element={<PrivateRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/forecast" element={<ForecastPage />} />

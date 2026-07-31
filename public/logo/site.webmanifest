@@ -1,0 +1,19 @@
+{
+  "name": "Stokonomi",
+  "short_name": "Stokonomi",
+  "display": "standalone",
+  "background_color": "#F8FAFC",
+  "theme_color": "#0B5ED7",
+  "icons": [
+    {
+      "src": "android-chrome-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "android-chrome-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
