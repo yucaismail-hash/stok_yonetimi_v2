@@ -1,5 +1,5 @@
 // frontend/src/components/common/AIAssistantCard.tsx
-// 🤖 AI Executive Summary - Veritabanındaki ai_summary alanından gelir
+// 🤖 Stokonomi AI Analizi - Veritabanındaki ai_summary alanından gelir
 
 import { Box, Typography, Paper, Chip, Avatar } from '@mui/material';
 import { Psychology, CheckCircle } from '@mui/icons-material';
@@ -9,7 +9,7 @@ export interface AIAssistantData {
   overall_risk?: string;
   confidence?: number;
   recommendations?: string[];
-  topMethod?: string;  // ✅ EKLENDİ
+  topMethod?: string;
   kpis?: {
     total_items?: number;
     high_risk_count?: number;
@@ -17,19 +17,28 @@ export interface AIAssistantData {
     decrease_count?: number;
     maintain_count?: number;
   };
+  version?: string;
+  generatedAt?: string;
 }
 
 export interface AIAssistantCardProps {
   data?: AIAssistantData | null;
   loading?: boolean;
   compact?: boolean;
+  version?: string;
+  generatedAt?: string;
 }
 
 export default function AIAssistantCard({
   data,
   loading = false,
   compact = false,
+  version = 'Stokonomi AI v1.0',
+  generatedAt,
 }: AIAssistantCardProps) {
+  const displayVersion = data?.version || version;
+  const displayGeneratedAt = data?.generatedAt || generatedAt || new Date().toLocaleString('tr-TR');
+
   if (loading) {
     return (
       <Paper sx={{ p: 2, borderRadius: 2, border: '1px solid #e8f0fe', bgcolor: '#f8faff', minHeight: 80 }}>
@@ -38,7 +47,7 @@ export default function AIAssistantCard({
             <Psychology sx={{ fontSize: 16, color: 'white' }} />
           </Avatar>
           <Typography variant="body2" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.75rem' }}>
-            AI Executive Summary yükleniyor...
+            🤖 Stokonomi AI Analizi yükleniyor...
           </Typography>
         </Box>
       </Paper>
@@ -54,7 +63,7 @@ export default function AIAssistantCard({
           </Avatar>
           <Box>
             <Typography variant="body2" sx={{ fontWeight: 600, color: '#6b7280', fontSize: '0.75rem' }}>
-              🤖 AI Executive Summary
+              🤖 Stokonomi AI Analizi
             </Typography>
             <Typography variant="caption" sx={{ color: '#9e9e9e', fontSize: '0.65rem' }}>
               Henüz AI özeti oluşturulmamış. Analiz tamamlandığında burada görünecek.
@@ -105,25 +114,35 @@ export default function AIAssistantCard({
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
             <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1f4e79', fontSize: '0.8rem' }}>
-              🤖 AI Executive Summary
+              🤖 Stokonomi AI Analizi
             </Typography>
-            <Box sx={{ display: 'flex', gap: 0.5 }}>
-              {overall_risk && (
-                <Chip
-                  label={`Risk: ${overall_risk}`}
-                  size="small"
-                  color={getRiskChipColor(overall_risk)}
-                  sx={{ height: 18, fontSize: '0.5rem' }}
-                />
-              )}
-              {confidence && (
-                <Chip
-                  label={`Tahmin Güvenirliği %${Math.round(confidence * 100)}`}
-                  size="small"
-                  sx={{ height: 18, fontSize: '0.5rem', bgcolor: '#e8f0fe', color: '#1f4e79' }}
-                />
-              )}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', fontSize: '0.5rem', color: '#6b7280' }}>
+              <Typography variant="caption" sx={{ fontSize: '0.45rem', lineHeight: 1.2, color: '#6b7280' }}>
+                AI tarafından oluşturuldu
+              </Typography>
+              <Typography variant="caption" sx={{ fontSize: '0.45rem', lineHeight: 1.2, fontWeight: 500, color: '#1f4e79' }}>
+                {displayVersion} • {displayGeneratedAt}
+              </Typography>
             </Box>
+          </Box>
+
+          {/* Risk ve Güven Chip'leri */}
+          <Box sx={{ display: 'flex', gap: 0.5, mt: 0.25, flexWrap: 'wrap' }}>
+            {overall_risk && (
+              <Chip
+                label={`Risk: ${overall_risk}`}
+                size="small"
+                color={getRiskChipColor(overall_risk)}
+                sx={{ height: 18, fontSize: '0.5rem' }}
+              />
+            )}
+            {confidence && (
+              <Chip
+                label={`Tahmin Güvenirliği %${Math.round(confidence * 100)}`}
+                size="small"
+                sx={{ height: 18, fontSize: '0.5rem', bgcolor: '#e8f0fe', color: '#1f4e79' }}
+              />
+            )}
           </Box>
 
           {/* Ana Özet Metni */}
@@ -171,26 +190,54 @@ export default function AIAssistantCard({
           )}
 
           {/* KPI'lar + En İyi Metot */}
-          <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+          <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
             {kpis?.total_items !== undefined && kpis.total_items > 0 && (
-              <Chip label={`📦 ${kpis.total_items} Ürün analiz edildi`} size="small" variant="outlined" sx={{ height: 20, fontSize: '0.5rem' }} />
+              <Chip 
+                label={`📦 ${kpis.total_items} Ürün analiz edildi`} 
+                size="small" 
+                variant="outlined" 
+                sx={{ height: 20, fontSize: '0.5rem' }} 
+              />
             )}
             {kpis?.increase_count !== undefined && kpis.increase_count > 0 && (
-              <Chip label={`📈 ${kpis.increase_count} Ürünün EM stokunu artır`} size="small" color="error" variant="outlined" sx={{ height: 20, fontSize: '0.5rem' }} />
+              <Chip 
+                label={`📈 ${kpis.increase_count} Ürünün EM stokunu artır`} 
+                size="small" 
+                color="error" 
+                variant="outlined" 
+                sx={{ height: 20, fontSize: '0.5rem' }} 
+              />
             )}
             {kpis?.decrease_count !== undefined && kpis.decrease_count > 0 && (
-              <Chip label={`📉 ${kpis.decrease_count} Ürünün EM stokunu azalt`} size="small" color="success" variant="outlined" sx={{ height: 20, fontSize: '0.5rem' }} />
+              <Chip 
+                label={`📉 ${kpis.decrease_count} Ürünün EM stokunu azalt`} 
+                size="small" 
+                color="success" 
+                variant="outlined" 
+                sx={{ height: 20, fontSize: '0.5rem' }} 
+              />
             )}
             {kpis?.maintain_count !== undefined && kpis.maintain_count > 0 && (
-              <Chip label={`✅ ${kpis.maintain_count} Ürünün EM stokunu koru`} size="small" color="info" variant="outlined" sx={{ height: 20, fontSize: '0.5rem' }} />
+              <Chip 
+                label={`✅ ${kpis.maintain_count} Ürünün EM stokunu koru`} 
+                size="small" 
+                color="info" 
+                variant="outlined" 
+                sx={{ height: 20, fontSize: '0.5rem' }} 
+              />
             )}
             {kpis?.high_risk_count !== undefined && kpis.high_risk_count > 0 && (
-              <Chip label={`⚠️ ${kpis.high_risk_count} Ürün yüksek riskli`} size="small" color="warning" variant="outlined" sx={{ height: 20, fontSize: '0.5rem' }} />
+              <Chip 
+                label={`⚠️ ${kpis.high_risk_count} Ürün yüksek riskli`} 
+                size="small" 
+                color="warning" 
+                variant="outlined" 
+                sx={{ height: 20, fontSize: '0.5rem' }} 
+              />
             )}
-            {/* ✅ EN İYİ METOT - topMethod doğrudan kullanıldı */}
             {topMethod && (
               <Chip
-                label={`Analizde En fazla ${topMethod} metodu kullanılmiştir.`}
+                label={`En Çok ⭐ (${topMethod}) Metodu Kullanıldı`}
                 size="small"
                 sx={{
                   height: 20,

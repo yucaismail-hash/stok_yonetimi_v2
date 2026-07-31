@@ -1,10 +1,9 @@
 // frontend/src/components/common/KpiCard.tsx
-// Stokonomi Design System - KPI Card
+// Stokonomi Design System - KPI Card (Küçültülmüş Versiyon)
 
 import { Box, Typography, Paper, Tooltip } from '@mui/material';
 import { TrendingUp, TrendingDown, Remove } from '@mui/icons-material';
 
-// ✅ interface'i export et
 export interface KpiCardProps {
   label: string;
   value: string | number;
@@ -37,16 +36,16 @@ export default function KpiCard({
   const cardContent = (
     <Paper
       sx={{
-        p: 1,  // ✅ 1.5 → 1 (daha küçük)
+        p: compact ? 0.75 : 1.5,
         bgcolor: '#fafcff',
         border: '1px solid #e8f0fe',
         borderRadius: 1.5,
-        height: 64,  // ✅ 88 → 64 (daha kısa)
+        height: compact ? 52 : 88,
         display: 'flex',
         flexDirection: 'column',
         justifyContent: 'center',
         transition: 'all 0.2s',
-        overflow: 'hidden',  // ✅ Taşmayı önle
+        overflow: 'hidden',
         '&:hover': {
           boxShadow: 1,
           borderColor: color,
@@ -54,16 +53,25 @@ export default function KpiCard({
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, mb: 0 }}>
-        {icon && <Box sx={{ color: color, display: 'flex', alignItems: 'center' }}>{icon}</Box>}
+        {icon && (
+          <Box sx={{ 
+            color: color, 
+            display: 'flex', 
+            alignItems: 'center',
+            fontSize: compact ? 14 : 18,
+          }}>
+            {icon}
+          </Box>
+        )}
         <Typography
           variant="caption"
           sx={{
-            fontSize: '0.5rem',  // ✅ 0.6 → 0.5
+            fontSize: compact ? '0.45rem' : '0.6rem',
             color: '#6b7280',
             fontWeight: 500,
             letterSpacing: '0.2px',
             textTransform: 'uppercase',
-            whiteSpace: 'nowrap',  // ✅ Tek satır
+            whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
           }}
@@ -76,10 +84,10 @@ export default function KpiCard({
         variant="h6"
         sx={{
           fontWeight: 700,
-          fontSize: '0.95rem',  // ✅ 1.1 → 0.95
+          fontSize: compact ? '0.85rem' : '1.1rem',
           color: color,
           lineHeight: 1.1,
-          whiteSpace: 'nowrap',  // ✅ Tek satır
+          whiteSpace: 'nowrap',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
         }}
@@ -87,7 +95,6 @@ export default function KpiCard({
         {value}
       </Typography>
     </Paper>
-
   );
 
   if (tooltip) {

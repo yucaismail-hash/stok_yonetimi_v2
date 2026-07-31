@@ -507,6 +507,136 @@ def generate_ai_decision_background(result_id: int, result_type: str, user_id: i
         import traceback
         traceback.print_exc()
 
+# app/api/endpoints/safety_stock.py - EN SONA EKLE
+
+def generate_ai_summary_for_async(task_id: str, user_id: int, country: str = "TR"):
+    """
+    Async analiz tamamlandıktan sonra AI Summary oluşturur.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import User, AnalysisResult
+        from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
+        
+        db = SessionLocal()
+        try:
+            logger.info(f"🔄 Async AI Summary başlatılıyor: {task_id}")
+            
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            result = db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).first()
+            
+            if not result:
+                logger.error(f"❌ Analiz sonucu bulunamadı: {task_id}")
+                return
+            
+            # ✅ Veriyi kontrol et
+            data = result.data or {}
+            results_list = data.get('results', [])
+            logger.info(f"📊 {len(results_list)} sonuç ile AI Summary oluşturuluyor...")
+            
+            if not results_list:
+                logger.warning(f"⚠️ Hiç sonuç yok, AI Summary oluşturulmuyor")
+                return
+            
+            # ✅ AI Summary oluştur
+            language = get_language_from_country(country or user.billing_country or "TR")
+            engine = AISummaryEngine(language=language)
+            summary = engine.build_summary(result.result_type, data)
+            
+            # ✅ Kaydet
+            result.ai_summary = summary
+            result.ai_status = "completed"
+            result.ai_version = engine.ai_version
+            result.ai_created_at = datetime.utcnow()
+            result.ai_prompt_version = engine.prompt_version
+            db.commit()
+            
+            logger.info(f"✅ Async AI Summary oluşturuldu: {task_id}")
+            
+            # ✅ Trend Summary yenile
+            refresh_trend_summary(user_id, country)
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Async AI Summary hatası: {e}")
+        import traceback
+        traceback.print_exc()
+
+def generate_ai_decision_for_async(task_id: str, user_id: int, country: str = "TR"):
+    """
+    Async analiz tamamlandıktan sonra AI Decision oluşturur.
+    """
+    try:
+        from app.database import SessionLocal
+        from app.models import User, AnalysisResult
+        from app.services.ai.ai_decision_engine import AIDecisionEngine
+        from app.services.learning_engine import LearningEngine
+        from app.analysis.ai_summary_engine import get_language_from_country
+        
+        db = SessionLocal()
+        try:
+            logger.info(f"🔄 Async AI Decision başlatılıyor: {task_id}")
+            
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                logger.error(f"❌ Kullanıcı bulunamadı: {user_id}")
+                return
+            
+            result = db.query(AnalysisResult).filter(
+                AnalysisResult.task_id == task_id
+            ).first()
+            
+            if not result:
+                logger.error(f"❌ Analiz sonucu bulunamadı: {task_id}")
+                return
+            
+            # ✅ Veriyi kontrol et
+            data = result.data or {}
+            results_list = data.get('results', [])
+            logger.info(f"📊 {len(results_list)} sonuç ile AI Decision oluşturuluyor...")
+            
+            if not results_list:
+                logger.warning(f"⚠️ Hiç sonuç yok, AI Decision oluşturulmuyor")
+                return
+            
+            # ✅ AI Decision oluştur
+            language = get_language_from_country(country or user.billing_country or "TR")
+            decision_engine = AIDecisionEngine(language=language)
+            decision = decision_engine.generate_decision(
+                analysis_type=result.result_type,
+                analysis_data=data
+            )
+            
+            # ✅ Kararı veriye ekle
+            data['ai_decision'] = decision
+            result.data = data
+            db.commit()
+            logger.info(f"✅ Async AI Decision oluşturuldu: {task_id}")
+            
+            # ✅ Learning Engine'i tetikle
+            learning_engine = LearningEngine(db, user_id)
+            learning_engine.analyze_and_learn({
+                'result_type': result.result_type,
+                'data': result.data
+            })
+            db.commit()
+            logger.info(f"✅ Async Learning Engine tamamlandı: {task_id}")
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"❌ Async AI Decision hatası: {e}")
+        import traceback
+        traceback.print_exc()
 
 def trigger_learning_engine_background(user_id: int, result_id: int, result_type: str):
     """Arka planda Learning Engine'i tetikler."""
@@ -843,8 +973,11 @@ def start_async_safety_stock(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Async Emniyet Stoğu Analizi - ACTIVE DATASET BAZLI!"""
+    """
+    Async Emniyet Stoğu Analizi - ACTIVE DATASET BAZLI!
+    """
     try:
+        # ✅ ACTIVE DATASET'ten verileri al
         active_service = get_active_dataset_service(db)
         stats = active_service.get_dataset_stats(current_user.id)
         
@@ -857,17 +990,19 @@ def start_async_safety_stock(
         upload_id = stats['upload_id']
         dataset_id = stats['dataset_id']
         
+        # ✅ Active dataset'ten materials'i al
         materials = active_service.get_active_materials(current_user.id)
         if not materials:
             raise HTTPException(status_code=404, detail="Dataset'te malzeme bulunamadı!")
         
+        # ✅ Active dataset'i al (pricing için)
         dataset = active_service.get_active_dataset(current_user.id)
         if not dataset:
             raise HTTPException(status_code=404, detail="Aktif dataset bulunamadı!")
         
         service_level = request.get('service_level', 0.95)
         
-        # ✅ Pricing Engine
+        # ✅ Pricing Engine ile ücretlendirme (Async'de hemen düş)
         pricing_engine = PricingEngine(db)
         pricing_request = PricingRequest(
             endpoint="/api/safety-stock/batch/async",
@@ -889,8 +1024,10 @@ def start_async_safety_stock(
                 detail=pricing_response.message or "Pricing işlemi başarısız"
             )
         
+        # Task ID oluştur
         task_id = str(uuid.uuid4())
         
+        # Initial record'u kaydet
         initial_data = {
             'status': 'processing',
             'message': 'Emniyet stoğu analizi başlatıldı, işleniyor...',
@@ -927,6 +1064,7 @@ def start_async_safety_stock(
         db.add(initial_record)
         db.commit()
         
+        # ✅ Async job'u arka planda başlat
         background_tasks.add_task(
             run_async_safety_stock_job,
             task_id=task_id,
@@ -934,6 +1072,22 @@ def start_async_safety_stock(
             upload_id=upload_id,
             service_level=service_level,
             db=db
+        )
+        
+        # ✅ AI SUMMARY ve AI DECISION için background task EKLE
+        # Bu task'lar, async job tamamlandıktan sonra çalışacak
+        background_tasks.add_task(
+            generate_ai_summary_for_async,
+            task_id,
+            current_user.id,
+            current_user.billing_country or 'TR'
+        )
+        
+        background_tasks.add_task(
+            generate_ai_decision_for_async,
+            task_id,
+            current_user.id,
+            current_user.billing_country or 'TR'
         )
         
         return {
@@ -953,7 +1107,6 @@ def start_async_safety_stock(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=400, detail=str(e))
-
 
 # ============================================================
 # 📌 ASYNC SAFETY STOCK JOB - DÜZELTİLMİŞ
@@ -1187,113 +1340,10 @@ def run_async_safety_stock_job(task_id: str, user_id: int, upload_id: str, servi
         except Exception as e:
             logger.error(f"⚠️ Bildirim hatası: {e}")
         
-        # ✅ ============================================================
-        # ✅ AI SUMMARY + TREND + EXECUTIVE (DÜZELTİLMİŞ)
-        # ✅ ============================================================
-        try:
-            user = db.query(User).filter(User.id == user_id).first()
-            country = user.billing_country if user else 'TR'
-            language = get_language_from_country(country)
-            
-            result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-            
-            if result:
-                logger.info(f"🔄 Async AI Summary başlatılıyor: {task_id}")
-                logger.info(f"📊 result.data tipi: {type(result.data)}")
-                logger.info(f"📊 result.data içinde 'results' var mı: {'results' in result.data if result.data else False}")
-                
-                if result.data and 'results' in result.data:
-                    logger.info(f"📊 results uzunluğu: {len(result.data['results'])}")
-                else:
-                    logger.warning(f"⚠️ result.data içinde 'results' yok veya data boş!")
-                
-                result_type = result.result_type
-                
-                # ✅ AI Summary oluştur
-                engine = AISummaryEngine(language=language)
-                summary = engine.build_summary(result_type, result.data)
-                
-                result.ai_summary = summary
-                result.ai_status = "completed"
-                result.ai_version = engine.ai_version
-                result.ai_created_at = datetime.utcnow()
-                result.ai_prompt_version = engine.prompt_version
-                result.status = 'completed'
-                result.progress = 100
-                result.message = 'Tamamlandı!'
-                result.total_materials = len(results)
-                result.updated_at = datetime.utcnow()
-                result.data = result_data
-                
-                db.commit()
-                logger.info(f"✅ Async AI özeti tamamlandı: {task_id}")
-                
-                refresh_trend_summary(user_id, country)
-                logger.info(f"✅ Async Trend/Executive Summary yenilendi: {task_id}")
-                
-        except Exception as e:
-            logger.error(f"❌ Async AI/Trend hatası: {e}")
-            import traceback
-            traceback.print_exc()
-            db.query(AnalysisResult).filter(
-                AnalysisResult.task_id == task_id
-            ).update({
-                'ai_status': 'failed',
-                'ai_created_at': datetime.utcnow(),
-            })
-            db.commit()
+        # ✅ Burada AI SUMMARY oluşturma KALDIRILDI
+        # Çünkü background task olarak ayrıca çalışacak
         
-        # ✅ ============================================================
-        # ✅ AI DECISION + LEARNING ENGINE (DÜZELTİLMİŞ)
-        # ✅ ============================================================
-        try:
-            result = db.query(AnalysisResult).filter(AnalysisResult.task_id == task_id).first()
-            if result:
-                logger.info(f"🔄 Async AI Decision başlatılıyor: {task_id}")
-                
-                from app.services.ai.ai_decision_engine import AIDecisionEngine
-                from app.services.learning_engine import LearningEngine
-                from app.analysis.ai_summary_engine import get_language_from_country
-                
-                user = db.query(User).filter(User.id == user_id).first()
-                language = get_language_from_country(user.billing_country or "TR")
-                
-                # ✅ AI Decision oluştur
-                decision_engine = AIDecisionEngine(language=language)
-                decision = decision_engine.generate_decision(
-                    analysis_type=result.result_type,
-                    analysis_data=result.data
-                )
-                
-                # Kararı veriye ekle
-                data = result.data or {}
-                data['ai_decision'] = decision
-                result.data = data
-                db.commit()
-                logger.info(f"✅ Async AI Decision oluşturuldu: {task_id}")
-                
-                # ✅ Learning Engine'i tetikle
-                learning_engine = LearningEngine(db, user_id)
-                learning_engine.analyze_and_learn({
-                    'result_type': result.result_type,
-                    'data': result.data
-                })
-                db.commit()
-                logger.info(f"✅ Async Learning Engine tamamlandı: {task_id}")
-                
-        except Exception as e:
-            logger.error(f"❌ Async AI Decision/Learning hatası: {e}")
-            import traceback
-            traceback.print_exc()
-            db.query(AnalysisResult).filter(
-                AnalysisResult.task_id == task_id
-            ).update({
-                'ai_status': 'decision_failed',
-                'ai_created_at': datetime.utcnow(),
-            })
-            db.commit()
-        
-        logger.info(f"✅ Async Emniyet stoku tamamlandı: Task ID {task_id}, {len(results)} malzeme")
+        logger.info(f"✅ Async Emniyet stoku hesaplama tamamlandı: Task ID {task_id}, {len(results)} malzeme")
         
     except Exception as e:
         logger.error(f"❌ Async safety stock hatası: {e}")

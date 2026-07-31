@@ -1,6 +1,6 @@
 // frontend/src/pages/SafetyStockPage.tsx
 // Stokonomi Design System v1.0 - Emniyet Stoğu Sayfası
-// SON DÜZELTİLMİŞ VERSİYON - Taşma yok, sonuçlar manuel yükleniyor
+// ✅ Tüm UI iyileştirmeleri uygulandı - Backend mantığı değiştirilmedi
 
 import { useState, useEffect, useCallback } from 'react';
 import {
@@ -346,7 +346,6 @@ const RightPanel = ({
 
   return (
     <Paper sx={{ p: 1, borderRadius: 2, border: '1px solid #e8f0fe', bgcolor: '#fafcff', height: '100%' }}>
-      {/* Process Flow */}
       <ProcessFlowCard
         steps={currentSteps}
         activeStep={currentActiveStep}
@@ -427,6 +426,9 @@ export default function SafetyStockPage() {
     activeDatasetId || undefined
   );
 
+  // ============================================================
+  // 📌 EXPORT
+  // ============================================================
 
   const handleExport = async () => {
     if (results.length === 0) {
@@ -436,10 +438,9 @@ export default function SafetyStockPage() {
 
     setLoading(true);
     try {
-      // ✅ Sadece gerekli verileri gönder
       const exportData = {
         results: results,
-        learning_rules: [], // İleride doldurulacak
+        learning_rules: [],
         executive_summary: analysisSummary ? {
           totalProducts: analysisSummary.totalMaterials,
           totalSS: analysisSummary.totalRecommendedSS,
@@ -453,11 +454,6 @@ export default function SafetyStockPage() {
         } : null
       };
 
-      console.log('📤 Excel export verisi:', {
-        resultsCount: exportData.results.length,
-        hasSummary: !!exportData.executive_summary
-      });
-
       const response = await api.post(
         '/api/export/safety-stock-results',
         exportData,
@@ -467,7 +463,6 @@ export default function SafetyStockPage() {
         }
       );
 
-      // Blob'u indir
       const blob = new Blob([response.data], { 
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
       });
@@ -616,8 +611,6 @@ export default function SafetyStockPage() {
     setProgressLabel('Hazır');
   }, [updateLifecycleStep]);
 
-  // SafetyStockPage.tsx - completeLifecycle (Zaten tanımlı)
-
   const completeLifecycle = useCallback(() => {
     setLifecycleSteps(prev => prev.map((step, i) => ({
       ...step,
@@ -652,77 +645,39 @@ export default function SafetyStockPage() {
   }, []);
 
   // ============================================================
-  // 📌 LOAD RESULTS - SADECE MANUEL
+  // 📌 LOAD RESULTS
   // ============================================================
 
   const loadResults = useCallback(async () => {
     try {
-      console.log('📊 loadResults başlatıldı...');
-      
       const res = await api.get('/api/upload/results', {
         params: { result_type: 'safety_stock_batch', limit: 1 }
       });
       
-      console.log('📊 API yanıtı (TAMAMI):', JSON.stringify(res.data, null, 2));
-      
       if (res.data.success && res.data.results && res.data.results.length > 0) {
         const latest = res.data.results[0];
         
-        // 🔍 Tüm olası alanları kontrol et
-        console.log('🔍 latest.ai_summary:', latest.ai_summary);
-        console.log('🔍 latest.data?.ai_summary:', latest.data?.ai_summary);
-        console.log('🔍 latest._ai_summary:', latest._ai_summary);
-        console.log('🔍 latest.result?.ai_summary:', latest.result?.ai_summary);
-        console.log('🔍 latest.summary:', latest.summary);
-        
-        // ✅ AI SUMMARY'Yİ BUL (her yerde ara)
         let aiSummaryData = null;
-        
         if (latest.ai_summary) {
           aiSummaryData = latest.ai_summary;
-          console.log('✅ 1. latest.ai_summary bulundu');
         } else if (latest.data?.ai_summary) {
           aiSummaryData = latest.data.ai_summary;
-          console.log('✅ 2. latest.data.ai_summary bulundu');
         } else if (latest.result?.ai_summary) {
           aiSummaryData = latest.result.ai_summary;
-          console.log('✅ 3. latest.result.ai_summary bulundu');
         } else if (latest._ai_summary) {
           aiSummaryData = latest._ai_summary;
-          console.log('✅ 4. latest._ai_summary bulundu');
         } else if (latest.summary && typeof latest.summary === 'object') {
           aiSummaryData = latest.summary;
-          console.log('✅ 5. latest.summary bulundu');
-        }
-        
-        // 🔍 Eğer aiSummaryData hala null ise, tüm objeyi tara
-        if (!aiSummaryData) {
-          console.log('🔍 Tüm objeyi tara...');
-          const keys = Object.keys(latest);
-          for (const key of keys) {
-            if (key.includes('summary') || key.includes('ai')) {
-              console.log(`🔍 ${key}:`, latest[key]);
-              if (latest[key] && typeof latest[key] === 'object' && latest[key].manager_summary) {
-                aiSummaryData = latest[key];
-                console.log(`✅ ${key} içinde manager_summary bulundu`);
-                break;
-              }
-            }
-          }
         }
         
         if (aiSummaryData) {
-          console.log('✅ AI Summary bulundu:', aiSummaryData);
           setAiSummary(aiSummaryData);
         } else {
-          console.log('⚠️ AI Summary bulunamadı');
           setAiSummary(null);
         }
         
         const data = latest.data || {};
         const resultsData = data.results || [];
-        
-        console.log('📊 resultsData uzunluğu:', resultsData.length);
         
         if (resultsData.length > 0) {
           setResults(resultsData);
@@ -730,13 +685,9 @@ export default function SafetyStockPage() {
           setShowResults(true);
           const summary = generateSummary(resultsData);
           setAnalysisSummary(summary);
-
           setSuccess(`${resultsData.length} malzeme yüklendi.`);
-          // setTimeout(() => setSuccess(null), 5000);
           return true;
         }
-      } else {
-        console.log('📊 Hiç sonuç bulunamadı');
       }
       setShowResults(false);
       return false;
@@ -775,14 +726,10 @@ export default function SafetyStockPage() {
       await runLifecycle();
       await checkUploadedData();
       
-      // ✅ Başka sayfadan analysis ID ile gelindi mi?
       const loadAnalysisId = sessionStorage.getItem('loadAnalysisId');
       const loadAnalysisType = sessionStorage.getItem('loadAnalysisType');
-      const loadDatasetId = sessionStorage.getItem('loadDatasetId');
       
       if (loadAnalysisId && loadAnalysisType === 'safety_stock_batch') {
-        console.log('🔍 Başka sayfadan ID ile gelindi:', loadAnalysisId);
-        
         try {
           const resultRes = await api.get(`/api/upload/results/${loadAnalysisId}`);
           if (resultRes.data.success && resultRes.data.result) {
@@ -794,14 +741,11 @@ export default function SafetyStockPage() {
               setResults(resultsData);
               setPage(0);
               setShowResults(true);
-              
               const summary = generateSummary(resultsData);
               setAnalysisSummary(summary);
-              
               if (result.ai_summary) {
                 setAiSummary(result.ai_summary);
               }
-              
               setSuccess(`${resultsData.length} malzeme yüklendi.`);
             }
           }
@@ -809,7 +753,6 @@ export default function SafetyStockPage() {
           console.error('❌ ID ile yükleme hatası:', error);
         }
         
-        // SessionStorage'ı temizle
         sessionStorage.removeItem('loadAnalysisId');
         sessionStorage.removeItem('loadAnalysisType');
         sessionStorage.removeItem('loadDatasetId');
@@ -819,11 +762,11 @@ export default function SafetyStockPage() {
       setIsDataLoading(false);
     };
     init();
-  }, [runLifecycle, checkUploadedData, completeLifecycle, generateSummary,loadResults, completeLifecycle]);
+  }, [runLifecycle, checkUploadedData, completeLifecycle, generateSummary]);
 
-// ============================================================
-    // 📌 ANALİZ BAŞLAT
-    // ============================================================
+  // ============================================================
+  // 📌 ANALİZ BAŞLAT
+  // ============================================================
 
   const startAnalysis = async () => {
     setAnalysisSteps(prev => prev.map(step => ({ ...step, status: 'pending', timestamp: undefined })));
@@ -834,7 +777,7 @@ export default function SafetyStockPage() {
     setError(null);
     setProgressLabel('Analiz başlıyor...');
     setShowResults(false);
-    setAiSummary(null); // ✅ AI Summary'yi sıfırla
+    setAiSummary(null);
     
     try {
       const updateStep = (index: number, status: ProcessStep['status']) => {
@@ -880,16 +823,12 @@ export default function SafetyStockPage() {
         const summary = generateSummary(response.results);
         setAnalysisSummary(summary);
         
-        // ✅ Analiz sonucundan AI Summary'yi al
         if (response.ai_summary) {
-          console.log('✅ Analiz sonrası AI Summary:', response.ai_summary);
           setAiSummary(response.ai_summary);
         } else if (response.result_id) {
-          // AI Summary yoksa, result_id ile tekrar sorgula
           try {
             const resultRes = await api.get(`/api/upload/results/${response.result_id}`);
             if (resultRes.data.result?.ai_summary) {
-              console.log('✅ Result ID ile AI Summary alındı:', resultRes.data.result.ai_summary);
               setAiSummary(resultRes.data.result.ai_summary);
             }
           } catch (err) {
@@ -929,138 +868,118 @@ export default function SafetyStockPage() {
     }
   };
 
-  // ✅ ASYNC ANALİZ BAŞLAT
-// SafetyStockPage.tsx - startAsyncAnalysis (DÜZELTİLMİŞ)
+  // ============================================================
+  // 📌 ASYNC ANALİZ BAŞLAT
+  // ============================================================
 
-const startAsyncAnalysis = async () => {
-  if (!hasUploadedData) {
-    setError('Önce veri yüklemelisiniz!');
-    return;
-  }
+  const startAsyncAnalysis = async () => {
+    if (!hasUploadedData) {
+      setError('Önce veri yüklemelisiniz!');
+      return;
+    }
 
-  if (isProcessing) {
-    return;
-  }
+    if (isProcessing) {
+      return;
+    }
 
-  // ✅ Async analiz için farklı adımlar - sadece 3 adım
-  setAsyncSteps([
-    { label: 'Analiz başlatılıyor...', description: 'Veriler işleniyor', status: 'active' },
-    { label: 'Görev oluşturuluyor...', description: 'Arka plan işlemi başlatılıyor', status: 'pending' },
-    { label: 'Görevlere eklendi ✓', description: 'İlerlemeyi ASYNC Görevler sayfasından takip edin', status: 'pending' },
-  ]);
-  setAsyncActiveStep(0);
-  
-  setIsProcessing(true);
-  setProgress(5);
-  setProgressLabel('Async analiz başlatılıyor...');
-  setError(null);
-  setShowResults(false);
-  setAiSummary(null);
-  
-  try {
-    // ✅ Async isteği gönder
-    const response = await api.post('/api/safety-stock/batch/async', {
-      service_level: serviceLevel,
-    });
+    setAsyncSteps([
+      { label: 'Analiz başlatılıyor...', description: 'Veriler işleniyor', status: 'active' },
+      { label: 'Görev oluşturuluyor...', description: 'Arka plan işlemi başlatılıyor', status: 'pending' },
+      { label: 'Görevlere eklendi ✓', description: 'İlerlemeyi ASYNC Görevler sayfasından takip edin', status: 'pending' },
+    ]);
+    setAsyncActiveStep(0);
     
-    setAsyncActiveStep(1);
-    setAsyncSteps(prev => prev.map((step, i) => {
-      if (i === 0) return { ...step, status: 'completed', timestamp: new Date().toLocaleTimeString() };
-      if (i === 1) return { ...step, status: 'active', timestamp: new Date().toLocaleTimeString() };
-      return step;
-    }));
+    setIsProcessing(true);
+    setProgress(5);
+    setProgressLabel('Async analiz başlatılıyor...');
+    setError(null);
+    setAiSummary(null);
     
-    setActiveAsyncTask(response.data.task_id);
-    setProgress(10);
-    setProgressLabel('İşlem kuyruğa alındı.');
-    
-    setSnackbar({
-      open: true,
-      message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${response.data.task_id.slice(0, 8)}`,
-      severity: 'success',
-    });
-    
-    // ✅ İlerlemeyi takip et - SADECE DURUM KONTROLÜ
-    const intervalId = setInterval(async () => {
-      try {
-        const statusRes = await api.get(`/api/tasks/async/${response.data.task_id}`);
-        const task = statusRes.data.task || {};
-        
-        setProgress(task.progress || 50);
-        setProgressLabel(task.message || 'İşleniyor...');
-        
-        // ✅ Sadece 3 adım: başlatıldı, işleniyor, tamamlandı
-        if (task.status === 'completed') {
-          clearInterval(intervalId);
-          setIsProcessing(false);
-          setActiveAsyncTask(null);
-          setProgress(100);
-          setProgressLabel('Tamamlandı!');
-          setIsAsyncComplete(true);
+    try {
+      const response = await api.post('/api/safety-stock/batch/async', {
+        service_level: serviceLevel,
+      });
+      
+      setAsyncActiveStep(1);
+      setAsyncSteps(prev => prev.map((step, i) => {
+        if (i === 0) return { ...step, status: 'completed', timestamp: new Date().toLocaleTimeString() };
+        if (i === 1) return { ...step, status: 'active', timestamp: new Date().toLocaleTimeString() };
+        return step;
+      }));
+      
+      setActiveAsyncTask(response.data.task_id);
+      setProgress(10);
+      setProgressLabel('İşlem kuyruğa alındı.');
+      
+      setSnackbar({
+        open: true,
+        message: `✅ Rapor talebiniz başarıyla oluşturuldu. İşlem numarası: #${response.data.task_id.slice(0, 8)}`,
+        severity: 'success',
+      });
+      
+      const intervalId = setInterval(async () => {
+        try {
+          const statusRes = await api.get(`/api/tasks/async/${response.data.task_id}`);
+          const task = statusRes.data.task || {};
           
-          setAsyncSteps(prev => prev.map((step, i) => {
-            if (i === 2) return { ...step, status: 'completed', timestamp: new Date().toLocaleTimeString() };
-            return step;
-          }));
-          setAsyncActiveStep(2);
+          setProgress(task.progress || 50);
+          setProgressLabel(task.message || 'İşleniyor...');
           
-          // Sonuçları al
-          const resultRes = await api.get(`/api/tasks/async/${response.data.task_id}`);
-          if (resultRes.data.task?.results) {
-            const resultsData = resultRes.data.task.results || [];
-            setResults(resultsData);
-            setPage(0);
-            setShowResults(true);
+          if (task.status === 'completed') {
+            clearInterval(intervalId);
+            setIsProcessing(false);
+            setActiveAsyncTask(null);
+            setProgress(100);
+            setProgressLabel('Tamamlandı!');
+            setIsAsyncComplete(true);
             
-            const summary = generateSummary(resultsData);
-            setAnalysisSummary(summary);
+            setAsyncSteps(prev => prev.map((step, i) => {
+              if (i === 2) return { ...step, status: 'completed', timestamp: new Date().toLocaleTimeString() };
+              return step;
+            }));
+            setAsyncActiveStep(2);
             
-            if (resultRes.data.task?.ai_summary) {
-              setAiSummary(resultRes.data.task.ai_summary);
-            }
+            setSuccess(`✅ Analiz tamamlandı! Sonuçları görmek için "Geçmiş" butonuna tıklayın.`);
             
-            setSuccess(`${resultsData.length} malzeme başarıyla analiz edildi.`);
             await fetchUser();
+            return;
           }
-          return;
+          
+          if (task.status === 'failed' || task.status === 'error') {
+            clearInterval(intervalId);
+            setIsProcessing(false);
+            setActiveAsyncTask(null);
+            setProgress(0);
+            setProgressLabel('Hata!');
+            setError(task.message || 'Async analiz başarısız oldu');
+            
+            setAsyncSteps(prev => prev.map((step, i) => {
+              if (i === 2) return { ...step, status: 'error', timestamp: new Date().toLocaleTimeString() };
+              return step;
+            }));
+          }
+        } catch (error) {
+          console.error('Async durum kontrol hatası:', error);
         }
-        
-        if (task.status === 'failed' || task.status === 'error') {
-          clearInterval(intervalId);
+      }, 3000);
+      
+      setTimeout(() => {
+        clearInterval(intervalId);
+        if (isProcessing) {
           setIsProcessing(false);
           setActiveAsyncTask(null);
-          setProgress(0);
-          setProgressLabel('Hata!');
-          setError(task.message || 'Async analiz başarısız oldu');
-          
-          setAsyncSteps(prev => prev.map((step, i) => {
-            if (i === 2) return { ...step, status: 'error', timestamp: new Date().toLocaleTimeString() };
-            return step;
-          }));
+          setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
         }
-      } catch (error) {
-        console.error('Async durum kontrol hatası:', error);
-      }
-    }, 3000);
-    
-    // 5 dakika timeout
-    setTimeout(() => {
-      clearInterval(intervalId);
-      if (isProcessing) {
-        setIsProcessing(false);
-        setActiveAsyncTask(null);
-        setError('Analiz zaman aşımına uğradı. Lütfen tekrar deneyin.');
-      }
-    }, 300000);
-    
-  } catch (err: any) {
-    console.error('❌ Async analiz hatası:', err);
-    setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
-    setIsProcessing(false);
-    setProgress(0);
-    setProgressLabel('Hata!');
-  }
-};
+      }, 300000);
+      
+    } catch (err: any) {
+      console.error('❌ Async analiz hatası:', err);
+      setError(err.response?.data?.detail || 'Async analiz başlatılamadı');
+      setIsProcessing(false);
+      setProgress(0);
+      setProgressLabel('Hata!');
+    }
+  };
 
   // ============================================================
   // 📌 MUTATIONS
@@ -1074,7 +993,6 @@ const startAsyncAnalysis = async () => {
     onSuccess: async (data) => {
       if (data.success) {
         setSuccess(`${data.total || data.results?.length || 0} malzeme başarıyla analiz edildi.`);
-        //setTimeout(() => setSuccess(null), 5000);
         await fetchUser();
       }
     },
@@ -1100,7 +1018,7 @@ const startAsyncAnalysis = async () => {
         const items = res.data.results.map((item: any) => ({
           id: item.id,
           created_at: item.created_at,
-          ai_summary: item.ai_summary, // ✅ AI SUMMARY'Yİ DE AL
+          ai_summary: item.ai_summary,
           data: {
             ...item.data,
             report_name: `Emniyet Stoğu - ${new Date(item.created_at).toLocaleDateString('tr-TR')}`,
@@ -1120,7 +1038,6 @@ const startAsyncAnalysis = async () => {
     }
   };
 
-
   const handleLoadHistory = (item: HistoryItem) => {
     const data = item.data || {};
     const resultsData = data.results || [];
@@ -1129,73 +1046,200 @@ const startAsyncAnalysis = async () => {
       setResults(resultsData);
       setPage(0);
       setShowResults(true);
-      
       const summary = generateSummary(resultsData);
       setAnalysisSummary(summary);
-      
-      // ✅ AI SUMMARY'Yİ DE YÜKLE
       if (item.ai_summary) {
-        console.log('✅ Geçmişten AI Summary yükleniyor:', item.ai_summary);
         setAiSummary(item.ai_summary);
-      } else {
-        console.log('⚠️ Geçmiş kayıtta AI Summary yok');
-        setAiSummary(null);
       }
-      
       setHistoryDialogOpen(false);
       setSuccess(`${resultsData.length} malzeme geçmiş sonuçları yüklendi.`);
-      //setTimeout(() => setSuccess(null), 3000);
     }
   };
 
   // ============================================================
-  // 📌 TABLO KOLONLARI
+  // 📌 TABLO KOLONLARI (Güncellendi)
   // ============================================================
 
   const columns: TableColumn[] = [
-    { id: 'material_code', label: 'Malzeme', width: 110, sticky: true, render: (value) => (
-      <Tooltip title={value} arrow><Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.65rem' }}>{value}</Typography></Tooltip>
-    )},
+    { 
+      id: 'material_code', 
+      label: 'Malzeme', 
+      width: 110, 
+      sticky: true, 
+      render: (value) => (
+        <Tooltip title={value} arrow>
+          <Typography variant="body2" sx={{ fontWeight: 600, fontSize: '0.65rem' }}>{value}</Typography>
+        </Tooltip>
+      )
+    },
     { id: 'group', label: 'Grup', width: 80, sticky: true },
-    { id: 'abc', label: 'ABC', width: 45, sticky: true, render: (value) => (
-      <Chip label={value || '-'} size="small" color={value === 'A' ? 'error' : value === 'B' ? 'warning' : 'success'} sx={{ height: 18, fontSize: '0.45rem', fontWeight: 600 }} />
-    )},
-    { id: 'xyz', label: 'XYZ', width: 45, sticky: true, render: (value) => (
-      <Chip label={value || '-'} size="small" color={value === 'X' ? 'success' : value === 'Y' ? 'warning' : 'error'} sx={{ height: 18, fontSize: '0.45rem', fontWeight: 600 }} />
-    )},
-    { id: 'ai_decision', label: 'AI Kararı', width: 85, highlight: true, render: (value, row) => {
-      const typeMap: Record<string, AIRecommendationType> = {
-        'increase_safety_stock': 'increase',
-        'decrease_safety_stock': 'decrease',
-        'maintain_current': 'maintain',
-        'urgent_action': 'urgent',
-      };
-      return (
-        <AIRecommendationBadge 
-          type={typeMap[value] || 'normal'} 
-          confidence={row.ai_decision?.confidence || 0.5} 
-          compact 
+    { 
+      id: 'abc', 
+      label: 'ABC', 
+      width: 45, 
+      sticky: true, 
+      render: (value) => (
+        <Chip 
+          label={value || '-'} 
+          size="small" 
+          color={value === 'A' ? 'error' : value === 'B' ? 'warning' : 'success'} 
+          sx={{ height: 18, fontSize: '0.45rem', fontWeight: 600 }} 
         />
-      );
-    }},
-    { id: 'recommended_method_label', label: 'Metot', width: 75, highlight: true, render: (value, row) => (
-      <Chip label={value || '-'} size="small" sx={{ bgcolor: alpha(methodColors[row.recommended_method] || '#6b7280', 0.1), color: methodColors[row.recommended_method] || '#6b7280', fontWeight: 600, height: 18, fontSize: '0.45rem', border: `1px solid ${alpha(methodColors[row.recommended_method] || '#6b7280', 0.3)}` }} />
-    )},
-    { id: 'recommended_value', label: 'Önerilen SS', width: 75, highlight: true, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'risk_score', label: 'Risk', width: 55, highlight: true, align: 'center', render: (value) => (
-      <Chip label={value?.toFixed(2) || '-'} size="small" color={value > 0.5 ? 'error' : value > 0.3 ? 'warning' : 'success'} sx={{ height: 16, fontSize: '0.4rem' }} />
-    )},
-    { id: 'classic_ss', label: 'Klasik', width: 50, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'croston_ss', label: 'Croston', width: 55, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'syntetos_boylan_ss', label: 'SB', width: 42, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'bootstrapping_ss', label: 'Bootstrap', width: 60, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'ml_ss', label: 'ML', width: 42, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'hybrid_ss', label: 'Hibrit', width: 50, align: 'right', render: (value) => value?.toFixed(0) || '-' },
-    { id: 'actions', label: 'Detay', width: 90, align: 'center', render: (_, row) => (
-      <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-        <Button size="small" variant="text" onClick={() => setSelectedReasoning(row)} sx={{ fontSize: '0.45rem', textTransform: 'none', minWidth: 'auto', px: 0.5, color: '#1f4e79' }}>Neden?</Button>
-      </Box>
-    )}
+      )
+    },
+    { 
+      id: 'xyz', 
+      label: 'XYZ', 
+      width: 45, 
+      sticky: true, 
+      render: (value) => (
+        <Chip 
+          label={value || '-'} 
+          size="small" 
+          color={value === 'X' ? 'success' : value === 'Y' ? 'warning' : 'error'} 
+          sx={{ height: 18, fontSize: '0.45rem', fontWeight: 600 }} 
+        />
+      )
+    },
+    {
+      id: 'ai_decision', 
+      label: 'AI Kararı', 
+      width: 85, 
+      highlight: true, 
+      render: (_, row) => {  // ✅ value yerine _ kullan, row'dan al
+        const decision = row.ai_decision?.decision || '';
+        const typeMap: Record<string, AIRecommendationType> = {
+          'increase_safety_stock': 'increase',
+          'decrease_safety_stock': 'decrease',
+          'maintain_current': 'maintain',
+          'urgent_action': 'urgent',
+        };
+        return (
+          <AIRecommendationBadge 
+            type={typeMap[decision] || 'normal'}  // ✅ decision string'i kullan
+            confidence={row.ai_decision?.confidence || 0.5} 
+            compact 
+          />
+        );
+      }
+    },
+    { 
+      id: 'recommended_method_label', 
+      label: '⭐ AI Seçimi', 
+      width: 75, 
+      highlight: true, 
+      render: (value, row) => (
+        <Chip 
+          label={value || '-'} 
+          size="small" 
+          sx={{ 
+            bgcolor: alpha(methodColors[row.recommended_method] || '#6b7280', 0.1), 
+            color: methodColors[row.recommended_method] || '#6b7280', 
+            fontWeight: 600, 
+            height: 18, 
+            fontSize: '0.45rem', 
+            border: `1px solid ${alpha(methodColors[row.recommended_method] || '#6b7280', 0.3)}` 
+          }} 
+        />
+      )
+    },
+    { 
+      id: 'recommended_value', 
+      label: 'Önerilen SS', 
+      width: 75, 
+      highlight: true, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'risk_score', 
+      label: 'Risk', 
+      width: 70, 
+      highlight: true, 
+      align: 'center', 
+      render: (value) => {
+        const val = value ?? 0;
+        let icon = '🟢 ↓';
+        let color: 'success' | 'warning' | 'error' = 'success';
+        if (val > 0.5) { icon = '🔴 ↑'; color = 'error'; }
+        else if (val > 0.3) { icon = '🟠 !'; color = 'warning'; }
+        return (
+          <Chip
+            label={`${icon} ${val.toFixed(2)}`}
+            size="small"
+            color={color}
+            sx={{ height: 18, fontSize: '0.5rem', fontWeight: 500, minWidth: 60 }}
+          />
+        );
+      }
+    },
+    { 
+      id: 'classic_ss', 
+      label: 'Klasik', 
+      width: 50, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'croston_ss', 
+      label: 'Croston', 
+      width: 55, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'syntetos_boylan_ss', 
+      label: 'SB', 
+      width: 42, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'bootstrapping_ss', 
+      label: 'Bootstrap', 
+      width: 60, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'ml_ss', 
+      label: 'ML', 
+      width: 42, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'hybrid_ss', 
+      label: 'Hibrit', 
+      width: 50, 
+      align: 'right', 
+      render: (value) => value?.toFixed(0) || '-' 
+    },
+    { 
+      id: 'actions', 
+      label: 'Detay', 
+      width: 90, 
+      align: 'center', 
+      render: (_, row) => (
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => setSelectedReasoning(row)}
+          startIcon={<Visibility sx={{ fontSize: 14 }} />}
+          sx={{
+            fontSize: '0.5rem',
+            textTransform: 'none',
+            minWidth: 'auto',
+            px: 1,
+            borderColor: '#1f4e79',
+            color: '#1f4e79',
+            '&:hover': { bgcolor: '#f0f7ff' },
+          }}
+        >
+          İncele
+        </Button>
+      )
+    }
   ];
 
   // ============================================================
@@ -1214,7 +1258,7 @@ const startAsyncAnalysis = async () => {
     overall_risk: aiSummary.overall_risk || '',
     confidence: aiSummary.confidence_score || aiSummary.confidence || 0,
     recommendations: aiSummary.recommended_actions || aiSummary.recommendations || [],
-    topMethod: summary?.mostUsedMethod ? methodLabelsFull[summary.mostUsedMethod] || summary.mostUsedMethod : '-',  // ✅ EKLENDİ
+    topMethod: summary?.mostUsedMethod ? methodLabelsFull[summary.mostUsedMethod] || summary.mostUsedMethod : '-',
     kpis: {
       total_items: results.length || summary?.totalMaterials || 0,
       high_risk_count: summary?.highRiskCount || 0,
@@ -1223,11 +1267,6 @@ const startAsyncAnalysis = async () => {
       maintain_count: summary?.maintainCount || 0,
     }
   } : null;
-
-  {/* 🤖 AI Executive Summary (ai_summary'den gelir) */}
-  <Box sx={{ mb: 1 }}>
-    <AIAssistantCard data={aiAssistantData} loading={isDataLoading} compact />
-  </Box>
 
   const kpiData = [
     { label: 'Analiz Edilen Ürün', value: totalProducts, icon: <Inventory sx={{ fontSize: 16 }} />, color: '#1f4e79' },
@@ -1245,7 +1284,7 @@ const startAsyncAnalysis = async () => {
           <Grid container spacing={1}>
             {[1, 2, 3, 4, 5].map((i) => (
               <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={i}>
-                <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 2 }} />
+                <Skeleton variant="rectangular" height={52} sx={{ borderRadius: 2 }} />
               </Grid>
             ))}
           </Grid>
@@ -1275,373 +1314,364 @@ const startAsyncAnalysis = async () => {
   }
 
   // Normal Render
-// frontend/src/pages/SafetyStockPage.tsx - Normal Render (return içinde)
-
-return (
-  <PageLayout
-    hero={
-      <Hero
-        title="Emniyet Stoğu (Safety Stock)"
-        subtitle="6 farklı metod + ABC/XYZ + AI Destekli"
-        datasetName={activeDatasetId ? `Dataset #${activeDatasetId}` : 'Aktif Dataset'}
-        productCount={materialCount}
-        lastAnalysisDate={showResults && results.length > 0 ? new Date().toLocaleDateString('tr-TR') : undefined}
-        aiReady={showResults && results.length > 0}
-        aiStatus={showResults && results.length > 0 ? 'hazir' : 'bekleniyor'}
-        learningLevel={learningScoreData?.level || 'Başlangıç'}
-        learningScore={learningScoreData?.score || 0}
-        learningComponents={learningComponents}  // ✅ YENİ EKLENDİ
-        icon={<Security />}
-      />
-    }
-  >
-    {/* KPI Kartları */}
-    <Box sx={{ mb: 1 }}>
-      <Grid container spacing={0.75}>
-        {kpiData.map((kpi, index) => (
-          <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={index}>
-            <KpiCard {...kpi} compact />
-          </Grid>
-        ))}
-      </Grid>
-    </Box>
-
-    {/* Toolbar */}
-    <Paper sx={{ p: 0.75, borderRadius: 2, border: '1px solid #e8f0fe', mb: 1 }}>
-      <Stack 
-        direction="row" 
-        spacing={0.5} 
-        sx={{ 
-          flexWrap: 'wrap', 
-          alignItems: 'center', 
-          gap: 0.5 
-        }}
-      >
-        {/* Analiz Et */}
-        <Button
-          size="small"
-          variant="contained"
-          startIcon={ssMutation.isPending ? <CircularProgress size={14} /> : <Send sx={{ fontSize: 14 }} />}
-          onClick={startAnalysis}
-          disabled={ssMutation.isPending || !hasUploadedData || isProcessing}
-          sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28 }}
-        >
-          {ssMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
-        </Button>
-
-        {/* Arka Planda */}
-        <Button
-          size="small"
-          variant="contained"
-          color="secondary"
-          startIcon={<Send sx={{ fontSize: 14 }} />}
-          onClick={startAsyncAnalysis}
-          disabled={!hasUploadedData || isProcessing}
-          sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28 }}
-        >
-          Arka Planda
-        </Button>
-
-        {/* Geçmiş */}
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={<History sx={{ fontSize: 14 }} />}
-          onClick={handleHistoryClick}
-          sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28, borderColor: '#d0d0d0' }}
-        >
-          Geçmiş
-        </Button>
-
-        {/* Excel */}
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={loading ? <CircularProgress size={14} /> : <Download sx={{ fontSize: 14 }} />}
-          onClick={handleExport}
-          disabled={!showResults || results.length === 0 || loading}
-          sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28, borderColor: '#d0d0d0', minWidth: 'auto' }}
-        >
-          {loading ? 'İndiriliyor...' : 'Excel'}
-        </Button>
-
-        {/* ✅ SAĞ TARAF: Kredi + Ayraç + Mesaj */}
-        <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-          
-          {/* Kredi Bilgisi */}
-          {pricingPreview && pricingPreview.estimated_credit_cost > 0 && (
-            <Chip
-              icon={<AccountBalanceWallet sx={{ fontSize: 12 }} />}
-              label={`${pricingPreview.estimated_credit_cost} Kredi`}
-              size="small"
-              color={pricingPreview.is_sufficient ? 'success' : 'error'}
-              sx={{ height: 22, fontSize: '0.45rem' }}
-            />
-          )}
-
-          {/* ✅ AYRAÇ - İNCE DİKEY ÇİZGİ */}
-          {(success || error) && (
-            <Box
-              sx={{
-                width: '1px',
-                height: '20px',
-                bgcolor: '#d0d0d0',
-                flexShrink: 0,
-              }}
-            />
-          )}
-
-          {/* ✅ Başarı Mesajı - KALICI (kaybolmaz) */}
-          {success && (
-            <Chip
-              icon={<CheckCircle sx={{ fontSize: 14 }} />}
-              label={success}
-              size="small"
-              sx={{
-                height: 26,
-                fontSize: '0.55rem',
-                fontWeight: 500,
-                bgcolor: '#e8f5e9',
-                color: '#1e4620',
-                border: '1px solid #a5d6a7',
-                borderRadius: 1.5,
-                maxWidth: 350,
-                '& .MuiChip-label': {
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  px: 1.5,
-                },
-                '& .MuiChip-icon': {
-                  color: '#2e7d32',
-                  fontSize: 16,
-                },
-              }}
-              onDelete={() => setSuccess(null)}
-            />
-          )}
-
-          {/* ✅ Hata Mesajı - KALICI (kaybolmaz) */}
-          {error && (
-            <Chip
-              icon={<Close sx={{ fontSize: 14 }} />}
-              label={error}
-              size="small"
-              sx={{
-                height: 26,
-                fontSize: '0.55rem',
-                fontWeight: 500,
-                bgcolor: '#ffebee',
-                color: '#4a1414',
-                border: '1px solid #ef9a9a',
-                borderRadius: 1.5,
-                maxWidth: 350,
-                '& .MuiChip-label': {
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  px: 1.5,
-                },
-                '& .MuiChip-icon': {
-                  color: '#c62828',
-                  fontSize: 16,
-                },
-              }}
-              onDelete={() => setError(null)}
-            />
-          )}
-        </Box>
-      </Stack>
-    </Paper>
-    {/* ✅ AI Executive Summary (ai_summary'den gelir) */}
-    <Box sx={{ mb: 1 }}>
-      <AIAssistantCard data={aiAssistantData} loading={isDataLoading} compact />
-    </Box>
-
-    {/* Ana Grid */}
-    <Grid container spacing={1} sx={{ mb: 1 }}>
-      <Grid size={{ xs: 12, md: 8 }}>
-        <Stack spacing={1}>
-          <Grid container spacing={1}>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper sx={{ p: 1, borderRadius: 2, border: '1px solid #ffebee', bgcolor: '#fff5f5' }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: '#d32f2f', fontSize: '0.6rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Warning sx={{ fontSize: 12 }} /> Kritik Riskler
-                </Typography>
-                <Box sx={{ mt: 0.25 }}>
-                  {summary && (summary.highRiskCount ?? 0) > 0 ? (
-                    <>
-                      <Typography variant="body2" sx={{ fontSize: '0.65rem', color: '#374151' }}>
-                        {(summary.highRiskCount ?? 0)} ürün yüksek riskli
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#6b7280' }}>
-                        Ortalama risk: {(summary.avgRiskScore ?? 0).toFixed(2)}
-                      </Typography>
-                    </>
-                  ) : (
-                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>
-                      {summary ? 'Kritik risk yok' : 'Analiz bekleniyor'}
-                    </Typography>
-                  )}
-                </Box>
-              </Paper>
-            </Grid>
-            <Grid size={{ xs: 12, sm: 6 }}>
-              <Paper sx={{ p: 1, borderRadius: 2, border: '1px solid #e8f5e9', bgcolor: '#f5fff7' }}>
-                <Typography variant="caption" sx={{ fontWeight: 600, color: '#2e7d32', fontSize: '0.6rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Lightbulb sx={{ fontSize: 12 }} /> AI Önerileri
-                </Typography>
-                <Box sx={{ mt: 0.25 }}>
-                  {summary && (summary.increaseCount ?? 0) > 0 ? (
-                    <>
-                      <Typography variant="body2" sx={{ fontSize: '0.65rem', color: '#374151' }}>
-                        {(summary.increaseCount ?? 0)} ürün artırılmalı
-                      </Typography>
-                      <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#6b7280' }}>
-                        {(summary.decreaseCount ?? 0)} ürün azaltılabilir
-                      </Typography>
-                    </>
-                  ) : (
-                    <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>
-                      {summary ? 'AI önerisi yok' : 'Analiz bekleniyor'}
-                    </Typography>
-                  )}
-                </Box>
-              </Paper>
-            </Grid>
-          </Grid>
-        </Stack>
-      </Grid>
-
-      <Grid size={{ xs: 12, md: 4 }}>
-        <RightPanel
+  return (
+    <PageLayout
+      hero={
+        <Hero
+          title="Emniyet Stoğu (Safety Stock)"
+          subtitle="6 farklı metod + ABC/XYZ + AI Destekli"
           datasetName={activeDatasetId ? `Dataset #${activeDatasetId}` : 'Aktif Dataset'}
           productCount={materialCount}
+          lastAnalysisDate={showResults && results.length > 0 ? new Date().toLocaleDateString('tr-TR') : undefined}
+          aiReady={showResults && results.length > 0}
+          aiStatus={showResults && results.length > 0 ? 'hazir' : 'bekleniyor'}
           learningLevel={learningScoreData?.level || 'Başlangıç'}
           learningScore={learningScoreData?.score || 0}
-          aiReady={showResults && results.length > 0}
-          lifecycleSteps={lifecycleSteps}
-          lifecycleActiveStep={lifecycleActiveStep}
-          isLifecycleComplete={isLifecycleComplete}
-          analysisSteps={analysisSteps}
-          analysisActiveStep={analysisActiveStep}
-          isAnalysisComplete={isAnalysisComplete}
-          isProcessing={isProcessing}
-          progress={progress}
-          progressLabel={progressLabel}
+          learningComponents={learningComponents}
+          icon={<Security />}
         />
-      </Grid>
-    </Grid>
-
-    {/* Sonuç Tablosu */}
-    {showResults && results.length > 0 ? (
-      <Box>
-        <SectionHeader
-          title="📊 Sonuçlar"
-          subtitle={`${results.length} malzeme analiz edildi`}
-          badge={`${results.length} ürün`}
-          badgeColor="primary"
-        />
-        <StandardTable
-          columns={columns}
-          rows={results}
-          rowKey="material_code"
-          page={page}
-          rowsPerPage={rowsPerPage}
-          onPageChange={(_, newPage) => setPage(newPage)}
-          onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
-          totalCount={results.length}
-          highlightAIColumns
-        />
+      }
+    >
+      {/* KPI Kartları */}
+      <Box sx={{ mb: 1 }}>
+        <Grid container spacing={0.75}>
+          {kpiData.map((kpi, index) => (
+            <Grid size={{ xs: 6, sm: 4, md: 2.4 }} key={index}>
+              <KpiCard {...kpi} compact />
+            </Grid>
+          ))}
+        </Grid>
       </Box>
-    ) : (
-      !isProcessing && hasUploadedData && (
-        <Card sx={{ borderRadius: 2, border: '1px dashed #e0e0e0', bgcolor: '#fafcff' }}>
-          <CardContent sx={{ textAlign: 'center', py: 3 }}>
-            <Security sx={{ fontSize: 36, color: '#b0b0b0', mb: 1 }} />
-            <Typography variant="body1" color="text.secondary" sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
-              {isProcessing ? 'Analiz devam ediyor...' : 'Henüz analiz yapılmadı'}
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
-              {isProcessing ? 'Lütfen bekleyin...' : '"Analiz Et" butonuna tıklayarak başlayın'}
-            </Typography>
-          </CardContent>
-        </Card>
-      )
-    )}
 
-    {/* Dialog'lar */}
-    {/* AI Karar Dialog */}
-    <Dialog open={!!selectedReasoning} onClose={() => setSelectedReasoning(null)} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.85rem' }}>🤖 AI Karar Açıklaması</Typography>
-          <IconButton onClick={() => setSelectedReasoning(null)} size="small"><Close fontSize="small" /></IconButton>
-        </Box>
-      </DialogTitle>
-      <DialogContent sx={{ py: 1.5 }}>
-        {selectedReasoning && (
-          <Box>
-            <AIReasoningSection result={selectedReasoning} />
-            <Box sx={{ mt: 1 }}><TechnicalAnalysisSection result={selectedReasoning} /></Box>
-          </Box>
-        )}
-      </DialogContent>
-      <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1 }}>
-        <Button onClick={() => setSelectedReasoning(null)} size="small" sx={{ fontSize: '0.65rem', textTransform: 'none' }}>Kapat</Button>
-      </DialogActions>
-    </Dialog>
+      {/* Toolbar */}
+      <Paper sx={{ p: 0.75, borderRadius: 2, border: '1px solid #e8f0fe', mb: 1 }}>
+        <Stack 
+          direction="row" 
+          spacing={0.5} 
+          sx={{ 
+            flexWrap: 'wrap', 
+            alignItems: 'center', 
+            gap: 0.5 
+          }}
+        >
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={ssMutation.isPending ? <CircularProgress size={14} /> : <Send sx={{ fontSize: 14 }} />}
+            onClick={startAnalysis}
+            disabled={ssMutation.isPending || !hasUploadedData || isProcessing}
+            sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28 }}
+          >
+            {ssMutation.isPending ? 'Analiz Ediliyor...' : 'Analiz Et'}
+          </Button>
 
-    {/* Geçmiş Dialog */}
-    <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
-      <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.85rem' }}>📜 Geçmiş Analizler</Typography>
-          <IconButton onClick={() => setHistoryDialogOpen(false)} size="small"><Close fontSize="small" /></IconButton>
-        </Box>
-      </DialogTitle>
-      <DialogContent sx={{ py: 1.5 }}>
-        {loading ? (
-          <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={28} /></Box>
-        ) : historyData.length === 0 ? (
-          <Box sx={{ textAlign: 'center', py: 3 }}>
-            <Typography color="text.secondary" sx={{ fontSize: '0.8rem' }}>Henüz geçmiş analiz bulunmuyor.</Typography>
+          <Button
+            size="small"
+            variant="contained"
+            color="secondary"
+            startIcon={<Send sx={{ fontSize: 14 }} />}
+            onClick={startAsyncAnalysis}
+            disabled={!hasUploadedData || isProcessing}
+            sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28 }}
+          >
+            Arka Planda
+          </Button>
+
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<History sx={{ fontSize: 14 }} />}
+            onClick={handleHistoryClick}
+            sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28, borderColor: '#d0d0d0' }}
+          >
+            Geçmiş
+          </Button>
+
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={loading ? <CircularProgress size={14} /> : <Download sx={{ fontSize: 14 }} />}
+            onClick={handleExport}
+            disabled={!showResults || results.length === 0 || loading}
+            sx={{ fontSize: '0.6rem', textTransform: 'none', py: 0.3, px: 1.5, borderRadius: 1.5, height: 28, borderColor: '#d0d0d0', minWidth: 'auto' }}
+          >
+            {loading ? 'İndiriliyor...' : 'Excel'}
+          </Button>
+
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+            {pricingPreview && pricingPreview.estimated_credit_cost > 0 && (
+              <Chip
+                icon={<AccountBalanceWallet sx={{ fontSize: 12 }} />}
+                label={`${pricingPreview.estimated_credit_cost} Kredi`}
+                size="small"
+                color={pricingPreview.is_sufficient ? 'success' : 'error'}
+                sx={{ height: 22, fontSize: '0.45rem' }}
+              />
+            )}
+
+            {(success || error) && (
+              <Box
+                sx={{
+                  width: '1px',
+                  height: '20px',
+                  bgcolor: '#d0d0d0',
+                  flexShrink: 0,
+                }}
+              />
+            )}
+
+            {success && (
+              <Chip
+                icon={<CheckCircle sx={{ fontSize: 14 }} />}
+                label={success}
+                size="small"
+                sx={{
+                  height: 26,
+                  fontSize: '0.55rem',
+                  fontWeight: 500,
+                  bgcolor: '#e8f5e9',
+                  color: '#1e4620',
+                  border: '1px solid #a5d6a7',
+                  borderRadius: 1.5,
+                  maxWidth: 350,
+                  '& .MuiChip-label': {
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    px: 1.5,
+                  },
+                  '& .MuiChip-icon': {
+                    color: '#2e7d32',
+                    fontSize: 16,
+                  },
+                }}
+                onDelete={() => setSuccess(null)}
+              />
+            )}
+
+            {error && (
+              <Chip
+                icon={<Close sx={{ fontSize: 14 }} />}
+                label={error}
+                size="small"
+                sx={{
+                  height: 26,
+                  fontSize: '0.55rem',
+                  fontWeight: 500,
+                  bgcolor: '#ffebee',
+                  color: '#4a1414',
+                  border: '1px solid #ef9a9a',
+                  borderRadius: 1.5,
+                  maxWidth: 350,
+                  '& .MuiChip-label': {
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    px: 1.5,
+                  },
+                  '& .MuiChip-icon': {
+                    color: '#c62828',
+                    fontSize: 16,
+                  },
+                }}
+                onDelete={() => setError(null)}
+              />
+            )}
           </Box>
-        ) : (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow sx={{ bgcolor: '#f8faff' }}>
-                  <TableCell sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>📅 Tarih</TableCell>
-                  <TableCell sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>📄 Rapor</TableCell>
-                  <TableCell align="center" sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>📦 Ürün</TableCell>
-                  <TableCell align="center" sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>⏳ Durum</TableCell>
-                  <TableCell align="right" sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>🔍 İşlem</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {historyData.map((item) => (
-                  <TableRow key={item.id} hover>
-                    <TableCell sx={{ fontSize: '0.65rem' }}>{new Date(item.created_at).toLocaleDateString('tr-TR')}</TableCell>
-                    <TableCell sx={{ fontSize: '0.65rem' }}>{item.data?.report_name || 'Emniyet Stoğu'}</TableCell>
-                    <TableCell align="center" sx={{ fontSize: '0.65rem' }}>{item.data?.total || 0}</TableCell>
-                    <TableCell align="center">
-                      <Chip label={item.data?.status === 'completed' ? '✅' : '🔄'} size="small" color={item.data?.status === 'completed' ? 'success' : 'warning'} sx={{ height: 18, fontSize: '0.4rem', minWidth: 30 }} />
-                    </TableCell>
-                    <TableCell align="right">
-                      <Button size="small" variant="outlined" onClick={() => handleLoadHistory(item)} startIcon={<Visibility sx={{ fontSize: 12 }} />} sx={{ fontSize: '0.5rem', textTransform: 'none' }}>Yükle</Button>
-                    </TableCell>
+        </Stack>
+      </Paper>
+
+      {/* ✅ AI Summary + Right Panel Grid */}
+      <Grid container spacing={1} sx={{ mb: 1 }}>
+        {/* Sol: AI Summary + kritik kartlar */}
+        <Grid size={{ xs: 12, md: 8 }}>
+          <Stack spacing={1}>
+            <AIAssistantCard 
+              data={aiAssistantData} 
+              loading={isDataLoading} 
+              compact 
+            />
+            
+            {/* Kritik Kartlar */}
+            <Grid container spacing={1}>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Paper sx={{ p: 1, borderRadius: 2, border: '1px solid #ffebee', bgcolor: '#fff5f5' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: '#d32f2f', fontSize: '0.6rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Warning sx={{ fontSize: 12 }} /> Kritik Riskler
+                  </Typography>
+                  <Box sx={{ mt: 0.25 }}>
+                    {summary && (summary.highRiskCount ?? 0) > 0 ? (
+                      <>
+                        <Typography variant="body2" sx={{ fontSize: '0.65rem', color: '#374151' }}>
+                          {(summary.highRiskCount ?? 0)} ürün yüksek riskli
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#6b7280' }}>
+                          Ortalama risk: {(summary.avgRiskScore ?? 0).toFixed(2)}
+                        </Typography>
+                      </>
+                    ) : (
+                      <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>
+                        {summary ? 'Kritik risk yok' : 'Analiz bekleniyor'}
+                      </Typography>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Paper sx={{ p: 1, borderRadius: 2, border: '1px solid #e8f5e9', bgcolor: '#f5fff7' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600, color: '#2e7d32', fontSize: '0.6rem', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Lightbulb sx={{ fontSize: 12 }} /> AI Önerileri
+                  </Typography>
+                  <Box sx={{ mt: 0.25 }}>
+                    {summary && (summary.increaseCount ?? 0) > 0 ? (
+                      <>
+                        <Typography variant="body2" sx={{ fontSize: '0.65rem', color: '#374151' }}>
+                          {(summary.increaseCount ?? 0)} ürün artırılmalı
+                        </Typography>
+                        <Typography variant="caption" sx={{ fontSize: '0.5rem', color: '#6b7280' }}>
+                          {(summary.decreaseCount ?? 0)} ürün azaltılabilir
+                        </Typography>
+                      </>
+                    ) : (
+                      <Typography variant="caption" sx={{ fontSize: '0.55rem', color: '#6b7280' }}>
+                        {summary ? 'AI önerisi yok' : 'Analiz bekleniyor'}
+                      </Typography>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+            </Grid>
+          </Stack>
+        </Grid>
+
+        {/* Sağ: Yaşam Döngüsü */}
+        <Grid size={{ xs: 12, md: 4 }}>
+          <RightPanel
+            datasetName={activeDatasetId ? `Dataset #${activeDatasetId}` : 'Aktif Dataset'}
+            productCount={materialCount}
+            learningLevel={learningScoreData?.level || 'Başlangıç'}
+            learningScore={learningScoreData?.score || 0}
+            aiReady={showResults && results.length > 0}
+            lifecycleSteps={lifecycleSteps}
+            lifecycleActiveStep={lifecycleActiveStep}
+            isLifecycleComplete={isLifecycleComplete}
+            analysisSteps={analysisSteps}
+            analysisActiveStep={analysisActiveStep}
+            isAnalysisComplete={isAnalysisComplete}
+            isProcessing={isProcessing}
+            progress={progress}
+            progressLabel={progressLabel}
+          />
+        </Grid>
+      </Grid>
+
+      {/* Sonuç Tablosu */}
+      {showResults && results.length > 0 ? (
+        <Box>
+          <SectionHeader
+            title="📊 Sonuçlar"
+            subtitle={`${results.length} malzeme analiz edildi`}
+            badge={`${results.length} ürün`}
+            badgeColor="primary"
+          />
+          <StandardTable
+            columns={columns}
+            rows={results}
+            rowKey="material_code"
+            page={page}
+            rowsPerPage={rowsPerPage}
+            onPageChange={(_, newPage) => setPage(newPage)}
+            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            totalCount={results.length}
+            highlightAIColumns
+          />
+        </Box>
+      ) : (
+        !isProcessing && hasUploadedData && (
+          <Card sx={{ borderRadius: 2, border: '1px dashed #e0e0e0', bgcolor: '#fafcff' }}>
+            <CardContent sx={{ textAlign: 'center', py: 3 }}>
+              <Security sx={{ fontSize: 36, color: '#b0b0b0', mb: 1 }} />
+              <Typography variant="body1" color="text.secondary" sx={{ fontSize: '0.8rem', fontWeight: 500 }}>
+                {isProcessing ? 'Analiz devam ediyor...' : 'Henüz analiz yapılmadı'}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.6rem' }}>
+                {isProcessing ? 'Lütfen bekleyin...' : '"Analiz Et" butonuna tıklayarak başlayın'}
+              </Typography>
+            </CardContent>
+          </Card>
+        )
+      )}
+
+      {/* Dialog'lar */}
+      <Dialog open={!!selectedReasoning} onClose={() => setSelectedReasoning(null)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.85rem' }}>🤖 AI Karar Açıklaması</Typography>
+            <IconButton onClick={() => setSelectedReasoning(null)} size="small"><Close fontSize="small" /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ py: 1.5 }}>
+          {selectedReasoning && (
+            <Box>
+              <AIReasoningSection result={selectedReasoning} />
+              <Box sx={{ mt: 1 }}><TechnicalAnalysisSection result={selectedReasoning} /></Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1 }}>
+          <Button onClick={() => setSelectedReasoning(null)} size="small" sx={{ fontSize: '0.65rem', textTransform: 'none' }}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={historyDialogOpen} onClose={() => setHistoryDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle sx={{ borderBottom: '1px solid #f0f0f0', py: 1 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, color: '#1f4e79', fontSize: '0.85rem' }}>📜 Geçmiş Analizler</Typography>
+            <IconButton onClick={() => setHistoryDialogOpen(false)} size="small"><Close fontSize="small" /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ py: 1.5 }}>
+          {loading ? (
+            <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={28} /></Box>
+          ) : historyData.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 3 }}>
+              <Typography color="text.secondary" sx={{ fontSize: '0.8rem' }}>Henüz geçmiş analiz bulunmuyor.</Typography>
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f8faff' }}>
+                    <TableCell sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>📅 Tarih</TableCell>
+                    <TableCell sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>📄 Rapor</TableCell>
+                    <TableCell align="center" sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>📦 Ürün</TableCell>
+                    <TableCell align="center" sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>⏳ Durum</TableCell>
+                    <TableCell align="right" sx={{ fontSize: '0.65rem', fontWeight: 600, color: '#1f4e79' }}>🔍 İşlem</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </DialogContent>
-      <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1 }}>
-        <Button onClick={() => setHistoryDialogOpen(false)} size="small" sx={{ fontSize: '0.65rem', textTransform: 'none' }}>Kapat</Button>
-      </DialogActions>
-    </Dialog>
-  </PageLayout>
-);
+                </TableHead>
+                <TableBody>
+                  {historyData.map((item) => (
+                    <TableRow key={item.id} hover>
+                      <TableCell sx={{ fontSize: '0.65rem' }}>{new Date(item.created_at).toLocaleDateString('tr-TR')}</TableCell>
+                      <TableCell sx={{ fontSize: '0.65rem' }}>{item.data?.report_name || 'Emniyet Stoğu'}</TableCell>
+                      <TableCell align="center" sx={{ fontSize: '0.65rem' }}>{item.data?.total || 0}</TableCell>
+                      <TableCell align="center">
+                        <Chip label={item.data?.status === 'completed' ? '✅' : '🔄'} size="small" color={item.data?.status === 'completed' ? 'success' : 'warning'} sx={{ height: 18, fontSize: '0.4rem', minWidth: 30 }} />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button size="small" variant="outlined" onClick={() => handleLoadHistory(item)} startIcon={<Visibility sx={{ fontSize: 12 }} />} sx={{ fontSize: '0.5rem', textTransform: 'none' }}>Yükle</Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ borderTop: '1px solid #f0f0f0', py: 1 }}>
+          <Button onClick={() => setHistoryDialogOpen(false)} size="small" sx={{ fontSize: '0.65rem', textTransform: 'none' }}>Kapat</Button>
+        </DialogActions>
+      </Dialog>
+    </PageLayout>
+  );
 }
