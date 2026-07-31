@@ -9,38 +9,39 @@ import {
   Avatar,
 } from '@mui/material';
 import {
-  TableChart as TableChartIcon,
   Inventory as InventoryIcon,
   Warning as WarningIcon,
   Timeline as TimelineIcon,
+  Speed as SpeedIcon,
 } from '@mui/icons-material';
 import { motion, useInView } from 'framer-motion';
 import { SectionContainer, AppCard } from '../ui';
 
+// ✅ Problemler - Gerçekçi ve tanıdık
 const problems = [
   {
-    icon: TableChartIcon,
-    title: 'Excel Kaosu',
-    description: 'Onlarca Excel dosyası, manuel veri girişi ve saatler süren analizler.',
-    color: '#EF4444',
-  },
-  {
     icon: InventoryIcon,
-    title: 'Fazla Stok',
-    description: 'Gereksiz stok maliyetleri, sermayenizin yanlış yerde bağlı kalması.',
-    color: '#F59E0B',
+    title: 'Fazla Stok Maliyeti',
+    description: 'Gereksiz stok, sermayenizin bağlı kalmasına ve maliyetlerin artmasına neden olur.',
+    color: '#EF4444',
   },
   {
     icon: WarningIcon,
-    title: 'Stok Yokluğu',
-    description: 'Kritik ürünlerde stok tükenmesi, müşteri kaybı ve satış fırsatlarının kaçması.',
-    color: '#EF4444',
+    title: 'Stok Tükenmesi',
+    description: 'Kritik ürünlerde stok bitmesi, müşteri kaybı ve satış fırsatlarının kaçması demektir.',
+    color: '#F59E0B',
   },
   {
     icon: TimelineIcon,
     title: 'Tahmin Hataları',
-    description: 'Geleceği öngörememek, yanlış sipariş miktarları ve israf.',
+    description: 'Geleceği öngörememek, yanlış sipariş miktarları ve gereksiz israfa yol açar.',
     color: '#0B5ED7',
+  },
+  {
+    icon: SpeedIcon,
+    title: 'Karar Gecikmesi',
+    description: 'Manuel analizlerle vakit kaybı, rekabet avantajınızı kaybetmenize neden olur.',
+    color: '#8B5CF6',
   },
 ];
 
@@ -56,7 +57,7 @@ export function ProblemSection() {
         </Typography>
         <Typography variant="h3" sx={{ fontWeight: 700, color: '#0F172A', mt: 1, mb: 2 }}>
           Stok Yönetiminde <br />
-          <Box component="span" sx={{ color: '#0B5ED7' }}>Kör Noktalar</Box>
+          <Box component="span" sx={{ color: '#0B5ED7' }}>Karşılaşılan Zorluklar</Box>
         </Typography>
         <Typography variant="body1" sx={{ color: '#64748B' }}>
           Geleneksel yöntemlerle stok optimizasyonu yapmak, hem zaman kaybı hem de maliyet demektir.

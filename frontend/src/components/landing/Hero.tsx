@@ -1,10 +1,9 @@
-// src/components/landing/Hero.tsx (TAMAMEN DÜZELTİLMİŞ)
+// src/components/landing/Hero.tsx
 import React from 'react';
 import {
   Box,
   Container,
   Typography,
-  Stack,
   Chip,
   Paper,
   Button,
@@ -12,9 +11,10 @@ import {
 import {
   ArrowForward as ArrowForwardIcon,
   PlayArrow as PlayArrowIcon,
-  Shield as ShieldIcon,
-  Lock as LockIcon,
-  People as PeopleIcon,
+  Inventory as InventoryIcon,
+  TrendingUp as TrendingUpIcon,
+  Science as ScienceIcon,
+  History as HistoryIcon,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import { PrimaryButton } from '../ui';
@@ -79,6 +79,7 @@ export function Hero() {
               animate="visible"
               variants={staggerContainer}
             >
+              {/* AI Badge */}
               <motion.div variants={fadeInUp}>
                 <Chip
                   icon={<Box component="span" sx={{ fontSize: 16 }}>⚡</Box>}
@@ -94,6 +95,7 @@ export function Hero() {
                 />
               </motion.div>
 
+              {/* ✅ Yeni Başlık */}
               <motion.div variants={fadeInUp}>
                 <Typography
                   variant="h1"
@@ -106,9 +108,9 @@ export function Hero() {
                   }}
                 >
                   <Box component="span" sx={{ color: '#0F172A' }}>
-                    AI ile
+                    Veriye Dayalı
                     <br />
-                    Stok Yönetimini
+                    Daha Akıllı
                     <br />
                   </Box>
                   <Box
@@ -119,11 +121,12 @@ export function Hero() {
                       WebkitTextFillColor: 'transparent',
                     }}
                   >
-                    Yeniden Tanımlayın
+                    Stok Kararları
                   </Box>
                 </Typography>
               </motion.div>
 
+              {/* ✅ Yeni Alt Yazı */}
               <motion.div variants={fadeInUp}>
                 <Typography
                   variant="body1"
@@ -135,12 +138,12 @@ export function Hero() {
                     lineHeight: 1.7,
                   }}
                 >
-                  Yapay zekâ destekli stok optimizasyonu, talep tahmini ve karar destek
-                  sistemi ile maliyetlerinizi azaltın, servis seviyenizi artırın.
+                  Emniyet stoku, talep tahmini, Monte Carlo simülasyonu ve backtest analizlerini tek platformda çalıştırın. 
+                  Excel dosyanızı yükleyin, dakikalar içinde karar destek raporunuzu alın.
                 </Typography>
               </motion.div>
 
-              {/* ✅ CTA Butonları - Stack düzeltildi */}
+              {/* CTA Butonları */}
               <motion.div variants={fadeInUp}>
                 <Box
                   sx={{
@@ -181,7 +184,7 @@ export function Hero() {
                 </Box>
               </motion.div>
 
-              {/* ✅ Güven Badge'leri - Stack düzeltildi */}
+              {/* ✅ Yeni Badge'ler - Ürün Özellikleri */}
               <motion.div variants={fadeInUp}>
                 <Box
                   sx={{
@@ -192,21 +195,27 @@ export function Hero() {
                   }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <ShieldIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
+                    <InventoryIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
                     <Typography variant="caption" sx={{ color: '#64748B' }}>
-                      ISO 27001
+                      Emniyet Stoku
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <LockIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
+                    <TrendingUpIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
                     <Typography variant="caption" sx={{ color: '#64748B' }}>
-                      GDPR Uyumlu
+                      Talep Tahmini
                     </Typography>
                   </Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <PeopleIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
+                    <ScienceIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
                     <Typography variant="caption" sx={{ color: '#64748B' }}>
-                      500+ Şirket
+                      Monte Carlo Simülasyonu
+                    </Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <HistoryIcon sx={{ fontSize: 18, color: '#0B5ED7' }} />
+                    <Typography variant="caption" sx={{ color: '#64748B' }}>
+                      Backtest
                     </Typography>
                   </Box>
                 </Box>
@@ -214,7 +223,7 @@ export function Hero() {
             </motion.div>
           </Box>
 
-          {/* Sağ: Dashboard Preview */}
+          {/* ✅ Sağ: GERÇEK Dashboard Görseli */}
           <Box>
             <motion.div
               initial={{ opacity: 0, y: 20 }}
@@ -267,57 +276,82 @@ export function Hero() {
                   </Box>
                 </Box>
 
-                {/* Dashboard Content */}
-                <Box sx={{ p: 3, bgcolor: 'white' }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Box sx={{ width: 8, height: 8, bgcolor: '#22C55E', borderRadius: '50%' }} />
-                      <Typography variant="caption" sx={{ color: '#64748B' }}>
-                        Canlı Veri
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Box sx={{ width: 32, height: 32, bgcolor: 'rgba(11,94,215,0.08)', borderRadius: '8px' }} />
-                      <Box sx={{ width: 32, height: 32, bgcolor: 'rgba(11,94,215,0.08)', borderRadius: '8px' }} />
-                    </Box>
-                  </Box>
-
-                  <Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ color: '#64748B' }}>Stok Seviyesi</Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0F172A' }}>%82</Typography>
-                    </Box>
-                    <Box sx={{ width: '100%', height: 6, bgcolor: '#F1F5F9', borderRadius: 3, overflow: 'hidden' }}>
-                      <Box sx={{ width: '82%', height: '100%', bgcolor: '#0B5ED7', borderRadius: 3 }} />
-                    </Box>
-
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(3, 1fr)',
-                        gap: 1,
-                        mt: 2,
-                      }}
-                    >
-                      <Box sx={{ p: 1.5, bgcolor: '#F0FDF4', borderRadius: 2, textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.6rem' }}>Tahmin</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#0F172A' }}>%94</Typography>
-                      </Box>
-                      <Box sx={{ p: 1.5, bgcolor: '#EFF6FF', borderRadius: 2, textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.6rem' }}>Risk</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#0F172A' }}>Düşük</Typography>
-                      </Box>
-                      <Box sx={{ p: 1.5, bgcolor: '#F5F3FF', borderRadius: 2, textAlign: 'center' }}>
-                        <Typography variant="caption" sx={{ color: '#64748B', fontSize: '0.6rem' }}>AI Kararı</Typography>
-                        <Typography variant="body2" sx={{ fontWeight: 600, color: '#0F172A' }}>Artır</Typography>
-                      </Box>
-                    </Box>
-                  </Box>
+                {/* ✅ Dashboard Content - Gerçek Ekran Görüntüsü */}
+                <Box sx={{ p: 0, bgcolor: 'white' }}>
+                  <Box
+                    component="img"
+                    src="/dashboard-preview.png"
+                    alt="Stokonomi Dashboard"
+                    sx={{
+                      width: '100%',
+                      height: 'auto',
+                      display: 'block',
+                    }}
+                    onError={(e) => {
+                      // Görsel yoksa placeholder
+                      e.currentTarget.style.display = 'none';
+                      const parent = e.currentTarget.parentElement;
+                      if (parent) {
+                        parent.innerHTML = `
+                          <div style="padding: 40px; text-align: center; background: #F8FAFC; min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                            <div style="font-size: 48px; margin-bottom: 16px;">📊</div>
+                            <div style="font-size: 16px; font-weight: 600; color: #0F172A;">Dashboard</div>
+                            <div style="font-size: 14px; color: #64748B; margin-top: 4px;">Executive Summary • AI Yorumları • Grafikler</div>
+                            <div style="font-size: 12px; color: #94A3B8; margin-top: 16px;">📁 dashboard-preview.png ekleyin</div>
+                          </div>
+                        `;
+                      }
+                    }}
+                  />
                 </Box>
               </Paper>
             </motion.div>
           </Box>
         </Box>
+
+        {/* ✅ YENİ: Felsefe Cümlesi - Hero Altı */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6, duration: 0.6 }}
+        >
+          <Box
+            sx={{
+              mt: 6,
+              pt: 4,
+              borderTop: '1px solid #E2E8F0',
+              textAlign: 'center',
+              maxWidth: 700,
+              mx: 'auto',
+            }}
+          >
+            <Typography
+              variant="body1"
+              sx={{
+                fontSize: '1.125rem',
+                color: '#0F172A',
+                fontWeight: 500,
+                lineHeight: 1.7,
+              }}
+            >
+              Excel dosyalarınız yalnızca veri değildir.
+              <br />
+              <Box component="span" sx={{ color: '#0B5ED7' }}>
+                Doğru analiz edildiğinde daha iyi stok kararlarının temelidir.
+              </Box>
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                mt: 1.5,
+                color: '#64748B',
+                fontSize: '0.875rem',
+              }}
+            >
+              Excel'i yükleyin. Analizleri çalıştırın. Kararlarınızı veriye dayandırın.
+            </Typography>
+          </Box>
+        </motion.div>
       </Container>
     </Box>
   );

@@ -46,32 +46,37 @@ export function CallToAction() {
           transition={{ duration: 0.6 }}
         >
           <Box sx={{ textAlign: 'center', maxWidth: 700, mx: 'auto' }}>
+            {/* ✅ Yeni Başlık */}
             <Typography
               variant="h2"
               sx={{
                 fontSize: { xs: '2rem', md: '3rem' },
                 fontWeight: 700,
                 color: 'white',
-                mb: 2,
+                mb: 1,
               }}
             >
-              Stok Yönetiminde Yeni Döneme <br />
-              <Box component="span" sx={{ color: 'rgba(255,255,255,0.7)' }}>
-                Hazır mısınız?
+              Daha Akıllı
+              <br />
+              Stok Kararları İçin
+              <br />
+              <Box component="span" sx={{ color: 'rgba(255,255,255,0.8)' }}>
+                Bugün Başlayın.
               </Box>
             </Typography>
+
             <Typography
               variant="body1"
               sx={{
                 color: 'rgba(255,255,255,0.8)',
                 fontSize: '1.125rem',
                 mb: 4,
+                mt: 2,
               }}
             >
               14 gün ücretsiz deneyin. Kredi kartı gerekmez.
             </Typography>
 
-            {/* ✅ Stack kaldırıldı, Box ile flex kullanıldı */}
             <Box
               sx={{
                 display: 'flex',

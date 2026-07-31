@@ -4,6 +4,7 @@ import { Box } from '@mui/material';
 import Navbar from '../../components/landing/Navbar';
 import Hero from '../../components/landing/Hero';
 import StatsSection from '../../components/landing/StatsSection';
+import HowItWorks from '../../components/landing/HowItWorks'; // ✅ YENİ
 import ProblemSection from '../../components/landing/ProblemSection';
 import SolutionSection from '../../components/landing/SolutionSection';
 import ModulesSection from '../../components/landing/ModulesSection';
@@ -20,6 +21,7 @@ export function LandingPage() {
       <Navbar />
       <Hero />
       <StatsSection />
+      <HowItWorks />        {/* ✅ YENİ BÖLÜM */}
       <ProblemSection />
       <SolutionSection />
       <ModulesSection />

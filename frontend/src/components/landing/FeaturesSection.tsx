@@ -4,52 +4,58 @@ import {
   Box,
   Container,
   Typography,
-  Grid,
   Paper,
-  Stack,
-  Chip,
+  Grid,        // ✅ EKLENDI
+  Avatar,      // ✅ EKLENDI
 } from '@mui/material';
 import {
-  CheckCircle as CheckCircleIcon,
-  Speed as SpeedIcon,
   Security as SecurityIcon,
-  AutoAwesome as AutoAwesomeIcon,
-  Analytics as AnalyticsIcon,
-  IntegrationInstructions as IntegrationIcon,
+  TrendingUp as TrendingUpIcon,
+  Science as ScienceIcon,
+  History as HistoryIcon,
+  Assessment as AssessmentIcon,
+  Download as DownloadIcon,
 } from '@mui/icons-material';
 import { motion, useInView } from 'framer-motion';
-import { SectionContainer } from '../ui';
+import { SectionContainer, AppCard } from '../ui';
 
+// ✅ SIRA DEĞİŞTİ - Önce Ürün Özellikleri
 const features = [
   {
-    icon: SpeedIcon,
-    title: 'Hızlı Analiz',
-    description: 'Excel yükleyin, 7 dakika içinde AI destekli rapor alın.',
-  },
-  {
     icon: SecurityIcon,
-    title: 'Kurumsal Güvenlik',
-    description: 'ISO 27001, GDPR ve KVKK uyumlu veri güvenliği.',
+    title: 'Emniyet Stoku',
+    description: '6 farklı metot ile optimum emniyet stoğu seviyesini belirleyin.',
+    color: '#0B5ED7',
   },
   {
-    icon: AutoAwesomeIcon,
-    title: 'AI Karar Motoru',
-    description: '6 farklı AI modeli ile akıllı karar destek sistemi.',
+    icon: TrendingUpIcon,
+    title: 'Talep Tahmini',
+    description: 'Mevsimsellik, trend ve anomalileri tespit ederek geleceği öngörün.',
+    color: '#2F80ED',
   },
   {
-    icon: AnalyticsIcon,
-    title: 'Gerçek Zamanlı',
-    description: 'Canlı dashboard ve anlık veri analizi.',
+    icon: ScienceIcon,
+    title: 'Monte Carlo Simülasyonu',
+    description: 'Farklı stok senaryolarını test edin ve riskleri önceden görün.',
+    color: '#22C55E',
   },
   {
-    icon: IntegrationIcon,
-    title: 'Kolay Entegrasyon',
-    description: 'ERP, Excel ve diğer sistemlerle entegre çalışır.',
+    icon: HistoryIcon,
+    title: 'Backtest',
+    description: 'Geçmiş verilerle modellerinizi test edin ve performansı ölçün.',
+    color: '#F59E0B',
   },
   {
-    icon: SecurityIcon,
-    title: 'Rol Bazlı Yetki',
-    description: 'Ekip üyelerine özel yetkilendirme ve erişim kontrolü.',
+    icon: AssessmentIcon,
+    title: 'Executive Summary',
+    description: 'Her analiz sonunda yönetici özeti oluşturun.',
+    color: '#EF4444',
+  },
+  {
+    icon: DownloadIcon,
+    title: 'Excel Raporları',
+    description: 'Analiz sonuçlarını Excel olarak dışa aktarın.',
+    color: '#8B5CF6',
   },
 ];
 
@@ -58,125 +64,56 @@ export function FeaturesSection() {
   const isInView = useInView(ref, { once: true, margin: '-100px' });
 
   return (
-    <SectionContainer bgcolor="#FFFFFF" py={10}>
+    <SectionContainer bgcolor="#F8FAFC" py={10}>
       <Box sx={{ textAlign: 'center', maxWidth: 700, mx: 'auto', mb: 6 }}>
         <Typography variant="overline" sx={{ color: '#0B5ED7' }}>
           Özellikler
         </Typography>
         <Typography variant="h3" sx={{ fontWeight: 700, color: '#0F172A', mt: 1, mb: 2 }}>
-          Neden <Box component="span" sx={{ color: '#0B5ED7' }}>Stokonomi?</Box>
+          Analiz Araçları <br />
+          <Box component="span" sx={{ color: '#0B5ED7' }}>Tek Platformda</Box>
         </Typography>
         <Typography variant="body1" sx={{ color: '#64748B' }}>
-          AI destekli stok yönetiminin tüm avantajları tek platformda.
+          Stok yönetiminin tüm ihtiyaçlarına yönelik araçlar tek bir platformda.
         </Typography>
       </Box>
 
+      {/* ✅ Grid doğru kullanıldı */}
       <Grid container spacing={3} ref={ref}>
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Stack spacing={3}>
-            {features.slice(0, 3).map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -30 }}
-                animate={isInView ? { opacity: 1, x: 0 } : {}}
-                transition={{ delay: index * 0.1, duration: 0.4 }}
-              >
-                <Paper
-                  elevation={0}
+        {features.map((feature, index) => (
+          <Grid size={{ xs: 12, sm: 6, md: 4 }} key={index}>
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={isInView ? { opacity: 1, y: 0 } : {}}
+              transition={{ delay: index * 0.05, duration: 0.4 }}
+            >
+              <AppCard sx={{ p: 3, height: '100%', textAlign: 'center' }}>
+                {/* ✅ Avatar doğru kullanıldı */}
+                <Avatar
                   sx={{
-                    p: 3,
-                    borderRadius: '16px',
-                    border: '1px solid #E2E8F0',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 3,
-                    '&:hover': {
-                      borderColor: '#0B5ED7',
-                      boxShadow: '0 4px 16px rgba(11,94,215,0.08)',
-                    },
-                    transition: 'all 0.3s ease-in-out',
+                    width: 48,
+                    height: 48,
+                    bgcolor: `${feature.color}10`,
+                    color: feature.color,
+                    mx: 'auto',
+                    mb: 2,
                   }}
                 >
-                  <Box
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: '12px',
-                      bgcolor: 'rgba(11,94,215,0.08)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <feature.icon sx={{ color: '#0B5ED7', fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#0F172A', mb: 0.5 }}>
-                      {feature.title}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: '#64748B' }}>
-                      {feature.description}
-                    </Typography>
-                  </Box>
-                </Paper>
-              </motion.div>
-            ))}
-          </Stack>
-        </Grid>
-
-        <Grid size={{ xs: 12, md: 6 }}>
-          <Stack spacing={3}>
-            {features.slice(3).map((feature, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, x: 30 }}
-                animate={isInView ? { opacity: 1, x: 0 } : {}}
-                transition={{ delay: index * 0.1 + 0.2, duration: 0.4 }}
-              >
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 3,
-                    borderRadius: '16px',
-                    border: '1px solid #E2E8F0',
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 3,
-                    '&:hover': {
-                      borderColor: '#0B5ED7',
-                      boxShadow: '0 4px 16px rgba(11,94,215,0.08)',
-                    },
-                    transition: 'all 0.3s ease-in-out',
-                  }}
+                  <feature.icon />
+                </Avatar>
+                <Typography
+                  variant="h6"
+                  sx={{ fontWeight: 600, color: '#0F172A', mb: 1 }}
                 >
-                  <Box
-                    sx={{
-                      width: 48,
-                      height: 48,
-                      borderRadius: '12px',
-                      bgcolor: 'rgba(11,94,215,0.08)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <feature.icon sx={{ color: '#0B5ED7', fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#0F172A', mb: 0.5 }}>
-                      {feature.title}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: '#64748B' }}>
-                      {feature.description}
-                    </Typography>
-                  </Box>
-                </Paper>
-              </motion.div>
-            ))}
-          </Stack>
-        </Grid>
+                  {feature.title}
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748B' }}>
+                  {feature.description}
+                </Typography>
+              </AppCard>
+            </motion.div>
+          </Grid>
+        ))}
       </Grid>
     </SectionContainer>
   );

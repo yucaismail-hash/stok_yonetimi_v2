@@ -19,6 +19,7 @@ import {
 import { motion, useInView } from 'framer-motion';
 import { SectionContainer, AppCard } from '../ui';
 
+// ✅ Modüller - Gerçek ürün özellikleri
 const modules = [
   {
     icon: DashboardIcon,
@@ -40,8 +41,8 @@ const modules = [
   },
   {
     icon: ScienceIcon,
-    title: 'Simülasyon',
-    description: 'Monte Carlo simülasyonu ile farklı senaryoları test edin.',
+    title: 'Monte Carlo Simülasyonu',
+    description: 'Farklı stok senaryolarını test edin ve riskleri önceden görün.',
     color: '#F59E0B',
   },
   {

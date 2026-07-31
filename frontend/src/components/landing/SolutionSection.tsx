@@ -4,16 +4,9 @@ import {
   Box,
   Container,
   Typography,
-  Grid,
   Paper,
   Stack,
   Avatar,
-  Stepper,
-  Step,
-  StepLabel,
-  StepConnector,
-  stepConnectorClasses,
-  styled,
 } from '@mui/material';
 import {
   UploadFile as UploadFileIcon,
@@ -28,42 +21,31 @@ import { SectionContainer } from '../ui';
 const steps = [
   {
     icon: UploadFileIcon,
-    label: 'Excel Yükle',
-    description: 'Mevcut stok verilerinizi sisteme yükleyin.',
+    label: 'Excel',
+    description: 'Verilerinizi yükleyin',
     color: '#0B5ED7',
   },
   {
     icon: PsychologyIcon,
     label: 'AI Analizi',
-    description: 'Yapay zeka, talep desenlerini ve riskleri analiz eder.',
+    description: 'Analizleri çalıştırın',
     color: '#2F80ED',
   },
   {
     icon: AssessmentIcon,
-    label: 'Risk Hesabı',
-    description: 'ABC/XYZ analizi ve 6 farklı metot ile risk hesaplanır.',
-    color: '#F59E0B',
-  },
-  {
-    icon: ShoppingCartIcon,
-    label: 'Sipariş Önerisi',
-    description: 'Optimum stok seviyesi ve sipariş önerisi sunulur.',
+    label: 'Karar Raporu',
+    description: 'Sonuçları inceleyin',
     color: '#22C55E',
   },
 ];
 
-const CustomConnector = styled(StepConnector)(({ theme }) => ({
-  [`& .${stepConnectorClasses.line}`]: {
-    borderColor: '#E2E8F0',
-    borderWidth: 2,
-  },
-  [`&.${stepConnectorClasses.active} .${stepConnectorClasses.line}`]: {
-    borderColor: '#0B5ED7',
-  },
-  [`&.${stepConnectorClasses.completed} .${stepConnectorClasses.line}`]: {
-    borderColor: '#22C55E',
-  },
-}));
+// ✅ Yeni özellik listesi
+const features = [
+  '✓ Emniyet Stoku',
+  '✓ Sipariş Noktası',
+  '✓ Talep Tahmini',
+  '✓ Risk Analizi',
+];
 
 export function SolutionSection() {
   const ref = useRef(null);
@@ -76,15 +58,15 @@ export function SolutionSection() {
           Çözüm
         </Typography>
         <Typography variant="h3" sx={{ fontWeight: 700, color: '#0F172A', mt: 1, mb: 2 }}>
-          Stok Yönetimini <br />
-          <Box component="span" sx={{ color: '#0B5ED7' }}>Otomatikleştirin</Box>
+          <Box component="span" sx={{ color: '#0B5ED7' }}>Dakikalar İçinde</Box>
+          <br />
+          Stok Kararları
         </Typography>
         <Typography variant="body1" sx={{ color: '#64748B' }}>
           Excel'den AI destekli kararlara, tüm süreci tek platformda yönetin.
         </Typography>
       </Box>
 
-      {/* ✅ Grid kaldırıldı, Box ile grid sistemi oluşturuldu */}
       <Box
         ref={ref}
         sx={{
@@ -94,7 +76,7 @@ export function SolutionSection() {
           alignItems: 'center',
         }}
       >
-        {/* Sol Taraf: Adımlar */}
+        {/* Sol Taraf: Akış */}
         <Box sx={{ position: 'relative' }}>
           <Box
             sx={{
@@ -198,40 +180,40 @@ export function SolutionSection() {
               <Stack spacing={3}>
                 <Box>
                   <Typography variant="caption" sx={{ color: '#64748B' }}>
-                    Toplam Süre
+                    Analiz Sonuçları
                   </Typography>
-                  <Typography variant="h2" sx={{ fontSize: '2.5rem', fontWeight: 700, color: '#0F172A' }}>
-                    7 Dakika
+                  <Typography variant="h2" sx={{ fontSize: '2rem', fontWeight: 700, color: '#0F172A' }}>
+                    Tek Rapor
                   </Typography>
                   <Typography variant="body2" sx={{ color: '#64748B' }}>
-                    Geleneksel yöntemlerle 8 saat
+                    Tüm analizler tek bir raporda
                   </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  {[85, 92, 78, 96].map((value, index) => (
-                    <Box key={index} sx={{ flex: 1, textAlign: 'center' }}>
-                      <Box
-                        sx={{
-                          width: '100%',
-                          height: 4,
-                          bgcolor: '#E2E8F0',
-                          borderRadius: 2,
-                          overflow: 'hidden',
-                          mb: 1,
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            width: `${value}%`,
-                            height: '100%',
-                            bgcolor: '#0B5ED7',
-                            borderRadius: 2,
-                            animation: isInView ? 'grow 1s ease-out forwards' : 'none',
-                          }}
-                        />
-                      </Box>
-                      <Typography variant="caption" sx={{ color: '#64748B' }}>
-                        {value}%
+
+                {/* ✅ Yeni Özellik Listesi */}
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: 1,
+                  }}
+                >
+                  {features.map((feature, index) => (
+                    <Box
+                      key={index}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 1,
+                        p: 1,
+                        bgcolor: 'white',
+                        borderRadius: '8px',
+                        border: '1px solid #E2E8F0',
+                      }}
+                    >
+                      <CheckCircleIcon sx={{ color: '#22C55E', fontSize: 16 }} />
+                      <Typography variant="caption" sx={{ color: '#0F172A', fontWeight: 500 }}>
+                        {feature.replace('✓ ', '')}
                       </Typography>
                     </Box>
                   ))}

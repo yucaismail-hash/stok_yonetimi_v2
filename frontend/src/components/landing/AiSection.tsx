@@ -15,12 +15,20 @@ import {
   AutoAwesome as AutoAwesomeIcon,
 } from '@mui/icons-material';
 import { motion, useInView } from 'framer-motion';
+import { SectionContainer } from '../ui';
 
 const features = [
-  'OpenAI, Gemini, DeepSeek entegrasyonu',
-  'Şirkete özel öğrenme hafızası',
-  '6 farklı AI modeli ile karar destek',
-  'Otomatik Executive Summary oluşturma',
+  'AI destekli analiz yorumları',
+  'Executive Summary oluşturma',
+  'Şirket analiz geçmişi ile karşılaştırma',
+  'Şirkete Özel Analiz Hafızası',
+];
+
+const featureDescriptions = [
+  'Emniyet stoku, talep tahmini ve risk analizlerini birlikte değerlendirir.',
+  'Her analiz sonunda yönetici özeti oluşturur.',
+  'Önceki analizleri karşılaştırın ve zaman içindeki değişimi takip edin.',
+  'Analiz geçmişinizi referans alarak kararlarınızı destekler.',
 ];
 
 export function AiSection() {
@@ -52,7 +60,6 @@ export function AiSection() {
       />
 
       <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1 }} ref={ref}>
-        {/* ✅ Box ile Grid sistemi */}
         <Box
           sx={{
             display: 'grid',
@@ -80,17 +87,31 @@ export function AiSection() {
                   '& .MuiChip-icon': { color: '#38BDF8' },
                 }}
               />
+
+              {/* ✅ Yeni Başlık: Stokonomi AI */}
               <Typography
                 variant="h2"
                 sx={{
                   fontSize: { xs: '2rem', md: '3rem' },
                   fontWeight: 700,
                   color: 'white',
-                  mb: 2,
+                  mb: 1,
                 }}
               >
-                Yapay Zeka
-                <br />
+                Stokonomi AI
+              </Typography>
+
+              {/* ✅ Yeni Alt Başlık */}
+              <Typography
+                variant="h3"
+                sx={{
+                  fontSize: { xs: '1.25rem', md: '1.5rem' },
+                  fontWeight: 600,
+                  color: 'rgba(255,255,255,0.8)',
+                  mb: 3,
+                }}
+              >
+                Sadece Hesap Yapmaz.
                 <Box
                   component="span"
                   sx={{
@@ -99,20 +120,10 @@ export function AiSection() {
                     WebkitTextFillColor: 'transparent',
                   }}
                 >
-                  Sadece Hesap Yapmaz.
-                </Box>
-                <br />
-                <Box
-                  component="span"
-                  sx={{
-                    background: 'linear-gradient(135deg, #22C55E, #38BDF8)',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                  }}
-                >
-                  Karar Verir.
+                  {' '}Karar Destek Sağlar.
                 </Box>
               </Typography>
+
               <Typography
                 variant="body1"
                 sx={{
@@ -120,13 +131,16 @@ export function AiSection() {
                   fontSize: '1.125rem',
                   lineHeight: 1.7,
                   mb: 4,
-                  maxWidth: 480,
+                  maxWidth: 520,
                 }}
               >
-                Stokonomi'nin AI motoru, her analizden öğrenir. Şirketinize özel
-                kararlar üretir, siz büyüdükçe o da gelişir.
+                Stokonomi AI, analiz sonuçlarını yorumlayarak stok kararlarını destekleyen 
+                açıklamalar üretir. Emniyet stoğu, talep tahmini ve risk analizlerini 
+                birlikte değerlendirir.
               </Typography>
-              <Stack spacing={2}>
+
+              {/* ✅ Feature List - Analiz Hafızası vurgusu */}
+              <Stack spacing={2.5}>
                 {features.map((item, index) => (
                   <motion.div
                     key={index}
@@ -134,11 +148,32 @@ export function AiSection() {
                     animate={isInView ? { opacity: 1, x: 0 } : {}}
                     transition={{ delay: index * 0.1, duration: 0.4 }}
                   >
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <CheckCircleIcon sx={{ color: '#22C55E', fontSize: 20 }} />
-                      <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>
-                        {item}
-                      </Typography>
+                    <Box>
+                      <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2 }}>
+                        <CheckCircleIcon sx={{ color: '#22C55E', fontSize: 20, mt: 0.3 }} />
+                        <Box>
+                          <Typography
+                            variant="body2"
+                            sx={{
+                              color: 'white',
+                              fontWeight: 600,
+                              fontSize: '0.9rem',
+                            }}
+                          >
+                            {item}
+                          </Typography>
+                          <Typography
+                            variant="caption"
+                            sx={{
+                              color: 'rgba(255,255,255,0.4)',
+                              display: 'block',
+                              mt: 0.25,
+                            }}
+                          >
+                            {featureDescriptions[index]}
+                          </Typography>
+                        </Box>
+                      </Box>
                     </Box>
                   </motion.div>
                 ))}
@@ -146,7 +181,7 @@ export function AiSection() {
             </motion.div>
           </Box>
 
-          {/* Sağ Taraf */}
+          {/* Sağ Taraf: AI Örnek Mesajı */}
           <Box>
             <motion.div
               initial={{ opacity: 0, x: 30 }}
@@ -183,6 +218,7 @@ export function AiSection() {
                   </Box>
                 </Box>
 
+                {/* ✅ Yeni AI Mesajı - Gerçekçi */}
                 <Box
                   sx={{
                     p: 3,
@@ -199,9 +235,21 @@ export function AiSection() {
                       fontStyle: 'italic',
                     }}
                   >
-                    "9 ürün analiz edildi. 3 ürünün emniyet stoğu artırılmalı,
-                    4 ürün azaltılabilir. Yüksek riskli 3 ürün için Syntetos-Boylan
-                    metodu öneriliyor."
+                    "Analiz tamamlandı.
+                    <br />
+                    124 ürün incelendi.
+                    <br />
+                    18 üründe fazla stok riski tespit edildi.
+                    <br />
+                    7 ürün için emniyet stoğu artırılması öneriliyor.
+                    <br />
+                    <br />
+                    En uygun tahmin yöntemi:
+                    <br />
+                    <Box component="span" sx={{ color: '#38BDF8', fontWeight: 600 }}>
+                      Croston SBA
+                    </Box>
+                    "
                   </Typography>
                   <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
                     {['A', 'B', 'C'].map((letter) => (
