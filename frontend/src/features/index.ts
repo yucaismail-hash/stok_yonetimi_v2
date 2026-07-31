@@ -1,0 +1,21 @@
+// src/features/index.ts
+export { default as LandingPage } from './landing/LandingPage';
+export * from './dashboard';
+export * from './safety-stock';
+export * from './forecast';
+export * from './simulation';
+export * from './backtest';
+export * from './supplier';
+export * from './risk';
+export * from './profile';
+export * from './admin';
+export * from './tasks';
+export * from './auth';
+export * from './pricing';
+export * from './executive-summary';
+export * from './ai-analysis';
+export * from './not-found';
+export * from './blog';
+export * from './contact';
+export * from './privacy';
+export * from './terms';

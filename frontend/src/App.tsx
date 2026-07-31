@@ -4,25 +4,28 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-// ✅ Theme import (ARTIK ÇALIŞACAK)
+// ✅ Theme import
 import theme from './theme';
 
-// Layout ve Pages
+// ✅ Layout
 import Layout from './components/Layout/Layout';
-import LandingPage from './pages/LandingPage/LandingPage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import DashboardPage from './pages/DashboardPage';
-import ForecastPage from './pages/ForecastPage';
-import SafetyStockPage from './pages/SafetyStockPage';
-import SimulationPage from './pages/SimulationPage';
-import BacktestPage from './pages/BacktestPage';
-import SupplierPage from './pages/SupplierPage';
-import RiskPage from './pages/RiskPage';
-import ProfilePage from './pages/ProfilePage';
-import AdminPage from './pages/AdminPage';
-import TaskListPage from './pages/TaskListPage';
-import useAuth from './hooks/useAuth';
+
+// ✅ YENİ IMPORTLAR - DOĞRUDAN features/ klasöründen
+import LandingPage from './features/landing/LandingPage';
+import LoginPage from './features/auth/LoginPage';
+import RegisterPage from './features/auth/RegisterPage';
+import DashboardPage from './features/dashboard/DashboardPage';
+import ForecastPage from './features/forecast/ForecastPage';
+import SafetyStockPage from './features/safety-stock/SafetyStockPage';
+import SimulationPage from './features/simulation/SimulationPage';
+import BacktestPage from './features/backtest/BacktestPage';
+import SupplierPage from './features/supplier/SupplierPage';
+import RiskPage from './features/risk/RiskPage';
+import ProfilePage from './features/profile/ProfilePage';
+import AdminPage from './features/admin/AdminPage';
+import TaskListPage from './features/tasks/TaskListPage';
+
+import { useAuth } from './hooks/useAuth';
 
 const queryClient = new QueryClient();
 

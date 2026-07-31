@@ -1,0 +1,34 @@
+// src/constants/routes.ts
+export const ROUTES = {
+  HOME: '/',
+  LOGIN: '/login',
+  REGISTER: '/register',
+  DASHBOARD: '/dashboard',
+  SAFETY_STOCK: '/safety-stock',
+  FORECAST: '/forecast',
+  SIMULATION: '/simulation',
+  BACKTEST: '/backtest',
+  SUPPLIER: '/supplier',
+  RISK: '/risk',
+  PROFILE: '/profile',
+  ADMIN: '/admin',
+  TASKS: '/tasks',
+  PRICING: '/pricing',
+  EXECUTIVE_SUMMARY: '/executive-summary',
+  AI_ANALYSIS: '/ai-analysis',
+} as const;
+
+export type AppRoute = typeof ROUTES[keyof typeof ROUTES];
+
+// Landing Page içi CTA yönlendirmeleri
+export const CTA_ROUTES = {
+  GET_STARTED: ROUTES.REGISTER,
+  DEMO: '#demo',
+  PRICING: ROUTES.PRICING,
+  SAFETY_STOCK: ROUTES.SAFETY_STOCK,
+  FORECAST: ROUTES.FORECAST,
+  SIMULATION: ROUTES.SIMULATION,
+  BACKTEST: ROUTES.BACKTEST,
+  EXECUTIVE_SUMMARY: ROUTES.EXECUTIVE_SUMMARY,
+  AI_ANALYSIS: ROUTES.AI_ANALYSIS,
+};
