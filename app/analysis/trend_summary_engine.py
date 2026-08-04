@@ -10,7 +10,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app.models import AnalysisResult, User
+from app.models import *
 from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_country
 
 logger = logging.getLogger(__name__)

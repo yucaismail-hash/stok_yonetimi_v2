@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Dict, Any, Optional, List
 
 from app.database import get_db
-from app.models import User, AnalysisResult
+from app.models import *
 from app.auth import get_current_user
 from app.services.dashboard_builder import get_dashboard_builder
 from app.services.recommendation_engine import RecommendationEngine

@@ -4,7 +4,7 @@ from typing import Optional
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 from app.database import get_db
-from app.models import User, TokenHistory, UserTokenTransaction, Sector, CreditTransaction, Notification
+from app.models import *
 from app.auth import get_current_user, get_password_hash, verify_password
 from app.services import polar as polar_service
 from app.services.polar import POLAR_API_BASE, POLAR_ACCESS_TOKEN

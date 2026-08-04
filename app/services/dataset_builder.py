@@ -9,7 +9,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
-from app.models import AnalysisDataset, User
+from app.models import *
 from app.schemas.dataset import DatasetCreate, DatasetResponse
 
 logger = logging.getLogger(__name__)

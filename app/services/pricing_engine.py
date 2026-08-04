@@ -11,14 +11,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 from app.services.dataset_builder import DatasetBuilder
 
-from app.models import (
-    User, 
-    AnalysisDataset, 
-    EndpointProfile, 
-    ProcessingScoreRange,
-    ProcessingTransaction,
-    TokenHistory
-)
+from app.models import *
 from app.schemas.credit import PricingRequest, PricingResponse
 
 logger = logging.getLogger(__name__)

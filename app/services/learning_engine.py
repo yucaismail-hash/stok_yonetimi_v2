@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc
 
-from app.models import CompanyLearningMemory, AnalysisResult, UserLearningData
+from app.models import *
 from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)

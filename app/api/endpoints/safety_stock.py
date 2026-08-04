@@ -12,7 +12,7 @@ from app.analysis.ai_summary_engine import AISummaryEngine, get_language_from_co
 from app.analysis.trend_summary_engine import TrendSummaryEngine
 from app.analysis.executive_summary_engine import ExecutiveSummaryEngine
 from app.auth import get_current_user
-from app.models import User, AnalysisResult, Notification
+from app.models import *
 from app.database import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta

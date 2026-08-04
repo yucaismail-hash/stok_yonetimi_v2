@@ -5,7 +5,8 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from app.analysis.backtest import BacktestEngine
 from app.auth import get_current_user
-from app.models import User, AnalysisResult, Notification
+#from app.models import User, AnalysisResult, Notification
+from app.models import *
 from app.database import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta

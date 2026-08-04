@@ -10,7 +10,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.models import ValidationRule, AnalysisImpactRule
+from app.models import *
 from app.schemas.canonical import (
     CANONICAL_MAP, 
     FIELD_TYPES, 
@@ -1097,7 +1097,7 @@ class ValidationEngine:
 
     def _get_default_rules(self) -> List[AnalysisImpactRule]:
         """Varsayılan impact kuralları (fallback)."""
-        from app.models import AnalysisImpactRule
+        from app.models import *
         rules = []
         default_rules = [
             ('forecast', 'product_code', 'critical'),

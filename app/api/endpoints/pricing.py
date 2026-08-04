@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.database import get_db
-from app.models import User
+from app.models import *
 from app.auth import get_current_user
 from app.services.pricing_engine import PricingEngine, get_pricing_engine
 from app.services.dataset_builder import DatasetBuilder

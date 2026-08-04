@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 from app.database import get_db
-from app.models import User, UserTokenTransaction
+from app.models import *
 from app.auth import get_current_user
 import uuid
 

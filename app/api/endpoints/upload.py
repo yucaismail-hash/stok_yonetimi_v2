@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import uuid
 from app.database import get_db
-from app.models import User, UploadedData, AnalysisResult, AnalysisInput, AnalysisDataset
+from app.models import *
 from app.auth import get_current_user, get_current_user_optional
 from app.utils.excel_reader import ExcelReader
 from app.utils.excel_processor import ExcelProcessor  # ✅ DOĞRU

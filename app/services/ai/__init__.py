@@ -1,27 +1,44 @@
-# app/services/ai/__init__.py - GÜNCELLENMİŞ
+# app/services/ai/__init__.py
+"""
+AI Services - DOCUMENT 01 AI Architecture
+"""
 
-from .llm_service import LLMService, get_llm_service
+from .base_provider import BaseAIProvider, AIResponse
 from .provider_manager import ProviderManager, get_provider_manager
+from .ai_decision_engine import AIDecisionEngine
 from .prompt_builder import PromptBuilder
-from .ai_exceptions import *
-from .ai_health import AIHealthChecker
 from .config import AIConfig
+
+# Provider'lar
 from .gemini_provider import GeminiProvider
-from .deepseek_provider import DeepSeekProvider  # ✅ YENİ
-from .openai_provider import OpenAIProvider  # ✅ BUNU EKLE
+from .deepseek_provider import DeepSeekProvider
+from .openai_provider import OpenAIProvider
+
+# Exception'lar
+from .ai_exceptions import (
+    AIProviderError,
+    AIProviderTimeoutError,
+    AIProviderConnectionError,
+    AIProviderRateLimitError,
+    AIProviderModelNotFoundError,
+    AIProviderServerError,
+    AIAuthenticationError,
+)
 
 __all__ = [
-    "LLMService",
-    "get_llm_service",
+    # Core
+    "BaseAIProvider",
+    "AIResponse",
     "ProviderManager",
     "get_provider_manager",
+    "AIDecisionEngine",
     "PromptBuilder",
-    "AIHealthChecker",
     "AIConfig",
+    # Providers
     "GeminiProvider",
-    "DeepSeekProvider",  # ✅ YENİ
-    "OpenAIProvider",  # ✅ BUNU EKLE
-    # Exception'lar
+    "DeepSeekProvider",
+    "OpenAIProvider",
+    # Exceptions
     "AIProviderError",
     "AIProviderTimeoutError",
     "AIProviderConnectionError",
@@ -29,7 +46,4 @@ __all__ = [
     "AIProviderModelNotFoundError",
     "AIProviderServerError",
     "AIAuthenticationError",
-    "AIPromptError",
-    "AIJSONParseError",
-    "AIValidationError",
 ]

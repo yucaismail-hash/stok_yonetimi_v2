@@ -1,0 +1,8 @@
+Identify the main risks identified in the analysis.
+
+Each risk should be:
+- Specific
+- Measurable where possible
+- Actionable
+
+Max 5 risks.

@@ -1,0 +1,8 @@
+Identify the main opportunities identified in the analysis.
+
+Each opportunity should be:
+- Specific
+- Actionable
+- Business-relevant
+
+Max 5 opportunities.

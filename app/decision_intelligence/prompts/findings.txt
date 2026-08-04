@@ -1,0 +1,8 @@
+List the key findings from the analysis.
+
+Each finding should be:
+- Specific and measurable
+- Based on provided data
+- Business-relevant
+
+Max 5 findings.

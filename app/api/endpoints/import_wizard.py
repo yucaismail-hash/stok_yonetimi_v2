@@ -11,7 +11,7 @@ import os
 import logging
 
 from app.database import get_db
-from app.models import User, ValidationResult
+from app.models import *
 from app.auth import get_current_user
 from app.services.validation_engine import get_validation_engine
 from app.services.normalization_engine import get_normalization_engine

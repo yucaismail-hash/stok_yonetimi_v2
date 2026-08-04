@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
 
-from app.models import AnalysisDataset
+from app.models import *
 
 logger = logging.getLogger(__name__)
 

@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 import logging
 
-from app.models import AnalysisResult
+from app.models import *
 from app.schemas.dashboard import AlertItem
 
 logger = logging.getLogger(__name__)

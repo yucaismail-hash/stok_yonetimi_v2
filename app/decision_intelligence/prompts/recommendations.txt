@@ -1,0 +1,9 @@
+Provide actionable recommendations based on the analysis.
+
+Each recommendation should be:
+- Specific
+- Actionable
+- Prioritized
+- Business-relevant
+
+Max 5 recommendations.

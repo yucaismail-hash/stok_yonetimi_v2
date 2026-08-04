@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List, Dict, Optional, Any  # ✅ EKLENDİ
 from app.analysis.historical_learning import HistoricalLearningSystem
 from app.auth import get_current_user
-from app.models import User, UserLearningData
+from app.models import *
 from app.database import get_db
 from sqlalchemy.orm import Session
 from datetime import datetime  # ✅ EKLENDİ

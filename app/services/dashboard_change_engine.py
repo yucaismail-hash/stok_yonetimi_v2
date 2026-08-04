@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime
 from sqlalchemy.orm import Session
 
-from app.models import AnalysisResult, User
+from app.models import *
 
 logger = logging.getLogger(__name__)
 

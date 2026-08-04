@@ -13,7 +13,7 @@ from app.analysis.supplier import (
     calculate_service_level_gap
 )
 from app.auth import get_current_user
-from app.models import User, AnalysisResult, Notification
+from app.models import *
 from app.database import get_db
 from sqlalchemy.orm import Session
 from app.services.active_dataset import get_active_dataset_service

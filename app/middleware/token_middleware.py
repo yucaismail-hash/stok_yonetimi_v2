@@ -1,6 +1,6 @@
 from fastapi import Request, HTTPException
 from sqlalchemy.orm import Session
-from app.models import User, TokenCost, TokenHistory
+from app.models import *
 from app.database import SessionLocal
 from jose import jwt
 import os

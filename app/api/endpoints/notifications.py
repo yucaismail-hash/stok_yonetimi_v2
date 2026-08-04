@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any  # ✅ EKLENDİ
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
-from app.models import User, Notification
+from app.models import *
 from app.auth import get_current_user
 import smtplib
 from email.mime.text import MIMEText

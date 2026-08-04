@@ -1,4 +1,4 @@
-# app/services/ai/prompt_builder.py
+# app/services/ai/prompt_builder.py - GÜNCELLENMİŞ
 
 import json
 from typing import Dict, Any, Optional
@@ -14,7 +14,7 @@ class PromptBuilder:
     Tüm prompt'lar buradan gelir.
     """
     
-    def __init__(self, language: str = "English"):
+    def __init__(self, language: str = "Türkçe"):
         self.language = language
     
     def build_safety_stock_prompt(self, stats: Dict[str, Any]) -> str:
@@ -55,7 +55,7 @@ class PromptBuilder:
             "Deutsch": "Bitte antworte auf DEUTSCH. Sprich wie ein professioneller Supply-Chain-Berater.",
             "Français": "Veuillez répondre en FRANÇAIS. Parlez comme un consultant professionnel en chaîne d'approvisionnement.",
         }
-        lang_instruction = language_instructions.get(self.language, language_instructions["English"])
+        lang_instruction = language_instructions.get(self.language, language_instructions["Türkçe"])
         
         # Prompt türüne göre başlık
         titles = {

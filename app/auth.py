@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from app.database import get_db
-from app.models import User, Sector
+from app.models import *
 import os
 import logging
 logging.getLogger("passlib").setLevel(logging.ERROR)

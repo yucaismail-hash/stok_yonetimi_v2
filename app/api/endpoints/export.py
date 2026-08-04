@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from typing import List, Dict, Any, Optional
 from app.utils.excel_exporter import ExcelExporter
 from app.auth import get_current_user
-from app.models import User
+from app.models import *
 from app.database import get_db
 from sqlalchemy.orm import Session
 import io

@@ -5,15 +5,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from app.database import get_db
-from app.models import (
-    TokenCost, 
-    User, 
-    TokenHistory, 
-    CreditPackage, 
-    CreditTransaction,
-    Notification,ValidationRule, 
-    AnalysisImpactRule, NormalizationRule
-)
+from app.models import *
 from app.auth import get_current_user
 
 
@@ -262,9 +254,9 @@ async def init_default_token_costs(
         "/api/upload",
         "/api/upload/status",
         "/api/cost",
-        "/api/dashboard/ai-summary",  # ✅ YENİ
-        "/api/dashboard/ai-summary/status",  # ✅ YENİ
-        "/api/dashboard/ai-summary/refresh",  # 
+        "/api/dashboard/ai-summary",
+        "/api/dashboard/ai-summary/status",
+        "/api/dashboard/ai-summary/refresh",
         "/api/forecast/async/status/{task_id}",
         "/api/forecast/async/result/{task_id}",
     ]
@@ -602,24 +594,23 @@ async def get_admin_stats(
     active_packages = db.query(CreditPackage).filter(CreditPackage.is_active == True).count()
     
     total_credit_transactions = db.query(CreditTransaction).filter(
-        CreditTransaction.transaction_type == "purchase"  # ✅ Düzeltildi
+        CreditTransaction.transaction_type == "purchase"
     ).count()
     
     total_credits_sold = db.query(
         func.sum(CreditTransaction.amount)
     ).filter(
-        CreditTransaction.transaction_type == "purchase"  # ✅ Düzeltildi
+        CreditTransaction.transaction_type == "purchase"
     ).scalar() or 0
     
     total_refunds = db.query(CreditTransaction).filter(
-        CreditTransaction.transaction_type == "refund"  # ✅ Düzeltildi
+        CreditTransaction.transaction_type == "refund"
     ).count()
     
-    # ✅ Düzeltildi: status yerine transaction_type kullan
     total_revenue = db.query(
         func.sum(CreditTransaction.price)
     ).filter(
-        CreditTransaction.transaction_type == "purchase"  # ✅ DÜZELTME
+        CreditTransaction.transaction_type == "purchase"
     ).scalar() or 0
     
     return {
@@ -645,6 +636,7 @@ async def get_admin_stats(
             "total_revenue": total_revenue
         }
     }
+
 
 @router.get("/token-history")
 async def get_token_history(
@@ -696,13 +688,13 @@ async def create_admin_user(
         "password": "admin123"
     }
 
-# app/admin.py - DOSYANIN EN SONUNA EKLEYİN
 
 # ============================================================
 # 🆕 PROCESSING CREDIT - ADMIN ENDPOINT'LERİ
 # ============================================================
 
-from app.models import EndpointProfile, ProcessingScoreRange, AnalysisDataset, ProcessingTransaction
+# ✅ DÜZELTİLDİ: AnalysisDataset yerine Dataset kullanıldı
+from app.models import EndpointProfile, ProcessingScoreRange, Dataset, ProcessingTransaction
 from app.schemas.credit import (
     EndpointProfileCreate,
     EndpointProfileUpdate,
@@ -1102,8 +1094,9 @@ async def get_processing_transactions(
     result = []
     for t in transactions:
         user = db.query(User).filter(User.id == t.user_id).first()
-        dataset = db.query(AnalysisDataset).filter(
-            AnalysisDataset.id == t.dataset_id
+        # ✅ DÜZELTİLDİ: AnalysisDataset yerine Dataset
+        dataset = db.query(Dataset).filter(
+            Dataset.id == t.dataset_id
         ).first() if t.dataset_id else None
         
         result.append({
@@ -1120,9 +1113,8 @@ async def get_processing_transactions(
             "status": t.status,
             "created_at": t.created_at,
             "dataset": {
-                "product_count": dataset.product_count if dataset else 0,
-                "period_count": dataset.period_count if dataset else 0,
-                "data_points": dataset.data_points if dataset else 0
+                "sku_count": dataset.sku_count if dataset else 0,
+                "record_count": dataset.record_count if dataset else 0,
             } if dataset else None
         })
     
@@ -1154,25 +1146,6 @@ async def get_user_processing_transactions(
         "total": len(transactions),
         "items": transactions
     }
-
-
-# app/api/endpoints/admin.py - TAM DOSYA (GÜNCELLENMİŞ)
-
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from typing import List, Optional, Dict, Any
-from datetime import datetime
-
-from app.database import get_db
-from app.models import (
-    User, 
-    CreditTransaction, 
-    CreditPackage,
-    ValidationRule,
-    AnalysisImpactRule,
-    NormalizationRule,
-)
-
 
 # ============================================================
 # 📌 MEVCUT ADMIN ENDPOINT'LER (KORUNUYOR)

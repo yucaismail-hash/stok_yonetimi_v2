@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
 from app.database import get_db
-from app.models import User
+from app.models import *
 from app.auth import get_current_user
 from app.services.learning_engine import LearningEngine
 from app.services.learning_score_service import LearningScoreService

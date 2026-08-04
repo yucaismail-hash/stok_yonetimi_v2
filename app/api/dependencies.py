@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User, AnalysisDataset
+from app.models import *
 from app.services.dataset_builder import DatasetBuilder, get_dataset_builder
 from app.services.pricing_engine import PricingEngine, get_pricing_engine
 from app.auth import get_current_user
