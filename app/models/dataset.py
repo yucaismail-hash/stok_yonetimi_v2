@@ -2,6 +2,7 @@
 """
 Dataset models - Single source of truth for business data.
 Follows DOCUMENT 03 - Database Architecture Specification.
+DOCUMENT 06A Integration: AI Artifact relationships.
 """
 
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, JSON, Text, Enum, Integer, CheckConstraint
@@ -79,33 +80,48 @@ class Dataset(BaseModel):
     encrypted_data = Column(Text, nullable=True)
     encryption_key_id = Column(PG_UUID(as_uuid=True), ForeignKey("company_encryption_keys.id"), nullable=True)
 
-
-    # ✅ JSON yerine JSONB
-    diff_result = Column(JSONB, nullable=True)  # DOCUMENT 03 - JSONB Strategy
+    # JSONB fields
+    diff_result = Column(JSONB, nullable=True)
     previous_version_id = Column(PG_UUID(as_uuid=True), ForeignKey("datasets.id"), nullable=True)
-    
-    # ✅ JSON yerine JSONB
-    affected_skus = Column(JSONB, nullable=True)  # DOCUMENT 03 - JSONB Strategy
+    affected_skus = Column(JSONB, nullable=True)
     
     expires_at = Column(DateTime(timezone=True), nullable=True)
     is_active = Column(Boolean, default=True)
 
-    expires_at = Column(DateTime(timezone=True), nullable=True)
-    is_active = Column(Boolean, default=True)
-
-    # Relationships
+    # ====================================================================
+    # RELATIONSHIPS
+    # ====================================================================
+    
+    # Mevcut ilişkiler
     user = relationship("User", foreign_keys=[user_id])
     company = relationship("Company", back_populates="datasets")
     versions = relationship("DatasetVersion", back_populates="dataset", cascade="all, delete-orphan")
     events = relationship("DatasetEvent", back_populates="dataset", cascade="all, delete-orphan")
     validations = relationship("DatasetValidationResult", back_populates="dataset", cascade="all, delete-orphan")
-    diff_results = relationship("DatasetDiffResult", foreign_keys="[DatasetDiffResult.dataset_id]", back_populates="dataset", cascade="all, delete-orphan")
-    previous_diff_results = relationship("DatasetDiffResult", foreign_keys="[DatasetDiffResult.previous_dataset_id]", back_populates="previous_dataset")
+    diff_results = relationship(
+        "DatasetDiffResult",
+        foreign_keys="[DatasetDiffResult.dataset_id]",
+        back_populates="dataset",
+        cascade="all, delete-orphan"
+    )
+    previous_diff_results = relationship(
+        "DatasetDiffResult",
+        foreign_keys="[DatasetDiffResult.previous_dataset_id]",
+        back_populates="previous_dataset"
+    )
     cache_entries = relationship("ExecutionCache", back_populates="dataset", cascade="all, delete-orphan")
+    
+    # DOCUMENT 06A - AI Artifact ilişkisi
+    ai_artifacts = relationship(
+        "AIArtifact",
+        back_populates="dataset",
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
-            CheckConstraint('dataset_version >= 1', name='check_dataset_version_positive'),
-        )
+        CheckConstraint('dataset_version >= 1', name='check_dataset_version_positive'),
+    )
+
 
 class DatasetVersion(BaseModel):
     __tablename__ = "dataset_versions"

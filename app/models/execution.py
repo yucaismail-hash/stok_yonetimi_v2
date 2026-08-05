@@ -2,6 +2,7 @@
 """
 Execution models - Analysis results and metrics.
 Follows DOCUMENT 03 - Database Architecture Specification.
+DOCUMENT 06A Integration: AI Artifact relationships.
 """
 
 from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, ForeignKey, JSON, Text, CheckConstraint
@@ -46,7 +47,10 @@ class AnalysisResult(BaseModel):
 
 
 class ExecutionResult(BaseModel):
-    """Execution results - alias for AnalysisResult for compatibility."""
+    """
+    Execution results - alias for AnalysisResult for compatibility.
+    DOCUMENT 06A: AI Artifact ilişkisi eklendi.
+    """
     __tablename__ = "execution_results"
 
     company_id = Column(PG_UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
@@ -71,9 +75,20 @@ class ExecutionResult(BaseModel):
     ai_prompt_version = Column(String(50), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Relationships
+    # ====================================================================
+    # RELATIONSHIPS
+    # ====================================================================
+    
+    # Mevcut ilişkiler
     user = relationship("User")
-    company = relationship("Company")
+    company = relationship("Company", back_populates="execution_results")
+    
+    # DOCUMENT 06A - AI Artifact ilişkisi
+    ai_artifacts = relationship(
+        "AIArtifact",
+        back_populates="execution",
+        cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint('progress >= 0 AND progress <= 100', name='check_progress_range'),

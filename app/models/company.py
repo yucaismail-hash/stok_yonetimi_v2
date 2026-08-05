@@ -2,6 +2,7 @@
 """
 Company and User models.
 Follows DOCUMENT 03 - Database Architecture Specification.
+DOCUMENT 06A Integration: AI Artifact relationships.
 """
 
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, JSON, Integer
@@ -34,7 +35,11 @@ class Company(BaseModel):
     is_active = Column(Boolean, default=True)
     settings = Column(JSONB, nullable=True, default={})
 
-    # Relationships
+    # ====================================================================
+    # RELATIONSHIPS
+    # ====================================================================
+    
+    # Mevcut ilişkiler
     users = relationship("User", back_populates="company", cascade="all, delete-orphan")
     datasets = relationship("Dataset", back_populates="company", cascade="all, delete-orphan")
     analysis_datasets = relationship("AnalysisDataset", back_populates="company", cascade="all, delete-orphan")
@@ -42,6 +47,13 @@ class Company(BaseModel):
     learning_data = relationship("UserLearningData", back_populates="company")
     company_learning = relationship("CompanyLearningMemory", back_populates="company")
     encryption_key = relationship("CompanyEncryptionKey", back_populates="company", uselist=False)
+    
+    # DOCUMENT 06A - AI Artifact ilişkisi (tek bir tanım)
+    ai_artifacts = relationship(
+        "AIArtifact",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
 
 
 class User(BaseModel):
@@ -69,7 +81,7 @@ class User(BaseModel):
     company = relationship("Company", back_populates="users")
     sector = relationship("Sector", back_populates="users")
     
-    # Existing relationships (will be updated)
+    # Existing relationships
     materials = relationship("UserMaterial", back_populates="user", cascade="all, delete-orphan")
     results = relationship("AnalysisResult", back_populates="user")
     uploads = relationship("UploadedData", back_populates="user")

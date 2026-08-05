@@ -2,6 +2,7 @@
 """
 Models Package - All database models organized by domain.
 Follows DOCUMENT 03 - Database Architecture Specification.
+DOCUMENT 06A Integration: AIArtifact model imported.
 """
 
 # Base
@@ -108,6 +109,9 @@ from app.models.system import (
     SystemSetting,
 )
 
+# DOCUMENT 06A - AI Artifact
+from app.models.artifact import AIArtifact
+
 
 __all__ = [
     # Audit
@@ -139,7 +143,7 @@ __all__ = [
     "ExecutionStageMetrics",
     "ExecutionResourceMetrics",
     "ExecutionCache",
-        # System
+    # System
     "AlgorithmVersion",
     "FeatureFlag",
     "SystemSetting",
@@ -182,4 +186,6 @@ __all__ = [
     "ValidationRule",
     "AnalysisImpactRule",
     "ValidationResult",
+    # DOCUMENT 06A
+    "AIArtifact",
 ]
