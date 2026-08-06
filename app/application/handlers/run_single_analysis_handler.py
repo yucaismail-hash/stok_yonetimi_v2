@@ -7,7 +7,7 @@ Single Analysis requests SHALL also use Workflow Dispatcher.
 The execution flow SHALL remain identical to business objectives.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 from app.application.commands.base import RunSingleAnalysisCommand
@@ -35,8 +35,8 @@ class RunSingleAnalysisHandler(BaseHandler[RunSingleAnalysisCommand]):
         "backtest",
     ]
     
-    def __init__(self):
-        self.dispatcher = WorkflowDispatcher()
+    def __init__(self, dispatcher: Optional[WorkflowDispatcher] = None):
+        self.dispatcher = dispatcher or WorkflowDispatcher()
     
     async def handle(self, command: RunSingleAnalysisCommand) -> APIResponse:
         """

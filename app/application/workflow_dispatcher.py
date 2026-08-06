@@ -20,11 +20,11 @@ SHALL all reuse WorkflowDispatcher.
 from typing import Optional, Dict, Any
 from uuid import UUID
 import logging
+from uuid_extensions import uuid7
 
 from app.application.models.trace_context import TraceContextHolder
-from app.application.execution.execution_context import ExecutionContext, ExecutionStatus
+from app.engine.contracts import WorkflowDispatchRequest, WorkflowDispatchResult
 from app.engine.workflow_engine import WorkflowEngine
-from app.engine.orchestrator import Orchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -36,9 +36,28 @@ class WorkflowDispatcher:
     DOCUMENT 07 APP-010
     """
     
-    def __init__(self):
-        self.workflow_engine = WorkflowEngine()
-        self.orchestrator = Orchestrator()
+    def __init__(self, workflow_engine=None):
+        self.workflow_engine = workflow_engine or WorkflowEngine()
+
+    @staticmethod
+    def _trace_values(trace_context) -> Dict[str, Optional[str]]:
+        return {
+            "trace_id": trace_context.trace_id if trace_context else None,
+            "correlation_id": trace_context.correlation_id if trace_context else None,
+            "request_id": trace_context.request_id if trace_context else None,
+        }
+
+    @staticmethod
+    def _dispatch_response(
+        result: WorkflowDispatchResult,
+        message: str,
+    ) -> Dict[str, Any]:
+        return {
+            "execution_id": result.execution_id,
+            "status": result.state.value,
+            "message": result.message or message,
+            "trace_id": result.trace_id,
+        }
     
     async def dispatch_business_objective(
         self,
@@ -77,39 +96,36 @@ class WorkflowDispatcher:
             }
         )
         
-        # Create ExecutionContext (APP-011)
-        execution_context = ExecutionContext(
+        trace_values = self._trace_values(trace_context)
+        request = WorkflowDispatchRequest(
+            execution_id=uuid7(),
             company_id=company_id,
             user_id=user_id,
             dataset_id=dataset_id,
             objective_type=objective_type,
             params=params or {},
-            trace_id=trace_context.trace_id if trace_context else None,
-            correlation_id=trace_context.correlation_id if trace_context else None,
-            request_id=trace_context.request_id if trace_context else None,
+            **trace_values,
         )
         
         # Dispatch through workflow engine
-        result = await self.workflow_engine.dispatch(execution_context)
+        result = await self.workflow_engine.dispatch(request)
         
         # Update trace context with execution_id
-        if trace_context and result.get("execution_id"):
-            trace_context.execution_id = result.get("execution_id")
+        if trace_context:
+            trace_context.execution_id = result.execution_id
         
         logger.info(
             f"✅ Business objective dispatched: {objective_type}",
             extra={
-                "execution_id": str(result.get("execution_id")) if result.get("execution_id") else None,
+                "execution_id": str(result.execution_id),
                 "trace_id": trace_context.trace_id if trace_context else None,
             }
         )
         
-        return {
-            "execution_id": result.get("execution_id"),
-            "status": result.get("status", "started"),
-            "message": f"Business objective '{objective_type}' started successfully",
-            "trace_id": trace_context.trace_id if trace_context else None,
-        }
+        return self._dispatch_response(
+            result,
+            f"Business objective '{objective_type}' started successfully",
+        )
     
     async def dispatch_single_analysis(
         self,
@@ -151,49 +167,48 @@ class WorkflowDispatcher:
             }
         )
         
-        # Create ExecutionContext (APP-011)
-        execution_context = ExecutionContext(
+        trace_values = self._trace_values(trace_context)
+        request = WorkflowDispatchRequest(
+            execution_id=uuid7(),
             company_id=company_id,
             user_id=user_id,
             dataset_id=dataset_id,
             analysis_type=analysis_type,
             material_codes=material_codes,
             params=params or {},
-            trace_id=trace_context.trace_id if trace_context else None,
-            correlation_id=trace_context.correlation_id if trace_context else None,
-            request_id=trace_context.request_id if trace_context else None,
+            **trace_values,
         )
         
         # Dispatch through workflow engine
-        result = await self.workflow_engine.dispatch(execution_context)
+        result = await self.workflow_engine.dispatch(request)
         
         # Update trace context with execution_id
-        if trace_context and result.get("execution_id"):
-            trace_context.execution_id = result.get("execution_id")
+        if trace_context:
+            trace_context.execution_id = result.execution_id
         
         logger.info(
             f"✅ Single analysis dispatched: {analysis_type}",
             extra={
-                "execution_id": str(result.get("execution_id")) if result.get("execution_id") else None,
+                "execution_id": str(result.execution_id),
                 "trace_id": trace_context.trace_id if trace_context else None,
             }
         )
         
-        return {
-            "execution_id": result.get("execution_id"),
-            "status": result.get("status", "started"),
-            "message": f"Analysis '{analysis_type}' started successfully",
-            "trace_id": trace_context.trace_id if trace_context else None,
-        }
+        return self._dispatch_response(
+            result,
+            f"Analysis '{analysis_type}' started successfully",
+        )
     
     async def get_execution_status(self, execution_id: UUID) -> Dict[str, Any]:
         """
         Get execution status.
         """
-        return await self.workflow_engine.get_status(execution_id)
+        snapshot = await self.workflow_engine.get_execution_status(execution_id)
+        return snapshot.to_dict()
     
     async def get_execution_result(self, execution_id: UUID) -> Dict[str, Any]:
         """
         Get execution result.
         """
-        return await self.workflow_engine.get_result(execution_id)
+        envelope = await self.workflow_engine.get_execution_result(execution_id)
+        return envelope.to_dict()

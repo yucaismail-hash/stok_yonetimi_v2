@@ -10,7 +10,7 @@ Command Handlers SHALL become responsible for:
 - Service invocation
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 
 from app.application.commands.base import RunBusinessObjectiveCommand
@@ -26,8 +26,8 @@ class RunBusinessObjectiveHandler(BaseHandler[RunBusinessObjectiveCommand]):
     Handler for RunBusinessObjectiveCommand.
     """
     
-    def __init__(self):
-        self.dispatcher = WorkflowDispatcher()
+    def __init__(self, dispatcher: Optional[WorkflowDispatcher] = None):
+        self.dispatcher = dispatcher or WorkflowDispatcher()
     
     async def handle(self, command: RunBusinessObjectiveCommand) -> APIResponse:
         """

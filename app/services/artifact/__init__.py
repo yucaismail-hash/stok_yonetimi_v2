@@ -13,10 +13,8 @@ from app.services.artifact.artifact_metadata_manager import ArtifactMetadataMana
 from app.services.artifact.artifact_explainability import ArtifactExplainability
 from app.services.artifact.artifact_persistence_service import ArtifactPersistenceService
 from app.services.artifact.artifact_reuse_manager import ArtifactReuseManager
-from app.application.services.artifact.artifact_service import ArtifactService
 
 __all__ = [
-    "ArtifactService",
     "ArtifactFactory",
     "ArtifactBuilder",
     "ArtifactValidator",

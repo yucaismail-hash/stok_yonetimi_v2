@@ -35,7 +35,7 @@ class BaseCommand:
         }
 
 
-@dataclass
+@dataclass(kw_only=True)
 class RunBusinessObjectiveCommand(BaseCommand):
     """
     Command to run a business objective.
@@ -53,7 +53,7 @@ class RunBusinessObjectiveCommand(BaseCommand):
     params: Optional[Dict[str, Any]] = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class RunSingleAnalysisCommand(BaseCommand):
     """
     Command to run a single analysis.
@@ -65,7 +65,7 @@ class RunSingleAnalysisCommand(BaseCommand):
     params: Optional[Dict[str, Any]] = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class UploadDatasetCommand(BaseCommand):
     """
     Command to upload a dataset.
@@ -77,7 +77,7 @@ class UploadDatasetCommand(BaseCommand):
     metadata: Optional[Dict[str, Any]] = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ValidateDatasetCommand(BaseCommand):
     """
     Command to validate a dataset.
@@ -86,7 +86,7 @@ class ValidateDatasetCommand(BaseCommand):
     dataset_id: UUID
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ApproveDatasetCommand(BaseCommand):
     """
     Command to approve a dataset.

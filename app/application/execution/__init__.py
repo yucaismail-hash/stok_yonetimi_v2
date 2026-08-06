@@ -10,12 +10,10 @@ from app.application.execution.execution_context import (
     ExecutionObjectiveType,
     ExecutionAnalysisType,
 )
-from app.application.execution.execution_result import ExecutionResult
 
 __all__ = [
     "ExecutionContext",
     "ExecutionStatus",
     "ExecutionObjectiveType",
     "ExecutionAnalysisType",
-    "ExecutionResult",
 ]

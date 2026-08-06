@@ -12,7 +12,8 @@ Official Flow:
 Execution Engine → Event Factory → Event Bus → Repository → Delivery Manager
 """
 
-from typing import List, Callable, Optional, Dict, Any, UUID
+from typing import List, Callable, Optional, Dict, Any
+from uuid import UUID
 import asyncio
 import logging
 

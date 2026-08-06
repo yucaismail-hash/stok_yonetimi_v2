@@ -22,12 +22,12 @@ class LearningContext:
     # Company & User
     company_id: UUID
     user_id: UUID
-    company_name: Optional[str] = None
+    company_name: Optional[str] = field(default=None, kw_only=True)
     
     # Dataset
     dataset_id: UUID
     dataset_version: int
-    dataset_hash: Optional[str] = None
+    dataset_hash: Optional[str] = field(default=None, kw_only=True)
     
     # Execution
     execution_id: UUID

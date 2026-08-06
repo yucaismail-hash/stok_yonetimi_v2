@@ -3,14 +3,26 @@
 Workflow Engine - DOCUMENT 04 - PART 02
 """
 
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import Callable, List, Dict, Any, Optional, Set, Tuple
 from enum import Enum
 from dataclasses import dataclass, field
-from uuid import uuid4
-from datetime import datetime
+from uuid import UUID, uuid4
+from datetime import datetime, timezone
 import logging
-from app.engine.capability_registry import capability_registry, Capability
+from app.engine.capability_registry import (
+    capability_registry,
+    Capability,
+    resolve_single_analysis_capability,
+)
 
+from app.engine.business_objectives import resolve_business_objective
+from app.engine.contracts import (
+    ExecutionResultEnvelope,
+    ExecutionStatusSnapshot,
+    RuntimeAcceptance,
+    WorkflowDispatchRequest,
+    WorkflowDispatchResult,
+)
 from app.engine.enums import (
     BusinessObjective,
     TaskType,
@@ -70,10 +82,144 @@ class WorkflowEngine:
     Does NOT execute analytical tasks.
     """
     
-    def __init__(self):
+    def __init__(
+        self,
+        orchestrator: Optional[Any] = None,
+        context_adapter: Optional[Any] = None,
+        intent_resolver: Optional[Callable[[str], BusinessObjective]] = None,
+        capability_resolver: Optional[Callable[[str], Capability]] = None,
+    ):
         self.generator = WorkflowGenerator()
         self._templates: Dict[str, WorkflowTemplate] = {}
+        self._orchestrator = orchestrator
+        self._context_adapter = context_adapter
+        self._intent_resolver = intent_resolver or resolve_business_objective
+        self._capability_resolver = capability_resolver or resolve_single_analysis_capability
         self._load_default_templates()
+
+    def _get_orchestrator(self) -> Any:
+        """Create the canonical runtime owner lazily to avoid eager cycles."""
+        if self._orchestrator is None:
+            from app.engine.orchestrator import ExecutionOrchestrator
+
+            self._orchestrator = ExecutionOrchestrator()
+        return self._orchestrator
+
+    def _get_context_adapter(self) -> Any:
+        """Load the approved application-boundary adapter only when dispatching."""
+        if self._context_adapter is None:
+            from app.application.execution.context_adapter import ExecutionContextAdapter
+
+            self._context_adapter = ExecutionContextAdapter
+        return self._context_adapter
+
+    def _create_execution_context(
+        self,
+        request: WorkflowDispatchRequest,
+        workflow: Workflow,
+    ) -> Any:
+        adapter = self._get_context_adapter()
+        if hasattr(adapter, "from_dispatch_request"):
+            return adapter.from_dispatch_request(request, workflow)
+        if callable(adapter):
+            return adapter(request, workflow)
+        raise TypeError("context_adapter must provide from_dispatch_request or be callable")
+
+    async def dispatch(
+        self,
+        request: WorkflowDispatchRequest,
+    ) -> WorkflowDispatchResult:
+        """Plan and register an execution without executing workflow tasks."""
+        if not isinstance(request, WorkflowDispatchRequest):
+            raise TypeError("request must be a WorkflowDispatchRequest")
+
+        if request.objective_type is not None:
+            objective = self._intent_resolver(request.objective_type)
+            workflow = self.generate_workflow(
+                objective_type=objective,
+                dataset_id=str(request.dataset_id),
+                user_id=str(request.user_id),
+                company_id=str(request.company_id),
+                params=request.params,
+            )
+        else:
+            capability = self._capability_resolver(request.analysis_type)
+            workflow = self.generator.generate_single_analysis_workflow(
+                analysis_type=request.analysis_type,
+                dataset_id=str(request.dataset_id),
+                user_id=str(request.user_id),
+                company_id=str(request.company_id),
+                params=request.params,
+            )
+            if workflow.capability is not capability:
+                raise RuntimeError("single analysis workflow capability resolution mismatch")
+        self.validate_workflow(workflow)
+        context = self._create_execution_context(request, workflow)
+        acceptance = await self._get_orchestrator().accept(context, workflow)
+        if not isinstance(acceptance, RuntimeAcceptance):
+            raise TypeError("orchestrator.accept must return RuntimeAcceptance")
+        if not acceptance.accepted:
+            raise RuntimeError("runtime rejected execution acceptance")
+
+        return WorkflowDispatchResult(
+            execution_id=request.execution_id,
+            workflow_id=workflow.workflow_id,
+            state=acceptance.state,
+            accepted_at=acceptance.accepted_at,
+            message=acceptance.message,
+            trace_id=request.trace_id,
+            correlation_id=request.correlation_id,
+            contract_version=request.contract_version,
+        )
+
+    async def get_execution_status(
+        self,
+        execution_id: UUID,
+    ) -> ExecutionStatusSnapshot:
+        """Return a snapshot based solely on indexed live runtime context."""
+        if not isinstance(execution_id, UUID):
+            raise TypeError("execution_id must be a UUID instance")
+        context = self._get_orchestrator().context_manager.get_context_by_execution_id(
+            execution_id
+        )
+        if context is None:
+            raise LookupError(f"execution not found: {execution_id}")
+
+        timestamp = context.queued_at
+        if timestamp is None or timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            timestamp = datetime.now(timezone.utc)
+        error_summary = None
+        if context.errors:
+            error_summary = str(context.errors[-1].get("error", context.errors[-1]))
+
+        return ExecutionStatusSnapshot(
+            execution_id=context.execution_id,
+            workflow_id=context.workflow_id,
+            state=context.state,
+            progress=context.progress,
+            updated_at=timestamp,
+            current_stage=context.current_stage,
+            retry_count=sum(context.retry_count.values()),
+            error_summary=error_summary,
+            trace_id=context.trace_id,
+            correlation_id=context.correlation_id,
+        )
+
+    async def get_execution_result(
+        self,
+        execution_id: UUID,
+    ) -> ExecutionResultEnvelope:
+        """Reject result retrieval until a real completed result source exists."""
+        if not isinstance(execution_id, UUID):
+            raise TypeError("execution_id must be a UUID instance")
+        context = self._get_orchestrator().context_manager.get_context_by_execution_id(
+            execution_id
+        )
+        if context is None:
+            raise LookupError(f"execution not found: {execution_id}")
+        if not ExecutionState.is_terminal(context.state):
+            raise RuntimeError("execution result is unavailable before terminal completion")
+        raise RuntimeError("execution result is unavailable: no real result source is configured")
     
     def _load_default_templates(self):
         """Load default workflow templates from registry."""

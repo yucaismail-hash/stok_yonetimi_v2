@@ -1097,7 +1097,7 @@ class ValidationEngine:
 
     def _get_default_rules(self) -> List[AnalysisImpactRule]:
         """Varsayılan impact kuralları (fallback)."""
-        from app.models import *
+        from app.models import AnalysisImpactRule
         rules = []
         default_rules = [
             ('forecast', 'product_code', 'critical'),

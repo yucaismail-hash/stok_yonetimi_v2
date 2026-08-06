@@ -37,9 +37,17 @@ class ExecutionService:
     Responsible for execution orchestration.
     """
     
-    def __init__(self):
-        self.handler = RunSingleAnalysisHandler()
-        self.dispatcher = WorkflowDispatcher()
+    def __init__(
+        self,
+        dispatcher: Optional[WorkflowDispatcher] = None,
+        handler: Optional[RunSingleAnalysisHandler] = None,
+    ):
+        if handler is not None and dispatcher is None:
+            dispatcher = handler.dispatcher
+        self.dispatcher = dispatcher or WorkflowDispatcher()
+        self.handler = handler or RunSingleAnalysisHandler(dispatcher=self.dispatcher)
+        if self.handler.dispatcher is not self.dispatcher:
+            raise ValueError("handler dispatcher must match ExecutionService dispatcher")
     
     async def run_analysis(
         self,

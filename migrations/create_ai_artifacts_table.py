@@ -2,6 +2,7 @@
 Create AI Artifacts Table - DOCUMENT 06A
 """
 
+# LEGACY / TRANSITION TOOL — not an ordered Alembic revision; ADR-033 prohibits execution for new managed PostgreSQL schema changes.
 from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID, JSONB

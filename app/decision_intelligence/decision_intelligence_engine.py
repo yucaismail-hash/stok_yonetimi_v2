@@ -9,7 +9,8 @@ DOCUMENT 06A Integration:
 - AI Artifacts SHALL be persisted through ArtifactPersistenceService
 """
 
-from typing import Dict, Any, Optional, datetime, List
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 import logging
 from uuid import UUID
 

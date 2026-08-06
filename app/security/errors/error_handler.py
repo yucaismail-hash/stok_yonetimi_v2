@@ -5,7 +5,8 @@ Error Handler - DOCUMENT 07 APP-043 / REVISION 05
 Standardizes error handling for the platform.
 """
 
-from typing import Optional, Dict, Any, datetime
+from typing import Optional, Dict, Any
+from datetime import datetime
 from fastapi import Request, status
 from fastapi.responses import JSONResponse
 

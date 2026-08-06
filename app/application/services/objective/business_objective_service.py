@@ -24,6 +24,8 @@ import logging
 from app.application.commands.base import RunBusinessObjectiveCommand
 from app.application.handlers.run_business_objective_handler import RunBusinessObjectiveHandler
 from app.application.response.schemas import APIResponse
+from app.application.workflow_dispatcher import WorkflowDispatcher
+from app.engine.business_objectives import resolve_business_objective
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +37,17 @@ class BusinessObjectiveService:
     Responsible for business objective orchestration.
     """
     
-    def __init__(self):
-        self.handler = RunBusinessObjectiveHandler()
+    def __init__(
+        self,
+        dispatcher: Optional[WorkflowDispatcher] = None,
+        handler: Optional[RunBusinessObjectiveHandler] = None,
+    ):
+        if handler is not None and dispatcher is None:
+            dispatcher = handler.dispatcher
+        self.dispatcher = dispatcher or WorkflowDispatcher()
+        self.handler = handler or RunBusinessObjectiveHandler(dispatcher=self.dispatcher)
+        if self.handler.dispatcher is not self.dispatcher:
+            raise ValueError("handler dispatcher must match BusinessObjectiveService dispatcher")
     
     async def run_objective(
         self,
@@ -92,14 +103,4 @@ class BusinessObjectiveService:
     
     def _validate_objective_type(self, objective_type: str) -> None:
         """Validate objective type."""
-        valid_types = [
-            "forecast",
-            "safety_stock",
-            "simulation",
-            "supplier",
-            "backtest",
-            "seasonal_analysis",
-            "trend_analysis",
-        ]
-        if objective_type not in valid_types:
-            raise ValueError(f"Invalid objective type: {objective_type}. Must be one of: {valid_types}")
+        resolve_business_objective(objective_type)

@@ -7,7 +7,7 @@ Validates business objective commands.
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 
-from app.application.commands.run_business_objective import RunBusinessObjectiveCommand
+from app.application.commands.base import RunBusinessObjectiveCommand
 from app.application.validators.command_validator import CommandValidator
 
 

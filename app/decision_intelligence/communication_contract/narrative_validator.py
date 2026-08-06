@@ -7,8 +7,7 @@ from typing import Dict, Any, List, Tuple
 import json
 import logging
 
-from app.decision_intelligence.communication_contract.contract import CommunicationContract
-from app.decision_intelligence.narrative_validator import NarrativeValidator
+from app.decision_intelligence.narrative_validator import NarrativeValidator as BaseNarrativeValidator
 from app.decision_intelligence.narrative_persistence import NarrativePersistence
 
 from app.services.ai.llm_service import get_llm_service
@@ -25,8 +24,7 @@ class NarrativeValidator:
     
     def __init__(self):        
         self.llm_service = get_llm_service()
-        self.contract = CommunicationContract()
-        self.validator = NarrativeValidator()
+        self.validator = BaseNarrativeValidator()
         self.persistence = NarrativePersistence()
         
         self._required_fields = [

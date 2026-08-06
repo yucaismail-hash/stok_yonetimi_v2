@@ -6,7 +6,8 @@ Sends notifications for important Events.
 """
 
 import logging
-from typing import Dict, Any, UUID
+from typing import Dict, Any
+from uuid import UUID
 from app.events.subscribers.base_subscriber import BaseSubscriber
 from app.events.models.event import Event
 

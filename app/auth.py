@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel as PydanticBaseModel
 from typing import Optional
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
@@ -30,7 +30,7 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-class RegisterRequest(BaseModel):
+class RegisterRequest(PydanticBaseModel):
     email: str
     password: str
     full_name: str = ""
@@ -47,7 +47,7 @@ class RegisterRequest(BaseModel):
     identity_number: Optional[str] = None
 
 
-class LoginRequest(BaseModel):
+class LoginRequest(PydanticBaseModel):
     email: str
     password: str
 

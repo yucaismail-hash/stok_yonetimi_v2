@@ -23,7 +23,8 @@ import logging
 
 from app.application.commands.base import RetrieveArtifactCommand
 from app.application.handlers.retrieve_artifact_handler import RetrieveArtifactHandler
-from app.application.response.schemas import APIResponse, ResponseBuilder
+from app.application.response.schemas import APIResponse
+from app.application.response.response_builder import ResponseBuilder
 
 logger = logging.getLogger(__name__)
 

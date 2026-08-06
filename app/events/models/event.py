@@ -55,13 +55,14 @@ class Event:
     Events SHALL remain immutable.
     """
     
+    event_type: str
+    company_id: UUID
+
     # Identifiers
     event_id: UUID = field(default_factory=uuid4)
-    event_type: str
     event_version: str = "1.0"
-    
+
     # Core
-    company_id: UUID
     execution_id: Optional[UUID] = None
     artifact_id: Optional[UUID] = None
     

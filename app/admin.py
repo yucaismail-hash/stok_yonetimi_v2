@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel as PydanticBaseModel
 from datetime import datetime
 from app.database import get_db
 from app.models import *
@@ -37,17 +37,17 @@ def is_admin(user: User) -> bool:
 # Pydantic Modelleri
 # ============================================
 
-class TokenCostCreate(BaseModel):
+class TokenCostCreate(PydanticBaseModel):
     endpoint: str
     method: str = "POST"
     cost: int = 1
     is_active: bool = True
 
-class TokenCostUpdate(BaseModel):
+class TokenCostUpdate(PydanticBaseModel):
     cost: Optional[int] = None
     is_active: Optional[bool] = None
 
-class TokenCostResponse(BaseModel):
+class TokenCostResponse(PydanticBaseModel):
     id: int
     endpoint: str
     method: str
@@ -60,20 +60,20 @@ class TokenCostResponse(BaseModel):
 # 🆕 CREDIT PACKAGE MODELLERİ
 # ============================================
 
-class CreditPackageCreate(BaseModel):
+class CreditPackageCreate(PydanticBaseModel):
     polar_product_id: str
     name: str
     credits: int
     price_tl: float
     is_active: bool = True
 
-class CreditPackageUpdate(BaseModel):
+class CreditPackageUpdate(PydanticBaseModel):
     name: Optional[str] = None
     credits: Optional[int] = None
     price_tl: Optional[float] = None
     is_active: Optional[bool] = None
 
-class CreditPackageResponse(BaseModel):
+class CreditPackageResponse(PydanticBaseModel):
     id: int
     polar_product_id: str
     name: str

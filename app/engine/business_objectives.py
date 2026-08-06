@@ -61,20 +61,18 @@ OBJECTIVE_REGISTRY: Dict[BusinessObjective, BusinessObjectiveDefinition] = {
                 timeout_seconds=600,
             ),
             WorkflowStep(
-                task_type=TaskType.BACKTEST,
-                is_functional=False,
+                task_type=TaskType.SIMULATION,
+                is_functional=True,
                 depends_on=[TaskType.FORECAST],
-                can_skip=True,
-                priority=TaskPriority.MEDIUM,
-                timeout_seconds=300,
+                priority=TaskPriority.HIGH,
+                timeout_seconds=900,
             ),
             WorkflowStep(
-                task_type=TaskType.DECISION_LEARNING,
-                is_functional=False,
-                depends_on=[TaskType.FORECAST],
-                can_skip=True,
-                priority=TaskPriority.LOW,
-                timeout_seconds=180,
+                task_type=TaskType.BACKTEST,
+                is_functional=True,
+                depends_on=[TaskType.SIMULATION],
+                priority=TaskPriority.MEDIUM,
+                timeout_seconds=300,
             ),
         ]
     ),
@@ -100,19 +98,17 @@ OBJECTIVE_REGISTRY: Dict[BusinessObjective, BusinessObjectiveDefinition] = {
             ),
             WorkflowStep(
                 task_type=TaskType.SIMULATION,
-                is_functional=False,
+                is_functional=True,
                 depends_on=[TaskType.SAFETY_STOCK],
-                can_skip=True,
                 priority=TaskPriority.MEDIUM,
                 timeout_seconds=900,
             ),
             WorkflowStep(
-                task_type=TaskType.DECISION_LEARNING,
-                is_functional=False,
-                depends_on=[TaskType.SAFETY_STOCK],
-                can_skip=True,
-                priority=TaskPriority.LOW,
-                timeout_seconds=180,
+                task_type=TaskType.BACKTEST,
+                is_functional=True,
+                depends_on=[TaskType.SIMULATION],
+                priority=TaskPriority.MEDIUM,
+                timeout_seconds=300,
             ),
         ]
     ),
@@ -246,6 +242,16 @@ OBJECTIVE_REGISTRY: Dict[BusinessObjective, BusinessObjectiveDefinition] = {
         ]
     ),
 }
+
+
+def resolve_business_objective(intent: str) -> BusinessObjective:
+    """Resolve only an exact canonical business-objective value."""
+    if not isinstance(intent, str) or not intent.strip():
+        raise ValueError("dispatch intent must be a non-empty string")
+    try:
+        return BusinessObjective(intent)
+    except ValueError as exc:
+        raise ValueError(f"unsupported dispatch intent: {intent}") from exc
 
 
 def get_objective(objective_type: BusinessObjective) -> Optional[BusinessObjectiveDefinition]:

@@ -16,6 +16,7 @@ from app.engine.enums import (
     TaskPriority,
     TaskStatus,
 )
+from app.engine.capability_registry import Capability, resolve_single_analysis_capability
 from app.engine.business_objectives import (
     BusinessObjectiveDefinition,
     WorkflowStep,
@@ -32,14 +33,28 @@ class Workflow:
     def __init__(
         self,
         workflow_id: str,
-        objective_type: BusinessObjective,
+        objective_type: Optional[BusinessObjective],
         dataset_id: str,
         user_id: str,
         company_id: str,
         params: Optional[Dict[str, Any]] = None,
+        analysis_type: Optional[str] = None,
+        capability: Optional[Capability] = None,
     ):
+        has_objective = isinstance(objective_type, BusinessObjective)
+        has_analysis = isinstance(analysis_type, str) and bool(analysis_type)
+        if has_objective == has_analysis:
+            raise ValueError("workflow must contain exactly one execution intent")
+        if has_analysis:
+            resolved_capability = resolve_single_analysis_capability(analysis_type)
+            if capability is not resolved_capability:
+                raise ValueError("workflow capability must match analysis_type")
+        elif capability is not None:
+            raise ValueError("business objective workflow must not define a standalone capability")
         self.workflow_id = workflow_id
         self.objective_type = objective_type
+        self.analysis_type = analysis_type
+        self.capability = capability
         self.dataset_id = dataset_id
         self.user_id = user_id
         self.company_id = company_id
@@ -59,7 +74,9 @@ class Workflow:
         """Convert workflow to dictionary."""
         return {
             "workflow_id": self.workflow_id,
-            "objective_type": self.objective_type.value,
+            "objective_type": self.objective_type.value if self.objective_type else None,
+            "analysis_type": self.analysis_type,
+            "capability": self.capability.value if self.capability else None,
             "dataset_id": self.dataset_id,
             "user_id": self.user_id,
             "company_id": self.company_id,
@@ -176,6 +193,42 @@ class WorkflowGenerator:
         
         logger.info(f"✅ Workflow generated: {workflow_id} for {objective_type.value}")
         
+        return workflow
+
+    def generate_single_analysis_workflow(
+        self,
+        analysis_type: str,
+        dataset_id: str,
+        user_id: str,
+        company_id: str,
+        params: Optional[Dict[str, Any]] = None,
+    ) -> Workflow:
+        """Generate a one-task workflow for one exact standalone capability."""
+        capability = resolve_single_analysis_capability(analysis_type)
+        task_type_by_capability = {
+            Capability.DEMAND_FORECAST: TaskType.FORECAST,
+            Capability.SAFETY_STOCK: TaskType.SAFETY_STOCK,
+            Capability.SIMULATION: TaskType.SIMULATION,
+            Capability.BACKTEST: TaskType.BACKTEST,
+            Capability.SUPPLIER_ANALYSIS: TaskType.SUPPLIER,
+        }
+        workflow = Workflow(
+            workflow_id=str(uuid4()),
+            objective_type=None,
+            analysis_type=analysis_type,
+            capability=capability,
+            dataset_id=dataset_id,
+            user_id=user_id,
+            company_id=company_id,
+            params=params,
+        )
+        workflow.add_task(Task(
+            task_id=str(uuid4()),
+            task_type=task_type_by_capability[capability],
+            order=0,
+            depends_on=[],
+        ))
+        self._validate_workflow(workflow)
         return workflow
     
     def _create_task(self, step: WorkflowStep, order: int) -> Task:

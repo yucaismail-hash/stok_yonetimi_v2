@@ -3,7 +3,8 @@
 Narrative Reuse Manager - DOCUMENT 06 - PART 02
 """
 
-from typing import Optional, Dict, Any, datetime
+from typing import Optional, Dict, Any
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)

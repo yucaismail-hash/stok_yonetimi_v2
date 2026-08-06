@@ -3,7 +3,8 @@
 Timeline Reuse Manager - DOCUMENT 06 - PART 03
 """
 
-from typing import Optional, Dict, Any, datetime
+from typing import Optional, Dict, Any
+from datetime import datetime
 import logging
 
 from app.decision_intelligence.timeline.ai_artifact_repository import AIArtifactRepository

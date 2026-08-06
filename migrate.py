@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# LEGACY / TRANSITION TOOL — ADR-033 prohibits new managed PostgreSQL schema changes here.
 """
 TEK DOSYA MIGRATION - DOCUMENT 03 UYUMLU
 UUID, Company, Soft Delete ile

@@ -20,10 +20,10 @@ Repository SHALL NEVER contain:
 - Workflow logic
 """
 
-from typing import Optional, List, Dict, Any, func
+from typing import Optional, List, Dict, Any
 from uuid import UUID
 from sqlalchemy.orm import Session
-from sqlalchemy import desc, and_, or_
+from sqlalchemy import desc, and_, or_, func
 
 from app.models.artifact import AIArtifact
 from app.repositories.base import BaseRepository

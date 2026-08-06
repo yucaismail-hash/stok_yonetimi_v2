@@ -8,7 +8,8 @@ Command Handlers SHALL become responsible for:
 - Service invocation
 """
 
-from typing import Optional, Any, Dict, TypeVar, Generic, UUID
+from typing import Optional, Any, Dict, TypeVar, Generic
+from uuid import UUID
 from abc import ABC, abstractmethod
 
 from app.application.commands.base import BaseCommand

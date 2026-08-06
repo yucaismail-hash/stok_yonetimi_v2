@@ -3,6 +3,7 @@
 Index ekleme script'i - DOCUMENT 03 Part 03
 """
 
+# LEGACY / TRANSITION TOOL — ADR-033 prohibits new managed PostgreSQL schema changes here.
 import os
 import sys  # ✅ EKLENDI
 import logging

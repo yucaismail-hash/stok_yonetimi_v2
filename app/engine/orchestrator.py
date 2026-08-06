@@ -5,10 +5,12 @@ Execution Orchestrator - DOCUMENT 04 - PART 03
 
 from typing import List, Dict, Any, Optional
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 
+from app.engine.contracts import RuntimeAcceptance
 from app.engine.enums import ExecutionState, TaskStatus
+from app.engine.execution_context import ExecutionContext, ExecutionContextManager
 from app.engine.workflow_engine import WorkflowEngine, Workflow
 from app.engine.rule_engine import RuleEngine
 from app.engine.task_scheduler import TaskScheduler
@@ -32,6 +34,38 @@ class ExecutionOrchestrator:
         self.task_scheduler = TaskScheduler()
         self.worker_manager = WorkerManager()
         self.result_collector = ResultCollector()
+        self.context_manager = ExecutionContextManager()
+
+    async def accept(
+        self,
+        context: ExecutionContext,
+        workflow: Workflow,
+    ) -> RuntimeAcceptance:
+        """Register an execution for runtime ownership without executing tasks."""
+        if not isinstance(context, ExecutionContext):
+            raise TypeError("context must be an ExecutionContext")
+        if not isinstance(workflow, Workflow):
+            raise TypeError("workflow must be a Workflow")
+        if context.workflow is not workflow or context.workflow_id != workflow.workflow_id:
+            raise ValueError("context and workflow identities must match")
+        if context.state is not ExecutionState.CREATED:
+            raise ValueError("only created contexts can be accepted")
+        if context.queued_at is not None:
+            raise ValueError("created context must not already have queued_at")
+
+        accepted_at = datetime.now(timezone.utc)
+        acceptance = RuntimeAcceptance(
+            execution_id=context.execution_id,
+            workflow_id=context.workflow_id,
+            accepted=True,
+            state=ExecutionState.QUEUED,
+            accepted_at=accepted_at,
+            message="Runtime accepted; execution has not started.",
+        )
+        self.context_manager.register_context(context)
+        context.state = ExecutionState.QUEUED
+        context.queued_at = accepted_at
+        return acceptance
     
     def orchestrate(
         self,

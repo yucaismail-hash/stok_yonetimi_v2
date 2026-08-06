@@ -4,8 +4,8 @@ Audit models - Immutable business events and security events.
 Follows DOCUMENT 03 - Database Architecture Specification.
 """
 
-from sqlalchemy import Column, String, DateTime, ForeignKey, JSON, Text
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy import Column, String, DateTime, ForeignKey, JSON, Text, Boolean
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 

@@ -12,7 +12,7 @@ from typing import Optional
 from uuid import UUID
 
 from app.api.v2.schemas import BusinessObjectiveRequest, ExecutionResponse
-from app.api.v2.dependencies.auth import get_current_user, get_user_id
+from app.api.v2.dependencies.auth import get_user_id
 from app.api.v2.dependencies.idempotency import IdempotencyKey
 from app.api.v2.middleware.trace import TraceContextHolder
 from app.application.services.objective.business_objective_service import BusinessObjectiveService

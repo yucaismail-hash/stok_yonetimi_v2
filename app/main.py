@@ -49,7 +49,8 @@ app = FastAPI(
 async def startup_event():
     """Uygulama başlangıcında sadece tabloları oluştur."""
     logger.info("🚀 Starting up...")
-    init_db()
+    readiness = init_db()
+    logger.info("Schema readiness: %s", readiness.status)
     logger.info("✅ Database tables ready")
     logger.info("ℹ️  Run /admin/token-costs/init-defaults to initialize token costs")
     logger.info("ℹ️  Run /admin/credit-packages/init-defaults to initialize credit packages")

@@ -3,7 +3,8 @@
 Strategic Recommendation Generator - DOCUMENT 06 - PART 04
 """
 
-from typing import Dict, Any, List, datetime
+from typing import Dict, Any, List
+from datetime import datetime
 import logging
 
 from app.decision_intelligence.advisor.executive_advisor_context import ExecutiveAdvisorContext

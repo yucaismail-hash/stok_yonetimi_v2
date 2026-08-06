@@ -24,6 +24,25 @@ class Capability(str, Enum):
     SEASONAL_ANALYSIS = "seasonal_analysis"
 
 
+_SINGLE_ANALYSIS_CAPABILITIES = {
+    "forecast": Capability.DEMAND_FORECAST,
+    "safety_stock": Capability.SAFETY_STOCK,
+    "simulation": Capability.SIMULATION,
+    "backtest": Capability.BACKTEST,
+    "supplier": Capability.SUPPLIER_ANALYSIS,
+}
+
+
+def resolve_single_analysis_capability(analysis_type: str) -> Capability:
+    """Resolve one exact approved standalone-analysis value without aliases."""
+    if not isinstance(analysis_type, str):
+        raise ValueError("analysis_type must be an exact standalone analysis value")
+    capability = _SINGLE_ANALYSIS_CAPABILITIES.get(analysis_type)
+    if capability is None:
+        raise ValueError(f"unsupported standalone analysis_type: {analysis_type}")
+    return capability
+
+
 @dataclass
 class CapabilityRegistration:
     """Capability registration record."""

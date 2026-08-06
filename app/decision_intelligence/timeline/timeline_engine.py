@@ -4,7 +4,8 @@ Executive Timeline Engine - DOCUMENT 06 - PART 03
 Main orchestrator for Executive Timeline.
 """
 
-from typing import Dict, Any, Optional, List, datetime
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 import logging
 
 from app.decision_intelligence.timeline.timeline_context import TimelineContext

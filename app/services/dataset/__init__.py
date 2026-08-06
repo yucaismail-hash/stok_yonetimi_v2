@@ -9,7 +9,6 @@ from app.services.dataset.dataset_validation_engine import DatasetValidationEngi
 from app.services.dataset.dataset_diff_engine import DatasetDiffEngine
 from app.services.dataset.dataset_version_service import DatasetVersionService
 from app.services.dataset.dataset_cache_service import DatasetCacheService
-from app.application.services.dataset.dataset_service import DatasetService
 
 __all__ = [
     "DatasetService",

@@ -4,8 +4,9 @@ System models - Algorithm versions, feature flags, system settings.
 Follows DOCUMENT 03 - Database Architecture Specification.
 """
 
-from sqlalchemy import Column, String, Boolean, DateTime, JSON, Text, Float
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, String, Boolean, DateTime, JSON, Text, Float, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID, JSONB
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from app.models.base import BaseModel

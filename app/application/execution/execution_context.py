@@ -67,16 +67,16 @@ class ExecutionContext:
     Immutable after creation.
     """
     
+    # Core
+    company_id: UUID
+    user_id: UUID
+    dataset_id: UUID
+
     # Identifiers
     execution_id: UUID = field(default_factory=uuid4)
     trace_id: Optional[str] = None
     correlation_id: Optional[str] = None
     request_id: Optional[str] = None
-    
-    # Core
-    company_id: UUID
-    user_id: UUID
-    dataset_id: UUID
     
     # Objective
     objective_type: Optional[str] = None

@@ -6,7 +6,8 @@ The platform SHALL register every supported Event centrally.
 Future Events SHALL be registered without changing platform architecture.
 """
 
-from typing import Dict, Any, Optional, List, datetime
+from typing import Dict, Any, Optional, List
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)

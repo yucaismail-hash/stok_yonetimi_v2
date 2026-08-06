@@ -4,7 +4,7 @@ Learning models - Company Learning Memory and User Learning Data.
 Based on modelsx.py structure.
 """
 
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Text, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func  # ✅ EKLENDI
@@ -47,7 +47,7 @@ class CompanyLearningMemory(Base):
 
     # Kural Detayları
     description = Column(Text, nullable=True)
-    pattern_data = CoColumn(JSONBB, nullable=True)
+    pattern_data = Column(JSONB, nullable=True)
 
     # İstatistikler
     confidence_score = Column(Float, default=0.0)
@@ -78,7 +78,7 @@ class PatternIntelligence(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     product_group_id = Column(Integer, ForeignKey("product_groups.id"), nullable=True)
     pattern_type = Column(String, nullable=False)
-    pattern_params = CoColumn(JSONB, nullable=True)
+    pattern_params = Column(JSONB, nullable=True)
     confidence_score = Column(Float, default=0.0)
     company_learning_id = Column(Integer, ForeignKey("company_learning_memory.id"), nullable=True)
     is_active = Column(Boolean, default=True)
@@ -93,10 +93,10 @@ class SectorIntelligence(Base):
     id = Column(Integer, primary_key=True, index=True)
     sector_id = Column(Integer, ForeignKey("sectors.id"), nullable=False)
     pattern_type = Column(String, nullable=False)
-    pattern_params = CoColumn(JSONB, nullable=True)
+    pattern_params = Column(JSONB, nullable=True)
     confidence_score = Column(Float, default=0.0)
     company_count = Column(Integer, default=0)
-    anonymized_data = CoColumn(JSONB, nullable=True)
+    anonymized_data = Column(JSONB, nullable=True)
     is_active = Column(Boolean, default=True)
     last_calculated_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -133,11 +133,11 @@ class CompanyAIMemory(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     decision_type = Column(String, nullable=False)
-    decision_input = CoColumn(JSONB, nullable=True)
-    decision_output = CoColumn(JSONB, nullable=False)
+    decision_input = Column(JSONB, nullable=True)
+    decision_output = Column(JSONB, nullable=False)
     user_feedback = Column(String, nullable=True)
     user_notes = Column(Text, nullable=True)
-    actual_outcome = CoColumn(JSONB, nullable=True)
+    actual_outcome = Column(JSONB, nullable=True)
     outcome_success = Column(Boolean, nullable=True)
     outcome_measured_at = Column(DateTime(timezone=True), nullable=True)
     confidence_before = Column(Float, default=0.0)

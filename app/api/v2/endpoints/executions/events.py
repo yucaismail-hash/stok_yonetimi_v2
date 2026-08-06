@@ -12,13 +12,13 @@ Execution Events SHALL expose:
 - Progress history
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, datetime
+from fastapi import APIRouter, Depends, HTTPException, Query
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
 from app.api.v2.schemas import BaseResponse
 from app.api.v2.dependencies.auth import get_user_id
-from app.api.v2.dependencies.pagination import PaginationParams
 from app.api.v2.middleware.trace import TraceContextHolder
 
 router = APIRouter(tags=["Executions"])
