@@ -19,6 +19,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import logging
 
 from app.models.security import CompanyEncryptionKey
@@ -131,7 +132,11 @@ class EncryptionService:
         encoded = base64.b64encode(combined).decode('utf-8')
         
         # Veritabanına kaydet
+        user = self.db.query(User).filter(User.id == user_id).one_or_none()
+        if not user:
+            raise ValueError("user is not available for encryption key creation")
         key_record = CompanyEncryptionKey(
+            company_id=user.company_id,
             user_id=user_id,
             encrypted_key=encoded,
             key_version="1"

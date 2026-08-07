@@ -5,7 +5,7 @@ Based on modelsx.py structure.
 """
 
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, JSON, Text, CheckConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func  # ✅ EKLENDI
 from datetime import datetime
@@ -17,6 +17,7 @@ class UserLearningData(Base):
     __tablename__ = "user_learning_data"
 
     id = Column(Integer, primary_key=True)
+    company_id = Column(PG_UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"))
     sector_id = Column(Integer, nullable=True)
     learning_key = Column(String, unique=True, nullable=False)
@@ -29,6 +30,7 @@ class UserLearningData(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="learning_data")
+    company = relationship("Company", back_populates="learning_data")
 
 
 class CompanyLearningMemory(Base):
@@ -38,6 +40,7 @@ class CompanyLearningMemory(Base):
     __tablename__ = "company_learning_memory"
 
     id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(PG_UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
 
     # Kural Bilgileri
@@ -69,6 +72,7 @@ class CompanyLearningMemory(Base):
 
     # İlişki
     user = relationship("User", back_populates="company_learning")
+    company = relationship("Company", back_populates="company_learning")
 
 
 class PatternIntelligence(Base):

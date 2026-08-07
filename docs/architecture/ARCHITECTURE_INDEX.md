@@ -145,6 +145,38 @@ Each authoritative architecture specification document now contains its bounded 
 | Existing schema baseline | Required before additive runtime migration |
 | Legacy schema scripts | Retained transition evidence; prohibited for new managed PostgreSQL DDL |
 
+## Phase 2C-M1 durable runtime governance
+
+| Decision / state | Status |
+|---|---|
+| ADR-029 — Canonical runtime entity model | ACCEPTED — IMPLEMENTATION PENDING |
+| ADR-030 — RuntimeStore ownership | ACCEPTED — IMPLEMENTATION PENDING |
+| ADR-031 — Claim / lease / idempotency model | ACCEPTED — IMPLEMENTATION PENDING |
+| ADR-032 — Result reference policy | ACCEPTED — IMPLEMENTATION PENDING |
+| Alembic development Neon baseline | CURRENT — `20260806_01` |
+| Runtime tables | NOT YET CREATED |
+| Runtime ORM models | IMPLEMENTED — NOT YET CONSUMED |
+| Runtime migration | AUTHORED — HEAD `20260807_01` — STRUCTURALLY VERIFIED; LIVE/ISOLATED APPLY TEST PENDING |
+| Development Neon | CURRENT REVISION `20260806_01` — MIGRATION NOT YET APPLIED |
+
+## Phase 2C durable runtime verification
+
+| Component | Status |
+|---|---|
+| Phase 2C Durable Runtime | COMPLETE |
+| PostgreSQL RuntimeStore | VERIFIED |
+| Fresh-Session Recovery | VERIFIED |
+| Claim / Lease / Attempt | VERIFIED |
+| Completion / Failure | VERIFIED |
+| Checkpoint / Progress | VERIFIED |
+| Optimistic Concurrency | VERIFIED |
+| Cancellation / Terminal Protection | VERIFIED |
+| Tenant Isolation | VERIFIED |
+| Runtime Result Scope | VERIFIED |
+| Development Probe Cleanup | VERIFIED — ZERO RESIDUE |
+| Distributed Queue/Worker | NOT YET IMPLEMENTED |
+| Real Capability Execution | NEXT |
+
 ## Phase 2B implementation status
 
 ## DOCUMENT_05 Capability Design Principles Revision

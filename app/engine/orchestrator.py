@@ -53,6 +53,42 @@ class ExecutionOrchestrator:
         if context.queued_at is not None:
             raise ValueError("created context must not already have queued_at")
 
+        # Phase 2D: standalone Forecast has PostgreSQL RuntimeStore authority.
+        if context.analysis_type == "forecast":
+            from app.database import SessionLocal
+            from app.engine.runtime_store import RuntimeStore
+            from app.models.runtime import RuntimeExecution
+            session = SessionLocal()
+            try:
+                execution = RuntimeExecution(
+                    execution_id=context.execution_id, company_id=context.company_id,
+                    user_id=context.user_id, dataset_id=context.dataset_id,
+                    workflow_id=context.workflow_id, analysis_type="forecast", state="queued",
+                    current_stage="planning", progress=0, accepted_at=datetime.now(timezone.utc),
+                    queued_at=datetime.now(timezone.utc), request_id=context.request_id,
+                    trace_id=context.trace_id, correlation_id=context.correlation_id,
+                    contract_version=context.contract_version,
+                    metadata_={"params": context.params, "material_codes": context.material_codes},
+                )
+                task = workflow.tasks[0] if len(workflow.tasks) == 1 else None
+                if task is None or workflow.capability.value != "demand_forecast":
+                    raise RuntimeError("standalone forecast planning invariant failed")
+                RuntimeStore(session).create_execution(execution, [{
+                    "workflow_id": context.workflow_id, "task_id": task.task_id,
+                    "capability": "demand_forecast", "task_order": 0, "required": True,
+                    "skippable": False, "dependencies": [], "state": "pending",
+                    "max_attempts": task.retry_count, "timeout_seconds": task.timeout_seconds,
+                }])
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
+            finally:
+                session.close()
+            accepted_at = datetime.now(timezone.utc)
+            context.state = ExecutionState.QUEUED; context.queued_at = accepted_at
+            return RuntimeAcceptance(context.execution_id, context.workflow_id, True, ExecutionState.QUEUED, accepted_at, "Runtime accepted; Forecast is queued durably.")
+
         accepted_at = datetime.now(timezone.utc)
         acceptance = RuntimeAcceptance(
             execution_id=context.execution_id,

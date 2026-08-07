@@ -85,7 +85,7 @@ class AIArtifact(BaseModel):
     execution = relationship("ExecutionResult", back_populates="ai_artifacts")
     user = relationship("User", foreign_keys=[generated_by])
     validator = relationship("User", foreign_keys=[validated_by])
-    reused_from = relationship("AIArtifact", remote_side=[id])
+    reused_from = relationship("AIArtifact", remote_side="AIArtifact.id")
     
     # ====================================================================
     # INDEXES

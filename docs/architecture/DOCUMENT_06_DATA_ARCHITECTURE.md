@@ -2,6 +2,14 @@
 
 # DOCUMENT 06
 
+## DATA1 canonical ingestion contract
+
+- Canonical weekly period: `YYYY-Www`; Excel demand input is wide and internal/API demand is normalized long.
+- Product hierarchy is Group → optional Class → SKU; demand type is Wizard/dataset metadata.
+- `Temel_Veriler` is required. `Malzeme_Tedarikciler`, `Tedarikciler`, and `Events` are optional and validated only when present.
+- Events are company-specific, weekly, and group/class scoped; event effect is learned/calculated later and official calendar data is automatic.
+- Service level is system-default with manual override. Graceful degradation is binding.
+
 # DATA ARCHITECTURE
 
 Version: 2.0

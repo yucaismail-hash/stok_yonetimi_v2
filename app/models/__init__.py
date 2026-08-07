@@ -47,6 +47,15 @@ from app.models.workflow import (
     WorkflowTask,
 )
 
+# Canonical durable runtime
+from app.models.runtime import (
+    RuntimeExecution,
+    RuntimeTask,
+    RuntimeTaskAttempt,
+    RuntimeCheckpoint,
+    RuntimeResultReference,
+)
+
 # Learning
 from app.models.learning import (
     CompanyLearningMemory,
@@ -150,6 +159,12 @@ __all__ = [
     # Workflow
     "WorkflowExecution",
     "WorkflowTask",
+    # Canonical runtime
+    "RuntimeExecution",
+    "RuntimeTask",
+    "RuntimeTaskAttempt",
+    "RuntimeCheckpoint",
+    "RuntimeResultReference",
     # Learning
     "CompanyLearningMemory",
     "UserLearningData",

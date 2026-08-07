@@ -179,6 +179,15 @@ class WorkflowEngine:
         """Return a snapshot based solely on indexed live runtime context."""
         if not isinstance(execution_id, UUID):
             raise TypeError("execution_id must be a UUID instance")
+        from app.database import SessionLocal
+        from app.engine.runtime_store import RuntimeStore
+        session = SessionLocal()
+        try:
+            snapshot = RuntimeStore(session).get_execution_status_by_id(execution_id)
+            if snapshot is not None:
+                return snapshot
+        finally:
+            session.close()
         context = self._get_orchestrator().context_manager.get_context_by_execution_id(
             execution_id
         )
@@ -212,6 +221,20 @@ class WorkflowEngine:
         """Reject result retrieval until a real completed result source exists."""
         if not isinstance(execution_id, UUID):
             raise TypeError("execution_id must be a UUID instance")
+        from app.database import SessionLocal
+        from app.engine.runtime_store import RuntimeStore
+        session = SessionLocal()
+        try:
+            store = RuntimeStore(session); execution = store.get_execution_by_id(execution_id)
+            if execution is not None:
+                if execution.state != "completed":
+                    raise RuntimeError("execution result is unavailable before terminal completion")
+                refs = store.get_execution_result_references(execution_id, execution.company_id)
+                if len(refs) != 1 or refs[0].validation_status != "validated":
+                    raise RuntimeError("execution result is unavailable: no validated result reference")
+                return ExecutionResultEnvelope(execution_id, execution.workflow_id, ExecutionState.COMPLETED, refs[0].inline_result, execution.completed_at, capability_summaries=[{"task_id": "forecast", "result_reference_id": str(refs[0].id)}])
+        finally:
+            session.close()
         context = self._get_orchestrator().context_manager.get_context_by_execution_id(
             execution_id
         )

@@ -1,5 +1,12 @@
 # Architecture Changelog
 
+## 2026-08-07 — Phase 2C durable runtime verification
+
+- Phase 2C Durable Runtime: **COMPLETE**.
+- PostgreSQL RuntimeStore, fresh-session recovery, claim/lease/attempt, completion/failure, checkpoint/progress, optimistic concurrency, cancellation/terminal protection, tenant isolation, and runtime result scope: **VERIFIED**.
+- Development synthetic-probe cleanup: **VERIFIED — ZERO RESIDUE**.
+- Distributed queue/worker remains **NOT YET IMPLEMENTED**; real capability execution is **NEXT**.
+
 ## 2026-08-06 — Phase 2C-M0B: Development Neon baseline stamped
 
 - The explicitly classified development Neon PostgreSQL database was stamped at baseline revision `20260806_01`.
@@ -13,6 +20,18 @@
 - Managed PostgreSQL startup schema mutation is disabled and read-only schema readiness is implemented.
 - Explicit local/test disposable bootstrap and unversioned managed-schema transition controls were added.
 - No migration, stamp, live-database mutation, runtime table, route, worker, queue, or capability activation occurred.
+
+## 2026-08-07 — Phase 2C-M1: Durable Runtime Governance
+
+- ADR-029 through ADR-032 were accepted.
+- The canonical additive runtime entity model, RuntimeStore ownership, worker claim/lease/idempotency model, and result-reference policy were approved.
+- No ORM model, migration, database table, runtime behavior, or route was created or changed.
+
+## 2026-08-07 — Phase 2C-M2I: Runtime ORM and additive migration
+
+- Added the five canonical runtime ORM models and manually authored revision `20260807_01_runtime_store_core`.
+- The migration is structurally verified only; no development Neon migration was applied.
+- Runtime consumers, repositories, routes, workers, queues, and downstream products remain unchanged.
 
 ## 2026-08-06 — Phase 2B-R1: Capability Design Principles
 

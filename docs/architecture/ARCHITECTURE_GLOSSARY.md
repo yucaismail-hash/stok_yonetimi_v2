@@ -79,6 +79,20 @@
 | Schema Baseline | A controlled migration-history marker representing the existing live schema without recreating or deleting legacy tables. | Accepted — ADR-033 |
 | Disposable Local/Test Database | An explicitly classified local or test database where controlled `create_all` may be permitted. | Accepted — ADR-033 |
 
+## Phase 2C durable runtime terms
+
+| Term | Definition | Status |
+|---|---|---|
+| RuntimeExecution | A durable record representing one accepted Standalone Analysis or Business Workflow execution. | Accepted — ADR-029 |
+| RuntimeTask | A durable workflow task and its current task-lifecycle record. | Accepted — ADR-029 |
+| RuntimeTaskAttempt | One durable execution attempt for a RuntimeTask. | Accepted — ADR-029, ADR-031 |
+| RuntimeCheckpoint | A versioned durable recovery snapshot. | Accepted — ADR-029 |
+| RuntimeResultReference | A versioned pointer or bounded inline record for a validated capability/workflow result. | Accepted — ADR-029, ADR-032 |
+| RuntimeStore | The engine-facing durable runtime persistence facade. | Accepted — ADR-030 |
+| Lease Token | A unique value proving that a specific worker claim remains authoritative. | Accepted — ADR-031 |
+| Row Version | An optimistic concurrency value used to reject stale updates. | Accepted — ADR-029, ADR-031 |
+| Idempotency Key | A company-scoped key preventing duplicate execution creation for repeated requests. | Accepted — ADR-029, ADR-031 |
+
 | Term | Definition | Status |
 |---|---|---|
 | Product Level | The approved user-visible product experience level: Level 1 Standalone Analysis or Level 2 Business Workflow. | Accepted — ADR-020 |

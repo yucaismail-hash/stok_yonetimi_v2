@@ -43,7 +43,7 @@ class AnalysisResult(BaseModel):
 
     # Relationships
     user = relationship("User", back_populates="results")
-    company = relationship("Company", back_populates="execution_results")
+    company = relationship("Company")
 
 
 class ExecutionResult(BaseModel):

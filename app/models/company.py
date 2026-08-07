@@ -61,6 +61,7 @@ class User(BaseModel):
     __tablename__ = "users"
 
     company_id = Column(PG_UUID(as_uuid=True), ForeignKey("companies.id"), nullable=False)
+    sector_id = Column(PG_UUID(as_uuid=True), ForeignKey("sectors.id"), nullable=True)
     
     email = Column(String, unique=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -84,6 +85,7 @@ class User(BaseModel):
     # Existing relationships
     materials = relationship("UserMaterial", back_populates="user", cascade="all, delete-orphan")
     results = relationship("AnalysisResult", back_populates="user")
+    analysis_datasets = relationship("AnalysisDataset", back_populates="user")
     uploads = relationship("UploadedData", back_populates="user")
     notifications = relationship("Notification", back_populates="user")
     support_tickets = relationship("SupportTicket", back_populates="user")

@@ -362,3 +362,46 @@ External Intelligence → Company Learning → Pattern Intelligence → AI Param
 - **Affected components:** engine capability contracts/executor; application error mapping; future API execution surfaces.
 - **Next phase:** PHASE 2C — DURABLE RUNTIME STORE DESIGN AND MIGRATION PLAN.
 - **Next phase:** PHASE 1AI — SINGLE ANALYSIS CONTRACT IMPLEMENTATION PLAN.
+
+### ADR-029 — Canonical Runtime Entity and State Persistence Model
+
+- **Date:** 2026-08-07
+- **Status:** Accepted
+- **Context:** Process-local `ExecutionContext`, lifecycle, and worker structures are not a recoverable runtime authority. Existing `workflow_*` and `execution_*` tables have conflicting legacy identity/live-schema contracts and lack durable attempts, leases, heartbeats, checkpoints, optimistic locking, idempotency evidence, and versioned result references.
+- **Decision:** Introduce additive canonical entities `RuntimeExecution`, `RuntimeTask`, `RuntimeTaskAttempt`, `RuntimeCheckpoint`, and `RuntimeResultReference` in `runtime_executions`, `runtime_tasks`, `runtime_task_attempts`, `runtime_checkpoints`, and `runtime_result_references`. Existing workflow/execution tables remain transition/legacy and are not canonical authority. Runtime execution state uses `app.engine.enums.ExecutionState`; task/attempt state uses compatible task vocabulary and the capability-result contract. RuntimeStore validates all transitions, records timestamps and row versions, rejects stale writes and terminal-to-non-terminal transitions, and never allows downstream stages to overwrite completed deterministic results.
+- **Data and tenancy rules:** Every tenant-owned entity carries `company_id`; cross-company reads/writes are prohibited. Runtime persistence excludes raw dataset rows, decrypted inputs, credentials, secrets, personal information, and raw tracebacks. Long calculation never runs in an open database transaction.
+- **Alternatives rejected:** Extending legacy tables, process-only state, and queue-state authority do not provide compatible recoverable lifecycle evidence.
+- **Consequences and compatibility:** An additive schema is required in Phase 2C-M2 and a repository/facade in Phase 2C-M3. No consumer changes now; process-local context remains a temporary non-authoritative cache after durable implementation.
+- **Rollback and removal gates:** Before consumers connect, additive tables may be removed via reviewed downgrade. Legacy models require active canonical records, RuntimeStore status/result reads, no legacy-route dependency, compatibility evidence, and explicit deprecation approval before retirement.
+
+### ADR-030 — RuntimeStore Ownership and Persistence Boundary
+
+- **Date:** 2026-08-07
+- **Status:** Accepted
+- **Context:** Direct ORM/repository writes from dispatch, workflow, or analytical components would violate ownership boundaries.
+- **Decision:** RuntimeStore is the canonical engine-facing durable facade: `ExecutionOrchestrator → RuntimeStore interface → runtime repositories → PostgreSQL`. It owns atomic execution/task creation, idempotency, validated transitions, claims/leases, attempts, checkpoints, result references, progress, cancellation, terminal completion/failure, durable reads, and optimistic concurrency. It may coordinate the five runtime repositories.
+- **Boundary:** RuntimeStore does not own planning, analytical calculation, queue technology, worker execution, retry-policy selection, Learning, Decision Intelligence, downstream products, API response construction, or user-facing wording. Application/API layers do not query runtime repositories directly; their approved read path reaches RuntimeStore. Durable state wins over divergent in-memory cache without silent merging.
+- **Transaction policy:** Operations use short transactions; capability, external API, LLM, and simulation work occurs outside them.
+- **Alternatives rejected:** Orchestrator-owned repositories, Application ExecutionService persistence, API repository queries, and uncoordinated repository calls violate separation or atomicity.
+- **Compatibility, rollback, and removal gates:** Introduce the facade alongside in-memory context; migrate acceptance writes, then status/result reads. Per-consumer rollback is allowed only without ignoring/duplicating durable evidence. In-memory authority may be removed only after durable writes/reads, restart and multi-instance evidence, and explicit approval.
+
+### ADR-031 — Worker Claim, Lease, Concurrency and Idempotency Model
+
+- **Date:** 2026-08-07
+- **Status:** Accepted
+- **Context:** Duplicate delivery, worker loss, stale completion, and concurrent claims require durable evidence beyond queue acknowledgement.
+- **Decision:** Runtime tasks use atomic claim-and-lease. A claim validates claimable state, dependencies, cancellation, lease absence/expiry, and expected state/row version; it persists a unique lease token and creates an attempt. Heartbeat, completion, and failure require that active token. Calculation occurs outside the transaction; stale/duplicate completion is deterministically rejected.
+- **Concurrency and idempotency:** Use integer `row_version`, expected-state conditional updates, lease-token verification, unique `(execution_id, task_id)`, unique `(runtime_task_id, attempt_number)`, company-scoped execution idempotency, and unique result-reference/version constraints. `SELECT FOR UPDATE SKIP LOCKED` may select ready claims, but locks never span calculation. Repeated delivery cannot create duplicate executions, active claims, or valid-attempt results.
+- **Failure policy:** Expired leases may be reclaimed only after durable validation. Cancellation prevents claims and invalidates stale completion. CapabilityExecutor records retryability only; Orchestrator/Scheduler selects retry policy, and every retry is a new attempt.
+- **Alternatives rejected:** Visibility timeout only, worker identity without a token, `updated_at` only, and long transactions are insufficient.
+- **Compatibility, rollback, and removal gates:** Initial local execution uses the same contract without selecting queue technology. Before durable-worker consumption, additive work is removable; thereafter reconciliation is required. No simplified claim path may bypass lease validation once durable workers are active.
+
+### ADR-032 — Runtime Result Storage and Reference Policy
+
+- **Date:** 2026-08-07
+- **Status:** Accepted
+- **Context:** Large, SKU-heavy, versioned results are unsuitable for mutable execution/task rows, and legacy result tables are not canonical runtime reference authority.
+- **Decision:** Runtime rows store references by default. `RuntimeResultReference` owns company/execution and optional task/attempt identity, type/version/contract, storage kind/location, optional bounded inline JSONB, checksum, byte size, approved compression/encryption metadata, creation time, validation status, and metadata. Small validated results may be inline; large/SKU-heavy and final bundles use reference contracts. Storage technology and a byte threshold remain later configurable implementation decisions.
+- **Integrity and boundaries:** Register only validated results; invalid results never become successful or Learning/Decision Intelligence input. Company scope is mandatory; raw dataset rows and decrypted inputs are prohibited. Dynamic Operational Plans and AI Artifacts remain separate products.
+- **Alternatives rejected:** Storing all results in execution/task JSONB, external references only, and reusing `execution_results` as authority are rejected.
+- **Compatibility, rollback, and removal gates:** Existing result tables remain untouched. Before consumers, the additive schema is removable; after references exist, referenced data must be preserved or migrated. No backend may be removed until active references migrate or expire.
