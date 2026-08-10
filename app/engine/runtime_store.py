@@ -9,6 +9,8 @@ from app.repositories.runtime_repository import RuntimeExecutionRepository, Runt
 class RuntimeStoreError(RuntimeError): pass
 class RuntimeStoreConcurrencyError(RuntimeStoreError): pass
 class RuntimeStoreLeaseError(RuntimeStoreError): pass
+class RuntimeStoreUpstreamResultError(RuntimeStoreError): pass
+class RuntimeStoreAggregationError(RuntimeStoreError): pass
 def _json_safe(value):
     return value is None or isinstance(value,(str,int,float,bool)) or (isinstance(value,list) and all(_json_safe(item) for item in value)) or (isinstance(value,dict) and all(isinstance(key,str) and _json_safe(item) for key,item in value.items()))
 _TRANSITIONS={"created":{"queued"},"queued":{"running","cancelled"},"running":{"waiting","retrying","completed","failed","cancelled"},"waiting":{"running","cancelled"},"retrying":{"running","failed","cancelled"}}
@@ -45,6 +47,39 @@ class RuntimeStore:
     def create_checkpoint(self, checkpoint): return self.checkpoints.add(checkpoint)
     def get_latest_checkpoint(self, execution_id, company_id): return self.checkpoints.latest(execution_id,company_id)
     def get_execution_result_references(self, execution_id, company_id): return self.results.by_execution(execution_id,company_id)
+    def get_execution_aggregate_result(self, execution_id, company_id):
+        return self.session.query(RuntimeResultReference).filter_by(execution_id=execution_id,company_id=company_id,runtime_task_id=None,result_type='business_workflow',validation_status='validated').one_or_none()
+    def aggregate_business_workflow(self, execution_id, company_id):
+        """Compose the completed Business Workflow envelope from persisted validated evidence only."""
+        execution=self.get_execution(execution_id,company_id)
+        if not execution or execution.analysis_type != 'business_workflow' or execution.state != 'completed' or float(execution.progress) != 100:
+            raise RuntimeStoreAggregationError('only a completed Business Workflow can be aggregated')
+        existing=self.get_execution_aggregate_result(execution_id,company_id)
+        if existing: return existing
+        tasks=self.get_tasks(execution_id,company_id); required={task.task_id:task for task in tasks if task.required}
+        result_types={'demand_forecast':'forecast','safety_stock':'safety_stock','supplier':'supplier','simulation':'simulation','backtest':'backtest'}
+        expected={result_types.get(task.capability) for task in required.values()}
+        if None in expected or any(task.state != 'completed' for task in required.values()):
+            raise RuntimeStoreAggregationError('required workflow tasks are incomplete')
+        refs=self.session.query(RuntimeResultReference).filter(RuntimeResultReference.execution_id==execution_id,RuntimeResultReference.company_id==company_id,RuntimeResultReference.runtime_task_id.isnot(None),RuntimeResultReference.validation_status=='validated').all()
+        by_type={ref.result_type:ref for ref in refs}
+        task_for_type={result_types[task.capability]:task for task in required.values()}
+        if set(by_type) != expected or any(ref.runtime_task_id != task_for_type[ref.result_type].id for ref in by_type.values()):
+            raise RuntimeStoreAggregationError('validated task evidence is incomplete')
+        metadata=execution.metadata_ or {}; envelope={'execution_id':str(execution.execution_id),'workflow_type':'business_workflow','workflow_version':metadata.get('workflow_version'),'dataset_id':str(execution.dataset_id),'company_id':str(execution.company_id),**{name:by_type[name].inline_result for name in expected},'provenance':{f'{name}_result_reference_id':str(by_type[name].id) for name in sorted(expected)}}
+        return self.register_result_reference(company_id,execution_id,'business_workflow',envelope)
+    def get_validated_upstream_result(self, execution_id, result_type, company_id, compatible_versions=('1.0.0',)):
+        """Resolve only same-tenant, validated, version-compatible analytical evidence."""
+        if not self.get_execution(execution_id, company_id):
+            raise RuntimeStoreUpstreamResultError('execution is unavailable for company')
+        ref=self.session.query(RuntimeResultReference).filter_by(execution_id=execution_id,company_id=company_id,result_type=result_type,validation_status='validated').one_or_none()
+        if not ref:
+            raise RuntimeStoreUpstreamResultError('validated upstream result is unavailable')
+        if ref.result_version not in compatible_versions or ref.contract_version not in compatible_versions:
+            raise RuntimeStoreUpstreamResultError('upstream result version is incompatible')
+        if not isinstance(ref.inline_result, dict):
+            raise RuntimeStoreUpstreamResultError('upstream result storage is unsupported')
+        return {'result':ref.inline_result,'provenance':{'upstream_execution_id':str(ref.execution_id),'runtime_task_id':str(ref.runtime_task_id) if ref.runtime_task_id else None,'result_reference_id':str(ref.id),'result_type':ref.result_type,'result_version':ref.result_version,'contract_version':ref.contract_version}}
     def register_result_reference(self, company_id, execution_id, result_type, result, result_version='1.0.0', contract_version='1.0.0', runtime_task_id=None, runtime_attempt_id=None, validation_status='validated'):
         if not self.get_execution(execution_id, company_id) or not isinstance(result, dict) or not _json_safe(result) or validation_status != 'validated': raise RuntimeStoreError('invalid result reference')
         ref=RuntimeResultReference(company_id=company_id,execution_id=execution_id,runtime_task_id=runtime_task_id,runtime_attempt_id=runtime_attempt_id,result_type=result_type,result_version=result_version,contract_version=contract_version,storage_kind='inline_jsonb',inline_result=result,validation_status=validation_status); self.results.add(ref); self.session.flush(); return ref
@@ -85,5 +120,5 @@ class RuntimeStore:
         attempt.state='failed';attempt.completed_at=now;attempt.error=error;attempt.retryable=retryable;task.state='pending' if retryable else 'failed';task.error_summary=error;task.retryable=retryable;task.lease_token=None;task.assigned_worker_id=None;task.lease_expires_at=now;task.row_version+=1;self.session.flush();return task
     def complete_execution(self, execution_id, company_id, expected_row_version):
         return self.transition_execution(execution_id, company_id, 'running', 'completed', expected_row_version, progress=100, current_stage='completed', completed_at=datetime.now(timezone.utc))
-    def fail_execution(self, execution_id, company_id, expected_row_version, error):
-        return self.transition_execution(execution_id, company_id, 'running', 'failed', expected_row_version, current_stage='forecast', terminal_error=error, completed_at=datetime.now(timezone.utc))
+    def fail_execution(self, execution_id, company_id, expected_row_version, error, current_stage='forecast'):
+        return self.transition_execution(execution_id, company_id, 'running', 'failed', expected_row_version, current_stage=current_stage, terminal_error=error, completed_at=datetime.now(timezone.utc))

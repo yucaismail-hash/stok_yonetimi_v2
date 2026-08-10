@@ -1,5 +1,98 @@
 # Architecture Changelog
 
+## 2026-08-10 - Phase 3C2B3 immutable XGBoost Challenger model artifacts
+
+- Added company-scoped immutable `ModelArtifact` metadata and native XGBoost UBJ artifact storage with SHA-256 checksum verification before trusted model loading.
+- Artifact persistence is explicit after successful Challenger training. A deterministic fingerprint provides idempotent re-persistence and preserves append-only history when cutoff evidence or configuration changes.
+- Production Forecast, automatic retraining, Champion-Challenger governance, promotion, Decision Intelligence, and Learning Score mutation remain inactive. Full persisted Tier-3 triggering remains pending Phase 3C1 verification.
+
+## 2026-08-10 - Phase 3C2B2 XGBoost Challenger training
+
+- Added an explicit, bounded, in-memory XGBoost Challenger Training service over the verified `xgboost_weekly_v1` feature matrix. It uses deterministic categorical codes, a `time_ordered_holdout_v1` split, fixed seed/parameters, and reports validation prediction evidence with WAPE, Bias, MAE, and RMSE.
+- Challenger fitting is isolated from DemandForecaster and Forecast Vintage production paths. Automatic retraining, artifact persistence, Champion-Challenger governance, promotion, Decision Intelligence, and Learning Score mutation remain inactive.
+- Explicit Tier-3 authorization is accepted; non-Tier-3 authorization is rejected. Full persisted Tier-3 triggering remains pending Phase 3C1 verification.
+
+## 2026-08-10 - Phase 3C2B1 XGBoost weekly feature builder verification
+
+- The cutoff-safe XGBoost weekly feature builder is **DEVELOPMENT VERIFIED** with feature schema `xgboost_weekly_v1`, sourced only from canonical accepted Actual Weekly Observations.
+- PostgreSQL evidence verifies cutoff leakage protection, deterministic reconstruction, product-level metadata for `finished_good`, `semi_finished_good`, and `raw_material`, demand-type isolation, and true ISO chronology across 2020-W53 to 2021-W01.
+- XGBoost training, challenger fitting, model artifacts, promotion, and Learning integration remain **NOT YET ACTIVE**.
+
+## 2026-08-10 - Phase 3B1 Optional Supplier Business Branch
+
+- Added optional Supplier task generation for Business Workflows only when the encrypted dataset contains valid supplier identities, delivery evidence, and mappings to actual dataset materials. Missing evidence preserves the four-task workflow; partial or invalid evidence is recorded as controlled degradation metadata without fabricated analysis.
+- Supplier-present workflows execute the existing DatasetRuntimeProvider, SupplierAdapter, SupplierPerformanceAnalyzer, and durable RuntimeResultReference path as a fifth required task. Progress is 20% per generated task, aggregate results include Supplier only when present, and product level is not restricted to raw materials.
+- Supplier evidence remains an independent enrichment branch: it does not yet alter Safety Stock or Simulation mathematics. Learning, retraining, Champion-Challenger, and Event Intelligence are not invoked.
+
+## 2026-08-10 - Phase 3AA6 Forecast Performance History and Learning Evidence
+
+- Added a derived, read-only weekly Forecast Performance History and versioned internal evidence contract sourced exclusively from durable Forecast Evaluation points; no migration was required.
+- History provides company, product-level, group, class, SKU, and demand-type-isolated evidence with explicit sample count, period coverage, metric contract provenance, source evaluation identities, WAPE/Bias/MAE/RMSE/sMAPE, and conditional Forecast Accuracy.
+- Learning score values are carried as historical snapshots only. Current evaluation changes from approved actual corrections or new actual arrivals propagate on the next read. Retraining, XGBoost, model promotion, Champion-Challenger, Decision Intelligence, and Event Learning remain inactive.
+
+## 2026-08-10 - Phase 3AA5 Forecast-to-Actual evaluation
+
+- Added durable normalized Forecast Evaluation headers and current point evidence, pairing canonical accepted actuals only with Phase 3AA4 effective forecasts. Forecast selection remains the Effective Forecast Timeline authority and hindsight remains prohibited.
+- Point evidence stores immutable forecast provenance, actual observation and accepted revision provenance, forecast-time product snapshots, nullable learning score, and raw signed/absolute/squared errors. Approved actual corrections recompute current evaluation evidence; rejected corrections do not.
+- Versioned metrics implement WAPE as primary, `actual - forecast` bias, MAE, RMSE, sMAPE, and the conditional presentation metric `max(0, 1 - WAPE)`. WAPE is explicitly unavailable for a zero actual denominator; MAPE is not primary. Event evaluation and Learning integration remain pending.
+
+## 2026-08-10 - Phase 3AA4 Effective Forecast Timeline
+
+- Added the derived, read-only Effective Forecast Timeline service over immutable Forecast Vintage headers and points; no persistence table or migration was needed.
+- For each company, SKU, target period, and demand type, it selects the latest Vintage whose durable `forecast_available_at` is strictly before the ISO target-week start. Hindsight use is prohibited, and malformed cutoff/target overlap is rejected without mutating source evidence.
+- The projection preserves snapshot product dimensions, model and interval evidence, durable result-reference provenance, and nullable learning-score-at-run fields. Actual data is not required; Forecast Evaluation remains **PENDING 3AA5**.
+
+## 2026-08-10 — Phase 3AA3 Forecast Vintage and target-period persistence
+
+- Added immutable Forecast Vintage headers and normalized SKU target-period points projected from validated durable Forecast RuntimeResultReferences.
+- Target periods are canonical ISO weeks generated from immutable input cutoff provenance; availability is the persisted Forecast result timestamp. Multiple vintages and overlapping target periods coexist.
+- Learning score snapshot fields are schema-ready but not activated. Effective timeline is **PENDING 3AA4**; Forecast Evaluation is **PENDING 3AA5**.
+
+## 2026-08-10 — Phase 3AA2 canonical actual weekly observation and revision ledger
+
+- Added canonical normalized weekly actual truth keyed by company, material code, ISO period, and demand type, alongside an append-only proposed/accepted/rejected revision ledger.
+- Dataset encrypted blobs remain source-upload evidence. Identical reuploads are idempotent; new weeks are accepted without correction approval; changed historical values require explicit approval before current truth changes.
+- Product level (`finished_good`, `semi_finished_good`, `raw_material`), product group/class, demand type, dataset provenance, tenant scope, and fresh-session reconstruction are verified. Forecast Vintage remains **PENDING 3AA3**; Evaluation remains **PENDING**.
+
+## 2026-08-10 — Phase 3A5 Business Workflow result aggregation
+
+- Completed Business Workflows can now compose one durable execution-scoped `business_workflow` envelope exclusively from validated PostgreSQL RuntimeResultReferences.
+- The aggregate preserves all four task results and their result-reference identities, is idempotent through existing execution-scope uniqueness, and is retrievable through the application aggregation boundary after fresh-process reconstruction.
+- Aggregation is prohibited for partial and failed workflows. No analytical engine, Learning, or Decision Intelligence is invoked.
+
+## 2026-08-10 — Phase 3A4 Business Workflow failure propagation
+
+- Required Business Workflow task failures now persist a failed RuntimeTaskAttempt and terminal failed RuntimeExecution without creating a validated result for the failing task.
+- PostgreSQL probes verified Forecast, Safety Stock, Simulation, and Backtest failure outcomes; successful upstream evidence is preserved, downstream tasks remain pending with terminal scheduler blocking evidence, and failed re-entry creates no attempts or results.
+- Automatic retry is **NOT IMPLEMENTED**. Expired-lease retry policy remains an **OPEN GAP**. Workflow aggregation remains **PENDING 3A5**.
+
+## 2026-08-10 — Phase 3A3 cross-process Business Workflow recovery
+
+- Business Workflow cross-process recovery is **DEVELOPMENT VERIFIED** using PostgreSQL as the sole authoritative source after Forecast, Safety Stock, Simulation, and completed-workflow object-graph loss.
+- Fresh recovery preserves progress, completed tasks, validated result references, Simulation Forecast/Safety Stock provenance, and Backtest `VALIDATE_SELECTED` Safety Stock provenance. Completed re-entry creates neither a new attempt nor a duplicate result reference.
+- Expired-lease recovery is a **DOCUMENTED GAP** for Business Workflow tasks: their current `max_attempts=1` contract prevents an expired claim from being reclaimed without a future retry-policy decision.
+- Failure propagation remains **PENDING 3A4**; workflow aggregation remains **PENDING 3A5**.
+
+## 2026-08-07 â€” Phase 2F first real Simulation execution
+
+- Standalone Simulation durable execution is **DEVELOPMENT VERIFIED** with one Simulation task and real Monte Carlo output.
+- No hidden Forecast or Safety Stock task is created. Business upstream input reuse is verified; recomputation is prohibited.
+- Fresh-process result retrieval is verified; Learning and Decision Intelligence are not invoked.
+
+## 2026-08-07 â€” Phase 2E capability dataflow contract
+
+- Validated same-tenant, version-compatible RuntimeResultReference transfer and provenance are binding.
+- Business Simulation input consumes Forecast and Safety Stock upstream evidence without recalculation; Standalone fallback is explicit.
+- Backtest rolling recalculation remains required, with Business `VALIDATE_SELECTED` no-reselection and Standalone comparison compatibility.
+
+## 2026-08-07 â€” Phase 2E first real Safety Stock execution
+
+- Standalone Safety Stock durable execution is **DEVELOPMENT VERIFIED** with exactly one Safety Stock runtime task.
+- `ComprehensiveSafetyStockOptimizer` is connected through `CapabilityExecutor`; its classic, Croston, Syntetos-Boylan, bootstrapping, ML-based, and hybrid candidates are preserved.
+- Existing endpoint selection of `hybrid_ss` is preserved; a dynamic automatic candidate-winner selector remains a gap. Service level supports system default (`0.95`) with validated manual override.
+- Supplier input is optional enrichment and supplier-free execution is verified. Fresh-process durable status/result retrieval is verified.
+- Learning and Decision Intelligence are not invoked.
+
 ## 2026-08-07 — Phase 2C durable runtime verification
 
 - Phase 2C Durable Runtime: **COMPLETE**.

@@ -232,7 +232,7 @@ class WorkflowEngine:
                 refs = store.get_execution_result_references(execution_id, execution.company_id)
                 if len(refs) != 1 or refs[0].validation_status != "validated":
                     raise RuntimeError("execution result is unavailable: no validated result reference")
-                return ExecutionResultEnvelope(execution_id, execution.workflow_id, ExecutionState.COMPLETED, refs[0].inline_result, execution.completed_at, capability_summaries=[{"task_id": "forecast", "result_reference_id": str(refs[0].id)}])
+                return ExecutionResultEnvelope(execution_id, execution.workflow_id, ExecutionState.COMPLETED, refs[0].inline_result, execution.completed_at, capability_summaries=[{"runtime_task_id": str(refs[0].runtime_task_id), "result_reference_id": str(refs[0].id)}])
         finally:
             session.close()
         context = self._get_orchestrator().context_manager.get_context_by_execution_id(

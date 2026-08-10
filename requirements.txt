@@ -27,6 +27,7 @@ idna==3.18
 imbalanced-learn==0.14.2
 imblearn==0.0
 joblib==1.5.3
+xgboost==2.1.4
 jsonpath-python==1.1.6
 kiwisolver==1.5.0
 lxml==6.1.1

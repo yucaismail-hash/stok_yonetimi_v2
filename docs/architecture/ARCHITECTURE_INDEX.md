@@ -114,6 +114,153 @@ Each authoritative architecture specification document now contains its bounded 
 
 ## Phase 2 capability-execution governance
 
+## Phase 3A3 cross-process Business Workflow recovery
+
+| Recovery evidence | Status |
+|---|---|
+| Business Workflow Cross-Process Recovery | DEVELOPMENT VERIFIED |
+| PostgreSQL Authoritative Recovery | VERIFIED |
+| Recovery after Forecast | VERIFIED |
+| Recovery after Safety Stock | VERIFIED |
+| Recovery after Simulation | VERIFIED |
+| Completed Workflow Re-entry Protection | VERIFIED |
+| Duplicate Result Protection | VERIFIED |
+| Expired Lease Recovery | DOCUMENTED GAP — Business Workflow tasks are accepted with `max_attempts=1`; a retry-policy phase is required before reclaim can occur. |
+| Failure Propagation | PENDING 3A4 |
+| Workflow Aggregation | PENDING 3A5 |
+
+## Phase 3A4 Business Workflow failure propagation
+
+| Failure evidence | Status |
+|---|---|
+| Business Workflow Failure Propagation | DEVELOPMENT VERIFIED |
+| Forecast Failure Downstream Blocking | VERIFIED |
+| Safety Stock Failure Downstream Blocking | VERIFIED |
+| Simulation Required-Task Failure | VERIFIED |
+| Backtest Failure | VERIFIED |
+| Terminal Failed Re-entry Protection | VERIFIED |
+| Automatic Retry | NOT IMPLEMENTED |
+| Expired Lease Retry Policy | OPEN GAP |
+| Workflow Aggregation | PENDING 3A5 |
+
+## Phase 3A5 Business Workflow result aggregation
+
+| Aggregation evidence | Status |
+|---|---|
+| Business Workflow Result Aggregation | DEVELOPMENT VERIFIED |
+| Four Task-Level Results | PRESERVED / IMMUTABLE |
+| Execution-Level Aggregate Result | VERIFIED |
+| Aggregate Idempotency | VERIFIED |
+| Fresh-Process Aggregate Retrieval | VERIFIED |
+| Failed/Partial Workflow Aggregation | PROHIBITED / VERIFIED |
+| Learning | NOT INVOKED |
+| Decision Intelligence | NOT INVOKED |
+| Next | PHASE 3AA — ACTUALS + FORECAST VINTAGE + EVALUATION ARCHITECTURE |
+
+## Phase 3AA2 canonical actual weekly observation and revision ledger
+
+| Actual-data evidence | Status |
+|---|---|
+| Canonical Weekly Actual | BINDING / DEVELOPMENT VERIFIED |
+| Current Actual Identity | `(company, material_code, period, demand_type)` |
+| Actual Revision Ledger | APPEND-ONLY / VERIFIED |
+| Identical Reupload | IDEMPOTENT |
+| Historical Correction | APPROVAL REQUIRED |
+| Dataset Blob | PRESERVED AS SOURCE EVIDENCE |
+| Forecast Vintage | PENDING 3AA3 |
+| Evaluation | PENDING |
+
+## Phase 3AA3 Forecast Vintage and target-period persistence
+
+| Vintage evidence | Status |
+|---|---|
+| Forecast Vintage | IMMUTABLE / DEVELOPMENT VERIFIED |
+| Target Period Identity | CANONICAL YYYY-Www / VERIFIED |
+| Forecast Availability | VALIDATED RESULT PERSISTENCE TIME |
+| Input Cutoff Period | IMMUTABLE PROVENANCE |
+| RuntimeResultReference | PRESERVED AS RAW FORECAST RESULT |
+| Learning Score Snapshot | SCHEMA READY / NOT YET ACTIVATED |
+| Effective Forecast Timeline | DERIVED / DEVELOPMENT VERIFIED |
+| Timeline Selection | LATEST ELIGIBLE VINTAGE |
+| Timeline Eligibility | `forecast_available_at < target_period_start` |
+| Hindsight Use | PROHIBITED |
+| Timeline Actual Data | NOT REQUIRED |
+| Forecast Evaluation | DEVELOPMENT VERIFIED |
+| Forecast Selection Authority | EFFECTIVE FORECAST TIMELINE |
+| Evaluation Actual Authority | CANONICAL ACCEPTED ACTUAL |
+| Primary Error Metric | WAPE |
+| Bias Convention | `actual - forecast` |
+| Supporting Metrics | MAE / RMSE / sMAPE |
+| MAPE | NOT PRIMARY |
+| Learning Score | SNAPSHOT CARRIED / NO CAUSAL CLAIM |
+| Actual Correction | REEVALUATION SUPPORTED |
+| Product-Level Evaluation | Mamul / Yari Mamul / Hammadde |
+| Event Evaluation | PENDING |
+| Learning Integration | PENDING |
+| Forecast Performance History | DERIVED / DEVELOPMENT VERIFIED |
+| Learning Evidence Boundary | DERIVED / DEVELOPMENT VERIFIED |
+| Performance Source Authority | FORECAST EVALUATION |
+| Sample Strength | EXPLICIT SAMPLE / PERIOD COVERAGE |
+| Historical Learning Score | SNAPSHOT ONLY / NO CAUSAL CLAIM |
+| Retraining | NOT ACTIVE |
+| Champion-Challenger | NOT ACTIVE |
+| Event Learning | PENDING |
+| Optional Supplier Business Branch | DEVELOPMENT VERIFIED |
+| Supplier Absent | GRACEFUL DEGRADATION VERIFIED |
+| Supplier Present | REAL EXECUTION VERIFIED |
+| Supplier Product Level | NOT RAW-MATERIAL-ONLY |
+| Four-Task Business Workflow | PRESERVED |
+| Five-Task Business Workflow | VERIFIED |
+| Supplier Branch Learning | NOT INVOKED |
+
+## Phase 3C2B1 XGBoost weekly feature builder
+
+| Feature evidence | Status |
+|---|---|
+| XGBoost Weekly Feature Builder | DEVELOPMENT VERIFIED |
+| Feature Schema | `xgboost_weekly_v1` |
+| Training Evidence Authority | Canonical accepted Actual Weekly Observations only |
+| Cutoff Leakage Protection | VERIFIED |
+| Product Levels | `finished_good` / `semi_finished_good` / `raw_material` VERIFIED |
+| Demand Types | ISOLATED / VERIFIED |
+| ISO W53 and Year Boundary | VERIFIED |
+| XGBoost Training | NOT YET ACTIVE |
+
+## Phase 3C2B2 XGBoost Challenger training
+
+| Challenger evidence | Status |
+|---|---|
+| XGBoost Challenger Training | DEVELOPMENT VERIFIED |
+| Production Forecast | UNCHANGED |
+| Feature Schema | `xgboost_weekly_v1` |
+| Split Policy | TIME ORDERED / `time_ordered_holdout_v1` |
+| Future Leakage | PROHIBITED / VERIFIED |
+| Automatic Retraining | NOT ACTIVE |
+| Artifact Persistence | PENDING |
+| Champion-Challenger Governance | PENDING 3C3 |
+| Tier-3 Full PostgreSQL Trigger | PENDING 3C1 VERIFICATION |
+
+## Phase 3C2B3 immutable Challenger model artifacts
+
+| Artifact evidence | Status |
+|---|---|
+| XGBoost Challenger Training | VERIFIED |
+| Immutable Model Artifact | VERIFIED |
+| Artifact Checksum | SHA-256 VERIFIED |
+| Tenant Isolation | VERIFIED |
+| Artifact History | APPEND-ONLY / IMMUTABLE |
+| Production Forecast | UNCHANGED |
+| Automatic Retraining | NOT ACTIVE |
+| Champion-Challenger Governance | PENDING 3C3 |
+| Tier-3 Full PostgreSQL Trigger | PENDING 3C1 VERIFICATION |
+| Optional Supplier Business Branch | DEVELOPMENT VERIFIED |
+| Supplier Absent | GRACEFUL DEGRADATION VERIFIED |
+| Supplier Present | REAL EXECUTION VERIFIED |
+| Supplier Product Level | NOT RAW-MATERIAL-ONLY |
+| Four-Task Business Workflow | PRESERVED |
+| Five-Task Business Workflow | VERIFIED |
+| Supplier Branch Learning | NOT INVOKED |
+
 | ADR | Decision | Status |
 |---|---|---|
 | ADR-021 | Dedicated CapabilityExecutor boundary | Accepted |
@@ -176,6 +323,23 @@ Each authoritative architecture specification document now contains its bounded 
 | Development Probe Cleanup | VERIFIED — ZERO RESIDUE |
 | Distributed Queue/Worker | NOT YET IMPLEMENTED |
 | Real Capability Execution | NEXT |
+
+## Phase 2E Safety Stock vertical slice
+
+| Component | Status |
+|---|---|
+| Standalone Safety Stock Durable Execution | DEVELOPMENT VERIFIED |
+| Real Safety Stock Engine | CONNECTED |
+| Safety Stock Multi-Method Behavior | PRESERVED â€” classic, Croston, Syntetos-Boylan, bootstrapping, ML-based, hybrid |
+| Automatic Method Selection | GAP â€” existing endpoint path selects `hybrid_ss`; no dynamic winner selector exists |
+| Service Level | SYSTEM DEFAULT WITH MANUAL OVERRIDE |
+| Supplier Dependency | OPTIONAL ENRICHMENT |
+| Fresh-Process Status/Result | VERIFIED |
+| Learning | NOT INVOKED |
+| Decision Intelligence | NOT INVOKED |
+
+| Phase 2E Capability Dataflow | BINDING â€” validated same-tenant upstream evidence, Simulation no-recompute, and Backtest no-reselection |
+| Standalone Simulation Durable Execution | DEVELOPMENT VERIFIED â€” real Monte Carlo, one task, fresh-process retrieval |
 
 ## Phase 2B implementation status
 

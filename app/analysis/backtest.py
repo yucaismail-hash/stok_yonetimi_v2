@@ -18,11 +18,17 @@ class BacktestEngine:
     def run_backtest(self, historical_demand, lead_time_days, 
                      holding_cost_rate=0.20, shortage_cost=500, 
                      unit_cost=100, test_window=12, 
-                     strategies=None):
+                     strategies=None, mode='COMPARE_CANDIDATES', selected_strategy=None):
         """
         Backtest çalıştır.
         """
-        if strategies is None:
+        if mode == 'VALIDATE_SELECTED':
+            if not isinstance(selected_strategy, str) or not selected_strategy:
+                return {'error': 'VALIDATE_SELECTED requires selected_strategy'}
+            strategies = [selected_strategy]
+        elif mode != 'COMPARE_CANDIDATES':
+            return {'error': 'unsupported backtest mode'}
+        elif strategies is None:
             strategies = ['ai', 'classic', 'croston', 'syntetos_boylan', 
                          'ml', 'hybrid', 'simple_moving_avg', 'last_value']
         
@@ -70,6 +76,7 @@ class BacktestEngine:
         }
         
         return {
+            'mode': mode,
             'metrics': results,
             'comparison': comparison,
             'recommendation': {

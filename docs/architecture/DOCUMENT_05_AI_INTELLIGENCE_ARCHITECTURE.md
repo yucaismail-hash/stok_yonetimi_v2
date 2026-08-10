@@ -2458,3 +2458,9 @@ Before a new or materially changed capability is approved, its design answers:
 10. Academic or industrial support.
 
 A capability is not production-ready while these relationships remain undefined.
+
+## Phase 2E Capability Dataflow Contract
+
+Validated upstream evidence is binding. Only same-company, validated, compatible-version RuntimeResultReferences may populate `CapabilityExecutionRequest.upstream_results`; each transfer records result-reference provenance.
+
+Business Simulation consumes validated Forecast and Safety Stock evidence and must not invoke either analytical engine again. Standalone Simulation may use explicit historical and existing-policy fallback, marked with provenance. Backtest historical rolling recalculation remains required; Business Workflow uses `VALIDATE_SELECTED` and may not reselect a strategy, while Standalone `COMPARE_CANDIDATES` remains available.

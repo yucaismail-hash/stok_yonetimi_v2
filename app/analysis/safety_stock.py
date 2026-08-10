@@ -185,6 +185,18 @@ class ComprehensiveSafetyStockOptimizer:
 
         return max(min_ss, min(hybrid, max_ss)) if daily_mean > 0 else 0
 
+    def _hybrid_from_candidates(self, weekly_data, lead_time_days, classic, croston, sb, ml):
+        """Combine already-computed candidates without recalculating them."""
+        zero_ratio = weekly_data.count(0) / len(weekly_data) if isinstance(weekly_data, list) else np.sum(np.array(weekly_data) == 0) / len(weekly_data)
+        if zero_ratio > 0.5:
+            hybrid = classic * 0.1 + croston * 0.4 + sb * 0.4 + ml * 0.1
+        else:
+            hybrid = classic * 0.4 + croston * 0.1 + sb * 0.1 + ml * 0.4
+        daily_mean, _ = self.calculate_daily_stats(weekly_data)
+        min_ss = daily_mean if daily_mean > 0 else 0
+        max_ss = daily_mean * lead_time_days if daily_mean > 0 else 0
+        return max(min_ss, min(hybrid, max_ss)) if daily_mean > 0 else 0
+
     # ==================== TOPLU HESAPLAMA (Recursion yok) ====================
     def calculate_all_methods(self, weekly_data, lead_time_days, service_level=0.95):
         """Tüm metodları hesapla - Kendi kendini çağırmaz"""
@@ -194,7 +206,7 @@ class ComprehensiveSafetyStockOptimizer:
             syntetos = self.syntetos_boylan_method(weekly_data, lead_time_days, service_level)
             bootstrap = self.bootstrapping_method(weekly_data, lead_time_days, service_level)
             ml = self.ml_based_safety_stock(weekly_data, lead_time_days, service_level)
-            hybrid = self.hybrid_safety_stock(weekly_data, lead_time_days, service_level)
+            hybrid = self._hybrid_from_candidates(weekly_data, lead_time_days, classic, croston, syntetos, ml)
 
             return {
                 'classic_ss': round(classic, 2),

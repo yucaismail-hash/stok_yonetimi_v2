@@ -10,6 +10,44 @@
 - Events are company-specific, weekly, and group/class scoped; event effect is learned/calculated later and official calendar data is automatic.
 - Service level is system-default with manual override. Graceful degradation is binding.
 
+## Phase 3AA2 canonical weekly actual boundary
+
+The encrypted Dataset payload remains source-upload evidence. Accepted operational actual truth is stored separately as normalized weekly observations with identity `(company_id, material_code, period, demand_type)`, where `period` is canonical ISO `YYYY-Www` and demand types may coexist.
+
+Historical changes are append-only revision evidence. A changed value is proposed first and updates current truth only after approval; rejection preserves both current truth and revision evidence. New weekly observations are accepted evidence rather than corrections. Product level, product group, and optional product class are carried with the accepted observation. Forecast vintages and evaluations are intentionally outside this boundary.
+
+## Phase 3AA3 immutable Forecast Vintage boundary
+
+Validated Forecast RuntimeResultReferences remain the raw analytical source. A projectable Forecast result with explicit input cutoff, demand type, and product metadata produces one immutable Vintage header and canonical SKU target-period points. Availability is the durable result persistence timestamp, never request acceptance time. Learning snapshot fields are reserved but inactive; effective timeline selection and evaluation remain later boundaries.
+
+## Phase 3AA4 derived Effective Forecast Timeline boundary
+
+The Effective Forecast Timeline is a read-only derivation over immutable Forecast Vintage headers and points, not a replacement or mutation of them. For each company, material code, canonical target period, and demand type, it selects the latest Vintage point whose `forecast_available_at` is strictly earlier than the ISO target-week start. A Vintage available during or after that week is ineligible, so hindsight use is prohibited.
+
+The projection carries the selected point's forecast, intervals, model, snapshot product level/group/class, durable RuntimeResultReference identity, input cutoff, demand type, and nullable learning score at run. Demand types remain isolated. Actual observations are not required for timeline selection and are reserved for the later Forecast Evaluation boundary. Historical cutoff/target overlap is rejected as malformed evidence rather than silently selected; Forecast Vintages remain immutable.
+
+## Phase 3AA5 durable Forecast-to-Actual evaluation boundary
+
+Evaluation pairs the canonical accepted actual observation with the Phase 3AA4 Effective Forecast Timeline only when both exist for the same company, SKU, ISO target period, and demand type. The selected forecast is never recalculated or replaced. Durable current evaluation points retain actual-observation and accepted-revision provenance, selected Vintage and point provenance, available-at and cutoff evidence, forecast-time product snapshots, nullable learning score at run, and raw point errors.
+
+The binding error convention is `actual - forecast`: positive signed error means under-forecast and negative signed error means over-forecast. WAPE is authoritative; if the absolute-actual denominator is zero it is unavailable with an explicit reason. Bias, MAE, RMSE, and sMAPE are supporting versioned metrics. Forecast Accuracy is only the derived presentation `max(0, 1 - WAPE)` when WAPE exists; MAPE is not primary. Aggregation is available by company, product level, group, class, and SKU without mixing demand types.
+
+Approved actual corrections recompute the current evaluation against accepted truth while preserving immutable forecast evidence; rejected corrections do not change it. Newly arriving actuals create eligible pairs without a forecast rerun. Event evaluation and Learning integration remain pending, and learning-score evidence makes no causal claim.
+
+## Phase 3AA6 derived Forecast Performance History and Learning Evidence boundary
+
+Forecast Performance History is a read-only weekly derivation from verified Forecast Evaluation point evidence. It preserves evaluation metric-contract provenance and source evaluation identities, deduplicates equivalent current evaluation evidence deterministically, and exposes company, product-level, group, class, and SKU scopes without mixing demand types. Each weekly evidence row carries sample count and explicit evaluated-period coverage alongside WAPE, bias, MAE, RMSE, sMAPE, and conditional Forecast Accuracy.
+
+Learning scores are historical Forecast-Vintage snapshots carried through evaluation evidence only. The history preserves distinct available snapshot values and leaves missing values null; it does not calculate a Learning Score or claim causal influence on performance. Because it is derived from current evaluation truth, approved actual corrections and newly evaluated actual arrivals are reflected on the next read without mutating Forecast Vintages or retaining stale materializations.
+
+This boundary prepares evidence for future drift analysis, selective retraining eligibility, and Champion-Challenger comparison only. Retraining, XGBoost fitting, model promotion, Champion-Challenger, Decision Intelligence, and Event Learning are not active.
+
+## Phase 3B1 optional Supplier Business Workflow branch
+
+Supplier enrichment is optional at Business Workflow acceptance. The encrypted Dataset must contain valid supplier identities, delivery evidence, and mappings to materials actually present in that Dataset. When absent, the durable workflow remains its original four required tasks. Partially present or invalid supplier evidence is recorded as controlled degradation metadata and is not silently converted into Supplier analysis.
+
+When included, Supplier is a fifth required task using the existing Supplier capability path and durable result reference. It may apply to finished goods, semi-finished goods, or raw materials when valid mappings exist; it is not raw-material-only. The Supplier result is included in the aggregate only for workflows that generated the task. It does not yet change Safety Stock or Simulation inputs, and no Learning or Event Intelligence behavior is activated.
+
 # DATA ARCHITECTURE
 
 Version: 2.0
@@ -2796,3 +2834,21 @@ ERP/API feedback → Company Learning.
 External Intelligence → Company Learning → Pattern Intelligence → AI Parameter Optimizer → Deterministic Analysis.
 
 Optional-data absence must not block unrelated valid capabilities. Missing data must explicitly describe unavailable outputs; data availability automatically enables its corresponding capabilities. External data does not directly overwrite deterministic results. Learning feedback must be traceable and versioned, and company data remains isolated.
+
+---
+
+# Revision - Phase 3C2B1 XGBoost weekly feature evidence
+
+The XGBoost weekly feature builder is **DEVELOPMENT VERIFIED** as a read-only development boundary. Its versioned feature schema is `xgboost_weekly_v1`; it reads canonical accepted Actual Weekly Observations only, is cutoff-safe, preserves product metadata for `finished_good`, `semi_finished_good`, and `raw_material`, isolates demand types, and orders ISO weeks correctly across W53 and year boundaries. XGBoost training, model artifacts, promotion, and Learning integration are **NOT YET ACTIVE**.
+
+---
+
+# Revision - Phase 3C2B2 XGBoost Challenger training
+
+XGBoost Challenger Training is **DEVELOPMENT VERIFIED** as an explicit, bounded, in-memory service. It consumes `xgboost_weekly_v1` only, performs a deterministic time-ordered holdout, and prohibits future-cutoff leakage. Production Forecast remains unchanged. Automatic retraining, artifact persistence, Champion-Challenger governance, promotion, Decision Intelligence, and Learning Score mutation are **NOT ACTIVE**. The full PostgreSQL Tier-3 trigger remains pending Phase 3C1 verification.
+
+---
+
+# Revision - Phase 3C2B3 immutable Challenger model artifacts
+
+Immutable, company-scoped Challenger model artifacts are **VERIFIED**. Native XGBoost UBJ bytes are stored through a controlled storage boundary, with SHA-256 verified before trusted loading. Artifact history is append-only and tenant-isolated. Production Forecast remains unchanged; automatic retraining is **NOT ACTIVE**, Champion-Challenger governance is pending Phase 3C3, and the full PostgreSQL Tier-3 trigger remains pending Phase 3C1 verification.

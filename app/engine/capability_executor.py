@@ -70,20 +70,18 @@ class CapabilityExecutor:
             raise TypeError("request must be a CapabilityExecutionRequest")
         if any(value is None for value in (self._implementation_resolver, self._input_provider, self._implementation_adapter, self._timeout_runner)):
             raise ExecutorNotConfiguredError("executor dependencies are not configured")
-        implementation = await self._call(self._implementation_resolver, request.capability)
-        if implementation is None:
-            raise CapabilityImplementationNotFoundError("capability implementation was not found")
-        if not callable(self._input_provider):
-            raise ProviderProtocolError("input provider is not callable")
-        prepared_input = await self._call(self._input_provider, request)
-        if prepared_input is None:
-            raise ProviderProtocolError("input provider returned no prepared input")
-        if not callable(self._implementation_adapter):
-            raise AdapterProtocolError("implementation adapter is not callable")
-        if not callable(self._timeout_runner):
-            raise AdapterProtocolError("timeout runner is not callable")
         started_at = self._now()
         try:
+            implementation = await self._call(self._implementation_resolver, request.capability)
+            if implementation is None:
+                raise CapabilityImplementationNotFoundError("capability implementation was not found")
+            if not callable(self._input_provider):
+                raise ProviderProtocolError("input provider is not callable")
+            prepared_input = await self._call(self._input_provider, request)
+            if prepared_input is None:
+                raise ProviderProtocolError("input provider returned no prepared input")
+            if not callable(self._implementation_adapter) or not callable(self._timeout_runner):
+                raise AdapterProtocolError("implementation adapter or timeout runner is not callable")
             async def invoke() -> Any:
                 return await self._call(self._implementation_adapter, implementation, prepared_input, request)
 

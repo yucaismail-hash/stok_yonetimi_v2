@@ -146,6 +146,8 @@ class UserMaterial(BaseModel):
     material_code = Column(String, nullable=False)
     material_name = Column(String, nullable=True)
     group = Column(String, nullable=True)
+    product_level = Column(String(32), nullable=True)
+    product_class = Column(String, nullable=True)
     
     lead_time_days = Column(Integer, default=14)
     unit_cost = Column(Integer, default=100.0)

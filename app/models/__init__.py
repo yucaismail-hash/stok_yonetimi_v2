@@ -55,6 +55,10 @@ from app.models.runtime import (
     RuntimeCheckpoint,
     RuntimeResultReference,
 )
+from app.models.actuals import ActualWeeklyObservation, ActualWeeklyRevision
+from app.models.forecast_vintage import ForecastVintage, ForecastVintagePoint
+from app.models.forecast_evaluation import ForecastEvaluation, ForecastEvaluationPoint
+from app.models.model_artifact import ModelArtifact
 
 # Learning
 from app.models.learning import (
@@ -165,6 +169,12 @@ __all__ = [
     "RuntimeTaskAttempt",
     "RuntimeCheckpoint",
     "RuntimeResultReference",
+    "ActualWeeklyObservation",
+    "ActualWeeklyRevision",
+    "ForecastVintage",
+    "ForecastVintagePoint",
+    "ForecastEvaluation",
+    "ForecastEvaluationPoint",
     # Learning
     "CompanyLearningMemory",
     "UserLearningData",
@@ -203,4 +213,5 @@ __all__ = [
     "ValidationResult",
     # DOCUMENT 06A
     "AIArtifact",
+    "ModelArtifact",
 ]
