@@ -2529,3 +2529,6 @@ Single Analysis execution executes only the selected analytical capability. It d
 Business Workflow execution preserves approved workflow order and does not omit mandatory Simulation or Backtest. The Orchestrator cannot reorder dependency-bound capabilities. Learning runs after deterministic analytical outputs; Decision Intelligence runs after Learning; a Dynamic Operational Plan is generated from validated workflow outputs. Supplier Allocation runs only when Supplier data exists.
 
 The Execution Engine must never reinterpret a Single Analysis as a Business Objective.
+# Revision - Phase 3C2B4-B Business Workflow active concurrency
+
+Business Workflow acceptance is PostgreSQL-verified as one active execution per company. A partial unique active-workflow index is authoritative across process boundaries; duplicate acceptance returns the existing execution as `ALREADY_RUNNING`. Terminal states release the company slot naturally. Standalone analyses remain independent, and durable Business Workflow acceptance has no current credit-charge coupling.

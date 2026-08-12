@@ -1,4 +1,4 @@
-// src/components/landing/Navbar.tsx
+// src/features/landing/components/Navbar.tsx
 import React, { useState, useEffect } from 'react';
 import {
   AppBar,
@@ -8,42 +8,21 @@ import {
   IconButton,
   Drawer,
   List,
-  ListItem,
-  ListItemText,
+  ListItemButton,
   Container,
-  useScrollTrigger,
-  Slide,
   Typography,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { Logo } from '../../../shared/ui';
-import { useNavigate } from 'react-router-dom';
-
-interface NavbarProps {
-  isLoggedIn?: boolean;
-}
 
 const navItems = [
-  { label: 'Ürün', href: '#products' },
-  { label: 'Özellikler', href: '#features' },
-  { label: 'Çözümler', href: '#solutions' },
-  { label: 'Fiyatlandırma', href: '#pricing' },
-  { label: 'Blog', href: '#blog' },
-  { label: 'İletişim', href: '#contact' },
+  { label: 'Yaklaşım', href: '#yaklasim' },
+  { label: 'Akademi', href: '#akademi' },
 ];
 
-function HideOnScroll({ children }: { children: React.ReactElement }) {
-  const trigger = useScrollTrigger();
-  return (
-    <Slide appear={false} direction="down" in={!trigger}>
-      {children}
-    </Slide>
-  );
-}
-
-export function Navbar({ isLoggedIn = false }: NavbarProps) {
-  const navigate = useNavigate();
+export function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -67,9 +46,24 @@ export function Navbar({ isLoggedIn = false }: NavbarProps) {
     setMobileOpen(false);
   };
 
+  const handleCtaClick = () => {
+    const element = document.querySelector('#gelismeler');
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+    }
+    setMobileOpen(false);
+  };
+
   const drawer = (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          mb: 4,
+        }}
+      >
         <Logo size="small" />
         <IconButton onClick={handleDrawerToggle}>
           <CloseIcon />
@@ -77,182 +71,138 @@ export function Navbar({ isLoggedIn = false }: NavbarProps) {
       </Box>
       <List>
         {navItems.map((item) => (
-          <ListItem
+          <ListItemButton
             key={item.label}
             onClick={() => handleNavClick(item.href)}
             sx={{
-              borderRadius: 2,
+              borderRadius: (theme) => theme.shape.borderRadius,
               '&:hover': {
-                bgcolor: 'rgba(11,94,215,0.04)',
+                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
               },
             }}
           >
-            {/* ✅ Typography ile doğrudan render */}
             <Typography
               variant="body1"
               sx={{
                 fontWeight: 500,
-                color: '#1E293B',
+                color: (theme) => theme.palette.text.primary,
                 fontSize: '0.875rem',
               }}
             >
               {item.label}
             </Typography>
-          </ListItem>
+          </ListItemButton>
         ))}
         <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          {isLoggedIn ? (
-            <Button
-              fullWidth
-              variant="contained"
-              onClick={() => navigate('/dashboard')}
-            >
-              Dashboard
-            </Button>
-          ) : (
-            <>
-              <Button
-                fullWidth
-                variant="outlined"
-                onClick={() => navigate('/login')}
-              >
-                Giriş Yap
-              </Button>
-              <Button
-                fullWidth
-                variant="contained"
-                onClick={() => navigate('/register')}
-              >
-                Ücretsiz Başla
-              </Button>
-            </>
-          )}
+          <Button
+            fullWidth
+            variant="contained"
+            onClick={handleCtaClick}
+          >
+            Gelişmeleri Takip Et
+          </Button>
         </Box>
       </List>
     </Box>
   );
 
   return (
-    <HideOnScroll>
-      <AppBar
-        position="sticky"
-        elevation={0}
+    <AppBar
+      position="sticky"
+      elevation={0}
+      sx={{
+        bgcolor: scrolled
+          ? (theme) => alpha(theme.palette.background.paper, 0.85)
+          : 'transparent',
+        backdropFilter: scrolled ? 'blur(12px)' : 'none',
+        borderBottom: scrolled
+          ? (theme) => `1px solid ${theme.palette.divider}`
+          : 'none',
+        transition: 'all 0.3s ease-in-out',
+      }}
+    >
+      <Container maxWidth="xl">
+        <Toolbar sx={{ py: 1, justifyContent: 'space-between' }}>
+          <Logo size="medium" />
+
+          <Box
+            sx={{
+              display: { xs: 'none', md: 'flex' },
+              alignItems: 'center',
+              gap: 1,
+            }}
+          >
+            {navItems.map((item) => (
+              <Button
+                key={item.label}
+                color="inherit"
+                sx={{
+                  color: (theme) => theme.palette.text.primary,
+                  fontWeight: 500,
+                  fontSize: '0.875rem',
+                  px: 2,
+                  py: 1,
+                  borderRadius: (theme) => theme.shape.borderRadius,
+                  '&:hover': {
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
+                  },
+                }}
+                onClick={() => handleNavClick(item.href)}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </Box>
+
+          <Box
+            sx={{
+              display: { xs: 'none', md: 'flex' },
+              alignItems: 'center',
+              gap: 2,
+            }}
+          >
+            <Button
+              variant="contained"
+              onClick={handleCtaClick}
+            >
+              Gelişmeleri Takip Et
+            </Button>
+          </Box>
+
+          <IconButton
+            color="inherit"
+            aria-label="open drawer"
+            edge="start"
+            onClick={handleDrawerToggle}
+            sx={{
+              display: { md: 'none' },
+              color: (theme) => theme.palette.text.primary,
+            }}
+          >
+            <MenuIcon />
+          </IconButton>
+        </Toolbar>
+      </Container>
+
+      <Drawer
+        variant="temporary"
+        anchor="right"
+        open={mobileOpen}
+        onClose={handleDrawerToggle}
+        ModalProps={{
+          keepMounted: true,
+        }}
         sx={{
-          bgcolor: scrolled
-            ? 'rgba(255,255,255,0.85)'
-            : 'transparent',
-          backdropFilter: scrolled ? 'blur(12px)' : 'none',
-          borderBottom: scrolled ? '1px solid #E2E8F0' : 'none',
-          transition: 'all 0.3s ease-in-out',
+          display: { xs: 'block', md: 'none' },
+          '& .MuiDrawer-paper': {
+            boxSizing: 'border-box',
+            width: 320,
+          },
         }}
       >
-        <Container maxWidth="xl">
-          <Toolbar sx={{ py: 1, justifyContent: 'space-between' }}>
-            {/* Logo */}
-            <Logo size="medium" />
-
-            {/* Desktop Nav */}
-            <Box
-              sx={{
-                display: { xs: 'none', md: 'flex' },
-                alignItems: 'center',
-                gap: 1,
-              }}
-            >
-              {navItems.map((item) => (
-                <Button
-                  key={item.label}
-                  color="inherit"
-                  sx={{
-                    color: '#1E293B',
-                    fontWeight: 500,
-                    fontSize: '0.875rem',
-                    px: 2,
-                    py: 1,
-                    borderRadius: 2,
-                    '&:hover': {
-                      bgcolor: 'rgba(11,94,215,0.04)',
-                    },
-                  }}
-                  onClick={() => handleNavClick(item.href)}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </Box>
-
-            {/* Desktop Actions */}
-            <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center', gap: 2 }}>
-              {isLoggedIn ? (
-                <Button
-                  variant="contained"
-                  onClick={() => navigate('/dashboard')}
-                >
-                  Dashboard
-                </Button>
-              ) : (
-                <>
-                  <Button
-                    variant="text"
-                    color="inherit"
-                    sx={{
-                      color: '#1E293B',
-                      fontWeight: 500,
-                      '&:hover': {
-                        bgcolor: 'rgba(11,94,215,0.04)',
-                      },
-                    }}
-                    onClick={() => navigate('/login')}
-                  >
-                    Giriş Yap
-                  </Button>
-                  <Button
-                    variant="contained"
-                    onClick={() => navigate('/register')}
-                  >
-                    Ücretsiz Başla
-                  </Button>
-                </>
-              )}
-            </Box>
-
-            {/* Mobile Menu Button */}
-            <IconButton
-              color="inherit"
-              aria-label="open drawer"
-              edge="start"
-              onClick={handleDrawerToggle}
-              sx={{
-                display: { md: 'none' },
-                color: '#1E293B',
-              }}
-            >
-              <MenuIcon />
-            </IconButton>
-          </Toolbar>
-        </Container>
-
-        {/* Mobile Drawer */}
-        <Drawer
-          variant="temporary"
-          anchor="right"
-          open={mobileOpen}
-          onClose={handleDrawerToggle}
-          ModalProps={{
-            keepMounted: true,
-          }}
-          sx={{
-            display: { xs: 'block', md: 'none' },
-            '& .MuiDrawer-paper': {
-              boxSizing: 'border-box',
-              width: 320,
-            },
-          }}
-        >
-          {drawer}
-        </Drawer>
-      </AppBar>
-    </HideOnScroll>
+        {drawer}
+      </Drawer>
+    </AppBar>
   );
 }
 

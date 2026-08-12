@@ -71,6 +71,7 @@ class RuntimeExecution(Base):
         Index("ix_runtime_executions_workflow_id", "workflow_id"),
         Index("uq_runtime_executions_company_idempotency", "company_id", "idempotency_key", unique=True, postgresql_where=text("idempotency_key IS NOT NULL")),
         Index("ix_runtime_executions_active", "company_id", "state", "created_at", postgresql_where=text("state IN ('created', 'queued', 'running', 'waiting', 'retrying')")),
+        Index("uq_runtime_executions_one_active_business_workflow", "company_id", unique=True, postgresql_where=text("analysis_type = 'business_workflow' AND state IN ('created', 'queued', 'running', 'waiting', 'retrying')")),
     )
 
 

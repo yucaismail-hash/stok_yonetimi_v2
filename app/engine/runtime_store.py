@@ -117,7 +117,8 @@ class RuntimeStore:
         if not task or task.lease_expires_at <= datetime.now(timezone.utc): raise RuntimeStoreLeaseError('inactive lease')
         attempt=self.session.query(RuntimeTaskAttempt).filter_by(runtime_task_id=task.id,attempt_number=task.current_attempt,lease_token=lease_token,state='running').one_or_none(); now=datetime.now(timezone.utc)
         if not attempt: raise RuntimeStoreLeaseError('inactive attempt')
-        attempt.state='failed';attempt.completed_at=now;attempt.error=error;attempt.retryable=retryable;task.state='pending' if retryable else 'failed';task.error_summary=error;task.retryable=retryable;task.lease_token=None;task.assigned_worker_id=None;task.lease_expires_at=now;task.row_version+=1;self.session.flush();return task
+        can_retry=retryable and task.current_attempt < task.max_attempts
+        attempt.state='failed';attempt.completed_at=now;attempt.error=error;attempt.retryable=can_retry;task.state='pending' if can_retry else 'failed';task.error_summary=error;task.retryable=can_retry;task.lease_token=None;task.assigned_worker_id=None;task.lease_expires_at=now;task.row_version+=1;self.session.flush();return task
     def complete_execution(self, execution_id, company_id, expected_row_version):
         return self.transition_execution(execution_id, company_id, 'running', 'completed', expected_row_version, progress=100, current_stage='completed', completed_at=datetime.now(timezone.utc))
     def fail_execution(self, execution_id, company_id, expected_row_version, error, current_stage='forecast'):

@@ -2,6 +2,9 @@
 
 ## Governance status
 
+- **Production Champion Forecast:** Phase 3C3B3B1 development verified: current-canonical and replay-snapshot scope, trusted XGBoost Champion inference, explicit demand type, and immutable Forecast provenance are durable. Controlled rollback remains pending; PHASE 3C1 PostgreSQL verification is complete.
+- **Controlled Champion Rollback:** Phase 3C3B3B2 development verified: explicit PostgreSQL-atomic rollback affects future Forecasts only; historical Forecast/Vintage evidence is immutable and runtime fallback never mutates the registry.
+
 - **Architecture version:** v2.0
 - **Authority:** Documents 01–07 are the current single source of truth.
 - **Current milestone:** Phase 1C — Architecture Governance Baseline
@@ -213,6 +216,134 @@ Each authoritative architecture specification document now contains its bounded 
 | Five-Task Business Workflow | VERIFIED |
 | Supplier Branch Learning | NOT INVOKED |
 
+## Phase 3C1 Retraining Eligibility
+
+| Eligibility evidence | Status |
+|---|---|
+| Retraining Eligibility | POSTGRESQL VERIFIED / READ-ONLY |
+| Tier 0 | Stable performance + no new evaluation watermark / VERIFIED |
+| Tier 1 | Stable performance + new evaluation watermark / VERIFIED |
+| Tier 2 | Drift analysis / VERIFIED |
+| Tier 3 | Retrain eligible only / VERIFIED |
+| Tier-3 Training Bridge | Explicit Challenger Training only / VERIFIED |
+| Lower-tier Training | BLOCKED / ZERO FIT |
+| Watermark Ownership | Caller / future Learning scheduler |
+| Company / Material / Demand Isolation | VERIFIED |
+| Historical Window | LEAKAGE-SAFE / VERIFIED |
+| Accepted Actual Correction | REFLECTED THROUGH FORECAST EVALUATION |
+| Rejected Actual Correction | IGNORED |
+| Automatic Retraining / Promotion | NOT ACTIVE |
+
+## Phase 3C4B1 Durable Retraining Job
+
+| Retraining-job evidence | Status |
+|---|---|
+| Retraining Job | DURABLE / POSTGRESQL VERIFIED |
+| Candidate Fingerprint | CORRECTION-SAFE / VERIFIED |
+| Duplicate Guard | PostgreSQL unique company/candidate fingerprint / VERIFIED |
+| Processed Evidence Ownership | Retraining Job |
+| Tier 3 | MAY CREATE PENDING JOB |
+| Tier 0 / 1 / 2 | NO JOB |
+| Runtime Execution Link | DEFERRED TO 3C4B2 |
+| Training / Artifact Persistence | NOT ACTIVE |
+| Automatic Comparison / Promotion | NOT ACTIVE |
+
+## Phase 3C4B2 Explicit Retraining Job Execution
+
+| Retraining execution evidence | Status |
+|---|---|
+| Retraining Job Execution | EXPLICIT / DEVELOPMENT VERIFIED |
+| Training Runtime | LEASED / PostgreSQL VERIFIED |
+| Duplicate Start Guard | PostgreSQL row lock / VERIFIED |
+| Worker Claim | EXCLUSIVE / VERIFIED |
+| Retry Policy | BOUNDED / 2 attempts |
+| Tier-3 Job | MAY TRAIN |
+| Trained Job | Immutable ModelArtifact linked / VERIFIED |
+| Automatic Scan | NOT ACTIVE |
+| Automatic Comparison / Promotion | NOT ACTIVE |
+| Production Forecast | UNCHANGED |
+
+## Phase 3C4B3 Retraining Artifact Race Recovery
+
+| Retraining recovery evidence | Status |
+|---|---|
+| Retraining Retry | BOUNDED / VERIFIED |
+| Lease Expiry Recovery | VERIFIED |
+| Stale Worker Completion | REJECTED / VERIFIED |
+| Artifact Race | IDEMPOTENT / VERIFIED |
+| Artifact Post-Persist Recovery | VERIFIED |
+| Terminal Re-entry | IDEMPOTENT / VERIFIED |
+| Automatic Scan / Enqueue | NOT ACTIVE |
+| Automatic Comparison / Promotion | NOT ACTIVE |
+| Production Forecast | UNCHANGED |
+
+## Phase 3C4B4 Retraining Cooldown, Priority, and Admission
+
+| Retraining scheduling control | Status |
+|---|---|
+| Retraining Cooldown | VERSIONED / DURABLE |
+| New Evidence During Cooldown | PRESERVED / DEFERRED |
+| Retraining Priority | DETERMINISTIC / VERSIONED |
+| Retraining Resource Admission | POSTGRESQL-BACKED / VERIFIED |
+| Global Retraining Capacity | CONFIGURABLE |
+| Production Analysis | NOT BLOCKED BY RETRAINING GUARD |
+| Automatic Scanner | NOT ACTIVE |
+| Automatic Comparison / Promotion | NOT ACTIVE |
+
+## Phase 3C4B5A Retraining Scanner Discovery
+
+| Scanner discovery control | Status |
+|---|---|
+| Retraining Scanner Discovery | DEVELOPMENT VERIFIED |
+| Scanner Scope | COMPANY + PERIOD BOUNDED |
+| Tier 0 / 1 / 2 | NO JOB |
+| Tier 3 | DURABLE JOB ACCEPTANCE ONLY |
+| Repeated Scan | IDEMPOTENT |
+| Concurrent Scan | POSTGRESQL SAFE |
+| Training | NOT STARTED BY SCANNER |
+| Resource Admission | NOT ACQUIRED IN DISCOVERY |
+| Periodic Activation | NOT ACTIVE |
+| Automatic Promotion | NOT ACTIVE |
+
+## Phase 3C4B5B Controlled Scanner Activation
+
+| Scanner activation control | Status |
+|---|---|
+| Scanner Discovery | READ-ONLY FOR RUNTIME |
+| Controlled Scanner Activation | EXPLICIT / VERIFIED |
+| Cooldown | ENFORCED |
+| Priority | ENFORCED |
+| Resource Admission | ENFORCED |
+| Capacity Block | NO TRAINING |
+| Repeated Activation | IDEMPOTENT |
+| Periodic Scheduler | NOT ACTIVE |
+| Automatic Promotion | NOT ACTIVE |
+
+## Phase 3C4B5C1 Periodic Scanner Tick Safety
+
+| Scheduler tick control | Status |
+|---|---|
+| Periodic Tick Owner | POSTGRESQL DURABLE / VERIFIED |
+| Tick Identity | COMPANY + WINDOW + POLICY + CADENCE BUCKET |
+| Duplicate / Concurrent Tick | IDEMPOTENT / POSTGRESQL SAFE |
+| Failed Tick | AUDITED / NEXT BUCKET AVAILABLE |
+| Scheduler Loop / Cron | NOT ACTIVE |
+| Automatic Promotion | NOT ACTIVE |
+
+## Phase 3C4 Selective Retraining Orchestration Closeout
+
+| Selective retraining orchestration | Status |
+|---|---|
+| Orchestration | DEVELOPMENT VERIFIED |
+| Periodic Scheduler Logic | DURABLE / IDEMPOTENT |
+| New Evidence | CORRECTION-SAFE |
+| Cooldown / Priority / Capacity | ENFORCED |
+| Leased Worker | VERIFIED |
+| Model Artifact | IMMUTABLE / IDEMPOTENT |
+| Business Workflow | NOT BLOCKED |
+| Deployment Timer | NOT CONFIGURED IN REPOSITORY |
+| Automatic Champion Comparison / Promotion | NOT ACTIVE |
+
 ## Phase 3C2B1 XGBoost weekly feature builder
 
 | Feature evidence | Status |
@@ -238,7 +369,7 @@ Each authoritative architecture specification document now contains its bounded 
 | Automatic Retraining | NOT ACTIVE |
 | Artifact Persistence | PENDING |
 | Champion-Challenger Governance | PENDING 3C3 |
-| Tier-3 Full PostgreSQL Trigger | PENDING 3C1 VERIFICATION |
+| Tier-3 Full PostgreSQL Trigger | VERIFIED / EXPLICIT TRAINING ONLY |
 
 ## Phase 3C2B3 immutable Challenger model artifacts
 
@@ -252,7 +383,63 @@ Each authoritative architecture specification document now contains its bounded 
 | Production Forecast | UNCHANGED |
 | Automatic Retraining | NOT ACTIVE |
 | Champion-Challenger Governance | PENDING 3C3 |
-| Tier-3 Full PostgreSQL Trigger | PENDING 3C1 VERIFICATION |
+| Tier-3 Full PostgreSQL Trigger | VERIFIED / EXPLICIT TRAINING ONLY |
+
+## Phase 3C3A Champion--Challenger decision evidence
+
+| Decision evidence | Status |
+|---|---|
+| Champion--Challenger Evaluation | DEVELOPMENT VERIFIED |
+| Comparison Window | SAME OUT-OF-SAMPLE WINDOW / VERIFIED |
+| Policy | `champion_challenger_policy_v1` |
+| Primary Metric | WAPE |
+| Guardrails | Bias / MAE / RMSE / sample strength VERIFIED |
+| Decisions | IMMUTABLE / APPEND-ONLY / IDEMPOTENT |
+| Artifact Integrity and Tenant Isolation | VERIFIED |
+| Promotion Execution | NOT ACTIVE |
+| XGBoost Fit During Comparison | ZERO |
+| Production Forecast | UNCHANGED |
+| Full Tier-3 Trigger | VERIFIED / EXPLICIT TRAINING ONLY |
+
+## Phase 3C3B1A Champion Registry foundation
+
+| Registry evidence | Status |
+|---|---|
+| Champion Registry | DEVELOPMENT VERIFIED |
+| Registry Identity | company + material + demand type |
+| Initial Champion | `classical_existing` / `demand_forecaster_auto_v1` |
+| Registry History | IMMUTABLE |
+| Current Pointer | MUTABLE / PostgreSQL protected |
+| Promotion / Rollback / Forecast Resolution | NOT ACTIVE |
+| Automatic Retraining / Promotion | NOT ACTIVE; PHASE 3C1 verified |
+| Controlled Challenger Promotion | DEVELOPMENT VERIFIED / PROMOTE_CHALLENGER authority only |
+| Promotion Safety | PostgreSQL atomicity, stale protection, same/competing concurrency, integrity, tenant and demand isolation VERIFIED |
+| Forecast / Business Workflow Activation | NOT ACTIVE / unchanged |
+| Rollback | PENDING 3C3B3 |
+
+## Phase 3C3B3A Champion Resolver
+
+| Resolver evidence | Status |
+|---|---|
+| Champion Resolver | DEVELOPMENT VERIFIED / READ-ONLY |
+| Classical and XGBoost Resolution | VERIFIED |
+| Integrity, Missing, and Compatibility Fallback | VERIFIED |
+| No Classical Fallback | CONTROLLED FAILURE VERIFIED |
+| Tenant and Demand-Type Isolation | VERIFIED |
+| Registry Mutation During Fallback | PROHIBITED / VERIFIED |
+| Production Forecast Integration | NOT ACTIVE |
+| Rollback | PENDING 3C3B3B |
+| Automatic Retraining / Promotion | NOT ACTIVE; PHASE 3C1 verified |
+
+## Phase 3C2B4 Business Workflow execution safety
+
+| Execution safety decision | Status |
+|---|---|
+| One active Business Workflow per company | POSTGRESQL VERIFIED |
+| Authoritative guard | PostgreSQL partial unique active-workflow index / VERIFIED |
+| Duplicate behavior | Resolve existing active execution as `ALREADY_RUNNING` / VERIFIED |
+| Standalone analyses | UNCHANGED / OUT OF SCOPE |
+| PostgreSQL concurrency proof | VERIFIED |
 | Optional Supplier Business Branch | DEVELOPMENT VERIFIED |
 | Supplier Absent | GRACEFUL DEGRADATION VERIFIED |
 | Supplier Present | REAL EXECUTION VERIFIED |

@@ -46,6 +46,8 @@ class DatasetRuntimeProvider:
             if not isinstance(history, list) or len(history) < 4 or not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in history):
                 continue
             prepared = {"material_code": code, "demand_history": list(history)}
+            if request.capability is Capability.DEMAND_FORECAST and isinstance(request.params.get('demand_type'),str) and isinstance(request.params.get('forecast_cutoff_period'),str):
+                prepared.update({'demand_type':request.params['demand_type'],'forecast_cutoff_period':request.params['forecast_cutoff_period']})
             if request.capability is Capability.SAFETY_STOCK:
                 lead_time_days = item.get("lead_time_days")
                 if isinstance(lead_time_days, bool) or not isinstance(lead_time_days, (int, float)) or lead_time_days <= 0:

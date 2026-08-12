@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import xgboost
+from sqlalchemy.exc import IntegrityError
 from uuid_extensions import uuid7
 
 from app.application.xgboost_challenger_training import XGBoostChallengerTrainingRequest
@@ -84,8 +85,21 @@ class XGBoostChallengerArtifactService:
                 source_evaluation_ids=self._source_evaluation_ids(request.eligibility_evidence),
                 artifact_fingerprint=fingerprint,
             )
-            self.session.add(artifact)
-            self.session.flush()
+            # The PostgreSQL fingerprint constraint is authoritative across workers.
+            # A savepoint preserves the caller's training/task transaction when a
+            # competing worker wins the insert race.
+            try:
+                with self.session.begin_nested():
+                    self.session.add(artifact)
+                    self.session.flush()
+            except IntegrityError:
+                self.storage.delete_for_controlled_cleanup(reference)
+                existing = self.session.query(ModelArtifact).filter_by(
+                    company_id=request.company_id, artifact_fingerprint=fingerprint
+                ).one_or_none()
+                if existing is not None:
+                    return PersistedChallengerArtifact(existing, False)
+                raise
             return PersistedChallengerArtifact(artifact, True)
         except Exception:
             self.storage.delete_for_controlled_cleanup(reference)
@@ -125,6 +139,10 @@ class XGBoostChallengerArtifactService:
             "parameters": result.parameters,
             "seed": result.seed,
             "source_evidence_signature": result.source_evidence_signature,
+            "retraining_candidate_fingerprint": (
+                request.eligibility_evidence.get("candidate_fingerprint")
+                if isinstance(request.eligibility_evidence, dict) else None
+            ),
         }
         return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 

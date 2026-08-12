@@ -1,105 +1,221 @@
-// src/components/landing/ProblemSection.tsx
-import React, { useRef } from 'react';
+// src/features/landing/components/ProblemSection.tsx
+import React from 'react';
 import {
   Box,
   Container,
   Typography,
   Grid,
-  Stack,
-  Avatar,
+  Paper,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import {
   Inventory as InventoryIcon,
   Warning as WarningIcon,
   Timeline as TimelineIcon,
-  Speed as SpeedIcon,
+  LocalShipping as LocalShippingIcon,
 } from '@mui/icons-material';
-import { motion, useInView } from 'framer-motion';
-import { SectionContainer, AppCard } from '../../../shared/ui';
 
-// ✅ Problemler - Gerçekçi ve tanıdık
 const problems = [
   {
     icon: InventoryIcon,
-    title: 'Fazla Stok Maliyeti',
-    description: 'Gereksiz stok, sermayenizin bağlı kalmasına ve maliyetlerin artmasına neden olur.',
-    color: '#EF4444',
+    title: 'Fazla Stok',
+    description:
+      'İhtiyacın üzerinde stok; sermayeyi bağlar, depolama maliyetini artırır ve eskime riskini büyütür.',
   },
   {
     icon: WarningIcon,
-    title: 'Stok Tükenmesi',
-    description: 'Kritik ürünlerde stok bitmesi, müşteri kaybı ve satış fırsatlarının kaçması demektir.',
-    color: '#F59E0B',
+    title: 'Stok Yetersizliği',
+    description:
+      'Yetersiz stok; satış kaybına, üretim kesintisine ve hizmet seviyesinin düşmesine neden olabilir.',
   },
   {
     icon: TimelineIcon,
-    title: 'Tahmin Hataları',
-    description: 'Geleceği öngörememek, yanlış sipariş miktarları ve gereksiz israfa yol açar.',
-    color: '#0B5ED7',
+    title: 'Tahmin Belirsizliği',
+    description:
+      'Talep geçmişteki davranışı her zaman tekrar etmez. Trend, dönemsel hareketler ve beklenmeyen değişimler tahmini zorlaştırır.',
   },
   {
-    icon: SpeedIcon,
-    title: 'Karar Gecikmesi',
-    description: 'Manuel analizlerle vakit kaybı, rekabet avantajınızı kaybetmenize neden olur.',
-    color: '#8B5CF6',
+    icon: LocalShippingIcon,
+    title: 'Tedarik Belirsizliği',
+    description:
+      'Termin süreleri ve tedarikçi performansı değiştikçe doğru zamanda doğru miktarı bulundurmak zorlaşır.',
   },
 ];
 
 export function ProblemSection() {
-  const ref = useRef(null);
-  const isInView = useInView(ref, { once: true, margin: '-100px' });
-
   return (
-    <SectionContainer bgcolor="#F8FAFC" py={10}>
-      <Box sx={{ textAlign: 'center', maxWidth: 700, mx: 'auto', mb: 6 }}>
-        <Typography variant="overline" sx={{ color: '#0B5ED7' }}>
-          Problem
-        </Typography>
-        <Typography variant="h3" sx={{ fontWeight: 700, color: '#0F172A', mt: 1, mb: 2 }}>
-          Stok Yönetiminde <br />
-          <Box component="span" sx={{ color: '#0B5ED7' }}>Karşılaşılan Zorluklar</Box>
-        </Typography>
-        <Typography variant="body1" sx={{ color: '#64748B' }}>
-          Geleneksel yöntemlerle stok optimizasyonu yapmak, hem zaman kaybı hem de maliyet demektir.
-        </Typography>
-      </Box>
-
-      <Grid container spacing={3} ref={ref}>
-        {problems.map((problem, index) => (
-          <Grid size={{ xs: 12, sm: 6, md: 3 }} key={index}>
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={isInView ? { opacity: 1, y: 0 } : {}}
-              transition={{ delay: index * 0.1, duration: 0.5 }}
+    <Box
+      id="problem"
+      sx={{
+        py: { xs: 8, md: 12 },
+        bgcolor: (theme) => theme.palette.background.default,
+      }}
+    >
+      <Container maxWidth="xl">
+        {/* Section Header */}
+        <Box
+          sx={{
+            textAlign: 'center',
+            maxWidth: 720,
+            mx: 'auto',
+            mb: { xs: 6, md: 8 },
+          }}
+        >
+          <Typography
+            variant="overline"
+            sx={{
+              color: (theme) => theme.palette.primary.main,
+              fontWeight: 600,
+              letterSpacing: '0.5px',
+              display: 'block',
+              mb: 1,
+            }}
+          >
+            PROBLEM
+          </Typography>
+          <Typography
+            variant="h2"
+            sx={{
+              fontWeight: 700,
+              color: (theme) => theme.palette.text.primary,
+              mb: 2,
+              fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' },
+            }}
+          >
+            Stok probleminin merkezinde
+            <br />
+            <Box
+              component="span"
+              sx={{
+                background: (theme) =>
+                  `linear-gradient(135deg, ${theme.palette.primary.main}, ${theme.palette.primary.light})`,
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+              }}
             >
-              <AppCard sx={{ p: 3, textAlign: 'center', height: '100%' }}>
-                <Avatar
+              belirsizlik var.
+            </Box>
+          </Typography>
+          <Typography
+            variant="body1"
+            sx={{
+              color: (theme) => theme.palette.text.secondary,
+              maxWidth: 640,
+              mx: 'auto',
+              lineHeight: 1.8,
+              fontSize: { xs: '0.95rem', md: '1.05rem' },
+            }}
+          >
+            Talep, tedarik süresi ve operasyon koşulları sürekli değişirken,
+            stok kararlarını yalnızca geçmiş ortalamalara göre vermek
+            işletmeleri iki temel risk arasında bırakır:
+            fazla stok ve stok yetersizliği.
+          </Typography>
+        </Box>
+
+        {/* Problem Cards */}
+        <Grid container spacing={3}>
+          {problems.map((problem, index) => (
+            <Grid size={{ xs: 12, sm: 6, md: 3 }} key={index}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 3,
+                  height: '100%',
+                  minHeight: 200,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  borderRadius: (theme) => theme.shape.borderRadius,
+                  border: (theme) => `1px solid ${theme.palette.divider}`,
+                  bgcolor: (theme) => theme.palette.background.paper,
+                  transition: 'all 0.25s ease-in-out',
+                  '&:hover': {
+                    borderColor: (theme) => theme.palette.primary.main,
+                    boxShadow: (theme) =>
+                      `0 8px 32px ${alpha(theme.palette.primary.main, 0.06)}`,
+                    transform: 'translateY(-2px)',
+                  },
+                }}
+              >
+                <Box
                   sx={{
-                    width: 56,
-                    height: 56,
-                    bgcolor: `${problem.color}10`,
-                    color: problem.color,
-                    mx: 'auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 48,
+                    height: 48,
+                    borderRadius: 2,
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                    color: (theme) => theme.palette.primary.main,
                     mb: 2,
+                    flexShrink: 0,
                   }}
                 >
-                  <problem.icon sx={{ fontSize: 28 }} />
-                </Avatar>
+                  <problem.icon sx={{ fontSize: 24 }} />
+                </Box>
                 <Typography
                   variant="h6"
-                  sx={{ fontWeight: 600, color: '#0F172A', mb: 1 }}
+                  sx={{
+                    fontWeight: 600,
+                    color: (theme) => theme.palette.text.primary,
+                    mb: 1,
+                    fontSize: '1rem',
+                  }}
                 >
                   {problem.title}
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#64748B' }}>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: (theme) => theme.palette.text.secondary,
+                    lineHeight: 1.6,
+                    fontSize: '0.875rem',
+                    flex: 1,
+                  }}
+                >
                   {problem.description}
                 </Typography>
-              </AppCard>
-            </motion.div>
-          </Grid>
-        ))}
-      </Grid>
-    </SectionContainer>
+              </Paper>
+            </Grid>
+          ))}
+        </Grid>
+
+        {/* Bottom Message */}
+        <Box
+          sx={{
+            mt: { xs: 6, md: 8 },
+            textAlign: 'center',
+            maxWidth: 640,
+            mx: 'auto',
+            pt: { xs: 4, md: 6 },
+            borderTop: (theme) => `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Typography
+            variant="h5"
+            sx={{
+              fontWeight: 600,
+              color: (theme) => theme.palette.text.primary,
+              mb: 1.5,
+              fontSize: { xs: '1.25rem', md: '1.5rem' },
+            }}
+          >
+            Bu nedenle stok yönetimi yalnızca bir hesaplama problemi değildir.
+          </Typography>
+          <Typography
+            variant="body1"
+            sx={{
+              color: (theme) => theme.palette.text.secondary,
+              lineHeight: 1.8,
+              fontSize: { xs: '0.95rem', md: '1.05rem' },
+            }}
+          >
+            Belirsizliği ölçmek, senaryoları sınamak ve kararları
+            veriye dayandırmak gerekir.
+          </Typography>
+        </Box>
+      </Container>
+    </Box>
   );
 }
 

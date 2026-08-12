@@ -24,7 +24,7 @@ class RetrainingEligibilityService:
         q=self.session.query(ForecastEvaluationPoint).join(ForecastEvaluation,ForecastEvaluationPoint.evaluation_id==ForecastEvaluation.id).filter(ForecastEvaluation.company_id==company_id,ForecastEvaluation.demand_type==demand_type,ForecastEvaluationPoint.target_period>=start_period,ForecastEvaluationPoint.target_period<=end_period)
         groups={}
         for p in q.all(): groups.setdefault(p.material_code,[]).append(p)
-        return tuple(self._one(company_id,demand,rows,last_seen_evaluation_id) for _,rows in sorted(groups.items()))
+        return tuple(self._one(company_id,demand_type,rows,last_seen_evaluation_id) for _,rows in sorted(groups.items()))
     def _one(self,cid,demand,rows,last_seen):
         rows=sorted(rows,key=lambda p:p.target_period); n=len(rows); recent=rows[-3:]; prior=rows[:-3]
         def wape(points):
@@ -41,4 +41,4 @@ class RetrainingEligibilityService:
             if tier.startswith('TIER_3'): reasons.append('MULTI_SIGNAL_DRIFT')
         elif is_new: tier='TIER_1_EVALUATE'; reasons=['NEW_EVALUATION']
         else: tier='TIER_0_SKIP'; reasons=['STABLE_PERFORMANCE']
-        p=rows[-1]; return RetrainingEligibility(cid,p.material_code,demand,p.product_level,p.product_group,p.product_class,tier,tuple(reasons),n,len({p.target_period for p in rows}),current,baseline,mean_error,deterioration or bias,demand_drift,{'TIER_0_SKIP':'SKIP','TIER_1_EVALUATE':'EVALUATE','TIER_2_ANALYZE':'ANALYZE','TIER_3_DEEP_LEARN_RETRAIN':'RETRAIN_ELIGIBLE'}[tier],latest.id if latest else None,is_new)
+        p=rows[-1]; return RetrainingEligibility(cid,p.material_code,demand,p.product_level,p.product_group,p.product_class,tier,tuple(reasons),n,len({p.target_period for p in rows}),current,baseline,mean_error,deterioration or bias,demand_drift,{'TIER_0_SKIP':'SKIP','TIER_1_EVALUATE':'EVALUATE','TIER_2_ANALYZE':'ANALYZE','TIER_3_DEEP_LEARN_RETRAIN':'RETRAIN_ELIGIBLE'}[tier],latest_evaluation_id=latest.id if latest else None,new_evidence_detected=is_new)

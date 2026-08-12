@@ -42,6 +42,62 @@ Learning scores are historical Forecast-Vintage snapshots carried through evalua
 
 This boundary prepares evidence for future drift analysis, selective retraining eligibility, and Champion-Challenger comparison only. Retraining, XGBoost fitting, model promotion, Champion-Challenger, Decision Intelligence, and Event Learning are not active.
 
+## Phase 3C1 Retraining Eligibility boundary
+
+Retraining Eligibility is a **POSTGRESQL VERIFIED**, read-only derivation over persisted Forecast Evaluation point evidence. Its identity is company, material code, and explicit demand type; product level/group/class remain evidence metadata and never infer demand type. The caller (or a future Learning scheduler) owns the last-seen evaluation watermark: stable evidence with no new watermark is Tier 0 `SKIP`, stable new evidence is Tier 1 `EVALUATE`, deterioration is Tier 2 `ANALYZE`, and sufficient multi-signal deterioration is Tier 3 `RETRAIN_ELIGIBLE` only.
+
+The bounded evaluation window is leakage-safe: later Actual/Evaluation evidence cannot change a prior window. Approved canonical Actual corrections are reflected by the Forecast Evaluation refresh; rejected corrections are ignored. Eligibility itself creates no Actual, revision, Vintage, Evaluation, runtime, artifact, registry, or Learning state. Tier 3 can reach explicit Challenger Training; lower tiers are blocked with zero fit. Automatic retraining, automatic Challenger training/evaluation, automatic promotion, Learning mutation, and Decision Intelligence remain **NOT ACTIVE**.
+
+## Phase 3C4B1 Durable Retraining Job boundary
+
+`RetrainingJob` is the durable, company-scoped ownership record for a Tier-3 retraining candidate. Its scope is company, material code, and explicit demand type; product metadata remains an immutable snapshot. It retains the evaluation window, latest evaluation ID, training cutoff, eligibility contract/evidence, and a SHA-256 candidate fingerprint. The fingerprint includes a correction-safe digest of ordered persisted Forecast Evaluation points, accepted-Actual revision provenance, Forecast evidence identities and values, evaluation metrics, and recalculation identity; an accepted correction to an existing evaluation therefore creates distinct candidate evidence.
+
+The PostgreSQL unique `(company_id, candidate_fingerprint)` constraint is the authoritative duplicate guard. Repeated scans resolve the existing job; Tier 0--2 evidence is rejected without a job. B1 stores only `pending` intent and intentionally leaves `runtime_execution_id` null for the later leased-worker phase. XGBoost training, ModelArtifact persistence, comparison, promotion, Forecast selection, rollback, Learning mutation, and Decision Intelligence remain **NOT ACTIVE**.
+
+## Phase 3C4B2 Explicit leased Retraining Job execution
+
+A Tier-3 `pending` RetrainingJob may be executed only through an explicit company-scoped command. PostgreSQL locks the job before creating one `retraining` RuntimeExecution and one `xgboost_challenger_training` RuntimeTask. The durable task stores only job/scope/cutoff/evidence identifiers, claims through the existing lease and heartbeat boundary, and uses a bounded two-attempt policy; a stale losing worker is no-work, never a second trainer.
+
+The dedicated worker reconstructs the Tier-3 authorization from the immutable job evidence and calls the existing Challenger Training service. A `TRAINED` result persists through the immutable ModelArtifact service and links the artifact to the terminal `trained` job. `NOT_TRAINABLE` completes as a terminal non-infrastructure outcome without an artifact; exhausted retryable failures terminalize the task, RuntimeExecution, and job as `failed`. Automatic scanning, automatic start, comparison, promotion, rollback, Forecast selection changes, Learning mutation, and Decision Intelligence remain **NOT ACTIVE**.
+
+## Phase 3C4B3 Retraining artifact race and recovery boundary
+
+The existing two-attempt leased worker policy is now verified across retry, lease-expiry, stale-worker, and artifact-persistence failure windows. After an immutable ModelArtifact is persisted, its `RetrainingJob.model_artifact_id` is durably committed before task, RuntimeExecution, and job terminalization. A process crash in that window therefore leaves a recovery marker: after the lease expires, a fresh worker verifies and reuses the same trusted artifact instead of fitting again.
+
+Deterministic artifact persistence is race-safe. Competing processes attempting the same company-scoped fingerprint recover the single authoritative ModelArtifact after the PostgreSQL unique constraint resolves; the losing controlled storage file is removed. Stale lease tokens cannot complete after a reclaimer succeeds. Retryable failures before durable artifact persistence remain bounded to two attempts, while deterministic invalid-input or artifact-integrity failures terminalize and terminal re-entry remains idempotent. This is still explicit operator-driven execution: automatic scan/enqueue, retraining, Challenger comparison or promotion, Forecast selection changes, Learning mutation, and Decision Intelligence are **NOT ACTIVE**.
+
+## Phase 3C4B4 Retraining cooldown, priority, and resource admission
+
+Retraining admission is a separate, explicit PostgreSQL-backed control boundary between a durable Tier-3 candidate and RuntimeExecution creation. `retraining_cooldown_v1` persists its decision, reason, and expiry on the job. It has no invented business-duration default: cooldown is disabled until configuration supplies a duration. When configured, newly accepted candidate evidence during a successful scope's cooldown remains a distinct, durable pending job and may be admitted after expiry without replacing its candidate fingerprint. The policy exposes a future severe-drift override hook but activates no unsupported threshold.
+
+`retraining_priority_v1` persists a deterministic evidence-only score using existing drift flags, WAPE deterioration, and sample strength; equal scores order by candidate creation time and job ID. `retraining_resource_admission_v1` uses a PostgreSQL advisory transaction lock and lease records to enforce configurable global retraining capacity across processes. Leases are heartbeated, expire for recovery, fence stale heartbeat/release owners by token, and release when a job reaches a terminal outcome. This lane is independent of the Business Workflow active-company guard and does not block Forecast, Safety Stock, or standalone analysis. Future per-company quotas and fair queueing remain pending; automatic scanning, automatic retraining, comparison, promotion, rollback, Learning mutation, and Decision Intelligence remain **NOT ACTIVE**.
+
+## Phase 3C4B5A Retraining scanner discovery
+
+`RetrainingScannerService` is a **DEVELOPMENT VERIFIED** callable discovery boundary, not a periodic process. A caller supplies one company and a bounded evaluation-period window, with optional material and explicit demand-type filters. The scanner reads persisted Forecast Evaluation evidence, delegates tier derivation to `RetrainingEligibilityService`, and emits deterministic per-scope discovery evidence, counts, duration, and controlled scope errors. It retains caller-owned evaluation watermarks and never persists scanner-owned watermark state.
+
+Tier 0, Tier 1, and Tier 2 scopes create no RetrainingJob. Tier 3 scopes delegate to the existing correction-safe `RetrainingJobService`: the first scan creates the durable candidate, repeated or concurrent scans resolve the same candidate through PostgreSQL uniqueness, and an accepted Actual correction may create a new candidate fingerprint without scanner-specific correction logic. The scanner exposes B4 cooldown/priority evidence only; it never acquires a retraining resource lease. It also never starts RuntimeExecution/RuntimeTask, fits XGBoost, persists ModelArtifact, changes Forecast selection, invokes governance, or mutates Learning. Periodic scanner activation remains **NOT ACTIVE**.
+
+## Phase 3C4B5B Controlled scanner activation
+
+`scan_and_activate` is an explicit operator/caller operation layered beside, not inside, pure scanner discovery. It first runs the same company/period-bounded discovery, obtains B4's persisted deterministic priority order, and delegates each candidate to the existing B2 `RetrainingExecutionService.start` boundary. It does not fit a model or persist an artifact directly. Tier-3 jobs in cooldown are reported as deferred and consume no retraining capacity; capacity-blocked jobs similarly retain their durable candidate without a RuntimeExecution or task. One isolated activation error is returned per scope while later eligible candidates continue according to capacity.
+
+The B2 start operation is the durable resource-ownership handoff: it acquires the PostgreSQL B4 resource lease before RuntimeExecution creation, then the B2/B3 leased worker verifies, heartbeats, recovers, and releases that same lease on terminal work. The scanner activation caller does not hold a process-local slot. Repeated and concurrent activation are idempotent through the existing B1 candidate identity, B4 admission lease, and B2 runtime start guards. This is still not periodic automation: no timer, cron, startup/background loop, evaluation-completion trigger, automatic Champion comparison/promotion, Forecast switching, Learning mutation, or Decision Intelligence is active.
+
+## Phase 3C4B5C1 Periodic scanner scheduler tick safety
+
+`RetrainingScannerSchedulerService` adds a small durable ownership boundary for a future infrastructure scheduler. It contains no timer, cron registration, startup hook, or worker loop; an external scheduler must explicitly call `run_tick` for one company-scoped window and cadence timestamp. `retraining_periodic_tick_v1` derives a SHA-256 identity from company, bounded scan period, policy version, cadence bucket, and optional material/demand scope. PostgreSQL uniqueness and durable running ownership make duplicate or concurrent delivery converge to one effective B5B activation cycle.
+
+Each tick persists its owner, recoverable lease expiry, completion summary, or controlled failure. Completed buckets are idempotent, running buckets reject a concurrent owner, and expired ownership can be reclaimed after a process loss. A failed bucket remains audited and is not retried immediately; restart safety means callers resume a future bucket (or one explicitly selected bounded catch-up), never an unlimited historical replay. The tick service delegates to B5B only and does not itself fit XGBoost, persist artifacts, invoke governance, switch Forecasts, or mutate Learning. Final long-running periodic orchestration remains pending C2.
+
+## Phase 3C4 Selective Retraining orchestration closeout
+
+Selective Retraining Orchestration is **DEVELOPMENT VERIFIED** as a durable, idempotent chain: a company-scoped scheduler tick delegates to B5B activation; B1 creates correction-safe Tier-3 candidates; B4 enforces cooldown, deterministic priority, and PostgreSQL resource capacity; B2/B3 execute the leased worker and persist one immutable Challenger artifact. Repeated or concurrent delivery converges to one effective candidate/runtime/task/fit/artifact, while a subsequent tick alone cannot retrain unchanged evidence.
+
+New accepted evidence is preserved through a distinct candidate fingerprint. Accepted Actual corrections change canonical point/revision provenance and create a new candidate; rejected corrections do not. The B1 fingerprint deliberately excludes `ForecastEvaluation.recalculated_at`: that timestamp is operational refresh metadata, not accepted source evidence, and must not manufacture retraining work. Cooldown retains new candidates without consuming a slot; expiry resumes the same candidate. Capacity-blocked candidates remain durable, ordered by existing B4 priority, and may be activated by a later tick. Scheduler failure is distinct from worker/job failure and neither falsely terminalizes unrelated jobs nor retries immediately.
+
+The repository implements and verifies scheduler logic only. No OS cron, Render scheduled job, deployment timer, startup hook, or always-running scheduler process is configured here. Business Workflow and standalone analysis do not acquire the retraining guard. Automatic Champion comparison, promotion, rollback, production Forecast switching, Learning mutation, and Decision Intelligence remain **NOT ACTIVE**.
+
 ## Phase 3B1 optional Supplier Business Workflow branch
 
 Supplier enrichment is optional at Business Workflow acceptance. The encrypted Dataset must contain valid supplier identities, delivery evidence, and mappings to materials actually present in that Dataset. When absent, the durable workflow remains its original four required tasks. Partially present or invalid supplier evidence is recorded as controlled degradation metadata and is not silently converted into Supplier analysis.
@@ -2845,10 +2901,48 @@ The XGBoost weekly feature builder is **DEVELOPMENT VERIFIED** as a read-only de
 
 # Revision - Phase 3C2B2 XGBoost Challenger training
 
-XGBoost Challenger Training is **DEVELOPMENT VERIFIED** as an explicit, bounded, in-memory service. It consumes `xgboost_weekly_v1` only, performs a deterministic time-ordered holdout, and prohibits future-cutoff leakage. Production Forecast remains unchanged. Automatic retraining, artifact persistence, Champion-Challenger governance, promotion, Decision Intelligence, and Learning Score mutation are **NOT ACTIVE**. The full PostgreSQL Tier-3 trigger remains pending Phase 3C1 verification.
+XGBoost Challenger Training is **DEVELOPMENT VERIFIED** as an explicit, bounded, in-memory service. It consumes `xgboost_weekly_v1` only, performs a deterministic time-ordered holdout, and prohibits future-cutoff leakage. Production Forecast remains unchanged. Automatic retraining, artifact persistence, Champion-Challenger governance, promotion, Decision Intelligence, and Learning Score mutation are **NOT ACTIVE**. The PostgreSQL Tier-3 eligibility and explicit-training boundary are verified.
 
 ---
 
 # Revision - Phase 3C2B3 immutable Challenger model artifacts
 
-Immutable, company-scoped Challenger model artifacts are **VERIFIED**. Native XGBoost UBJ bytes are stored through a controlled storage boundary, with SHA-256 verified before trusted loading. Artifact history is append-only and tenant-isolated. Production Forecast remains unchanged; automatic retraining is **NOT ACTIVE**, Champion-Challenger governance is pending Phase 3C3, and the full PostgreSQL Tier-3 trigger remains pending Phase 3C1 verification.
+Immutable, company-scoped Challenger model artifacts are **VERIFIED**. Native XGBoost UBJ bytes are stored through a controlled storage boundary, with SHA-256 verified before trusted loading. Artifact history is append-only and tenant-isolated. Production Forecast remains unchanged; automatic retraining is **NOT ACTIVE**, Champion-Challenger governance is pending Phase 3C3, and the PostgreSQL Tier-3 eligibility and explicit-training boundary are verified.
+
+---
+
+# Revision - Phase 3C3A Champion--Challenger decision evidence
+
+Champion--Challenger evaluation is **DEVELOPMENT VERIFIED** as an immutable decision-evidence boundary. Champion Forecast Vintage, Effective Timeline, Forecast Evaluation, and Performance History evidence are compared against a trusted, checksum-verified Challenger artifact over the same out-of-sample window. `champion_challenger_policy_v1` uses WAPE as the primary metric with Bias, MAE, RMSE, and sample-strength guardrails. Comparison makes no XGBoost fit and does not activate, promote, or alter production Forecast selection; promotion execution, Learning Score mutation, and Decision Intelligence are **NOT ACTIVE**. The Phase 3C1 PostgreSQL eligibility/explicit-training boundary is verified; automatic triggering remains inactive.
+
+---
+
+# Revision - Phase 3C3B1A Champion Registry foundation
+
+The Champion Registry is **DEVELOPMENT VERIFIED** as a bootstrap-only durable boundary. Its identity is company, material, and demand type; product level/group/class are immutable metadata snapshots. Initial entries represent the existing `demand_forecaster_auto_v1` classical strategy, not a fabricated XGBoost artifact. Champion identities and transitions are immutable, while the scoped current pointer is PostgreSQL-protected for future controlled promotion and rollback. Forecast resolution, promotion, rollback, automatic retraining/promotion, and production XGBoost activation are **NOT ACTIVE**. PHASE 3C1 PostgreSQL verification is complete.
+
+# Revision - Phase 3C3B3A Champion Resolver
+
+Champion Resolver is **DEVELOPMENT VERIFIED** as a read-only resolution boundary. It resolves same-company, material, and demand-type scoped classical or trusted XGBoost Champions; checksum/integrity, binary-missing, schema/version compatibility, and future-training-cutoff failures fall back only to the same-scope historical classical Champion. Fallback does not mutate registry state, model artifacts, Forecast evidence, or Learning state. No-classical scopes fail in a controlled manner, and tenant/demand-type isolation is verified. Production Forecast integration is **NOT ACTIVE**, rollback is pending Phase 3C3B3B, automatic retraining/promotion is **NOT ACTIVE**, and PHASE 3C1 PostgreSQL verification is complete.
+
+---
+
+# Revision - Phase 3C3B2 controlled Challenger promotion
+
+Controlled Challenger promotion is **DEVELOPMENT VERIFIED** as explicit governance state only. An immutable `PROMOTE_CHALLENGER` decision and a trusted same-company artifact may atomically move the PostgreSQL current-pointer under a scoped lock; stale decisions and competing promotions cannot overwrite the winner. Champion entries and transitions remain immutable. Production Forecast activation, Champion resolution, rollback, automatic retraining/promotion, Learning mutation, and Decision Intelligence are **NOT ACTIVE**; PHASE 3C1 PostgreSQL verification is complete.
+
+---
+
+# Revision - Phase 3C3B3B1 production Champion Forecast scope
+
+Production XGBoost Champion Forecast is **DEVELOPMENT VERIFIED**. A normal Business Workflow persists a `current_canonical` Forecast scope with an explicit demand type and derives its cutoff only from canonical accepted Actual evidence. The Forecast task alone resolves the scoped Champion and may invoke trusted XGBoost inference; its RuntimeResultReference and Forecast Vintage preserve the demand type, cutoff, Champion entry, ModelArtifact identity, and checksum provenance. Safety Stock, Supplier, Simulation, and Backtest do not resolve or invoke XGBoost.
+
+`finished_good`, `semi_finished_good`, and `raw_material` production Forecast scopes are verified with explicit demand types; product level never infers demand type. Historical replay remains verified as a durable `replay_snapshot` sourced from a persisted execution, and arbitrary backdating and post-cutoff leakage remain prohibited. XGBoost fitting during production Forecast is zero. Automatic retraining, Challenger training/evaluation, promotion, Learning mutation, and Decision Intelligence are **NOT ACTIVE**. Controlled rollback is pending the next phase, and PHASE 3C1 PostgreSQL verification is complete.
+
+---
+
+# Revision - Phase 3C3B3B2 Controlled Champion Rollback
+
+Controlled Champion Rollback is **DEVELOPMENT VERIFIED** as an explicit governance action. A caller supplies the exact expected current Champion and known destination; PostgreSQL locks the scoped current pointer, validates the destination, writes immutable `ROLLBACK` history, and advances the pointer atomically. Stale, concurrent, corrupt, incompatible, and cross-tenant/material/demand destination requests cannot mutate the pointer.
+
+Rollback affects future Forecast resolution only: historical RuntimeResultReferences and Forecast Vintages remain immutable. A post-rollback Business Workflow resolves the new Champion only in its Forecast task; Safety Stock, Simulation, Supplier, and Backtest do not resolve Champions. Runtime resolver fallback is not rollback and never mutates registry state; an explicit rollback is required for a pointer change. Automatic rollback and automatic retraining/promotion remain **NOT ACTIVE**; PHASE 3C1 PostgreSQL verification is complete.

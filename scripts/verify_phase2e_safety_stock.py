@@ -29,7 +29,7 @@ async def main():
         # Controlled real executor proof, with supplier data deliberately absent.
         request=CapabilityExecutionRequest(uuid7(),'safety_probe','safety_stock',Capability.SAFETY_STOCK,company.id,user.id,dataset.id,60,params={'service_level':{'mode':'automatic'}})
         executor=CapabilityExecutor(lambda c: ComprehensiveSafetyStockOptimizer if c is Capability.SAFETY_STOCK else None,DatasetRuntimeProvider(s),safety_stock_adapter,lambda invoke,timeout:invoke())
-        direct=await executor.execute(request); assert direct.state.value=='completed' and len(direct.result['items'])==2 and all(len(x['candidate_methods'])==6 and x['supplier_enrichment']=='unavailable_unused' for x in direct.result['items'])
+        direct=await executor.execute(request); assert direct.state.value=='completed' and len(direct.result['items'])==2 and all(len(x['candidate_methods'])==6 and x['supplier_enrichment']['status']=='unavailable' and x['lead_time_source']=='dataset_manual' for x in direct.result['items'])
         assert direct.result['items'][0]['safety_stock'] != direct.result['items'][1]['safety_stock']
         # Executor boundary failure proofs: real-engine exception conversion and non-JSON result rejection.
         bad_engine=CapabilityExecutor(lambda c: ComprehensiveSafetyStockOptimizer,lambda r:{'items':[{'material_code':'X','demand_history':[1]*8,'lead_time_days':7,'supplier_enrichment':'unavailable_unused'}]},lambda *args: (_ for _ in ()).throw(RuntimeError('controlled engine exception')),lambda invoke,timeout:invoke())

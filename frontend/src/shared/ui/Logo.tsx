@@ -1,6 +1,12 @@
 // src/shared/ui/Logo.tsx
 import React from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box } from '@mui/material';
+
+// Gerçek asset import'ları
+import logoHorizontalDark from '../../assets/brand/stokonomi-logo-horizontal-dark.png';
+import logoVerticalLight from '../../assets/brand/stokonomi-logo-vertical-light.png';
+import iconLight from '../../assets/brand/stokonomi-icon-light.png';
+import iconDark from '../../assets/brand/stokonomi-icon-dark.png';
 
 interface LogoProps {
   size?: 'small' | 'medium' | 'large';
@@ -10,15 +16,9 @@ interface LogoProps {
 }
 
 const sizeMap = {
-  small: { icon: 28, text: '1.1rem', gap: 1 },
-  medium: { icon: 36, text: '1.5rem', gap: 1.5 },
-  large: { icon: 48, text: '2rem', gap: 2 },
-};
-
-const colorMap = {
-  default: '#0B5ED7',
-  dark: '#0F172A',
-  light: '#FFFFFF',
+  small: { icon: 28, width: 120 },
+  medium: { icon: 36, width: 160 },
+  large: { icon: 48, width: 200 },
 };
 
 export function Logo({
@@ -27,8 +27,19 @@ export function Logo({
   showText = true,
   className = '',
 }: LogoProps) {
-  const { icon: iconSize, text: textSize, gap } = sizeMap[size];
-  const color = colorMap[variant];
+  const { icon: iconSize, width: logoWidth } = sizeMap[size];
+
+  // variant: 'light' → koyu zemin (light/white logo), 'default'/'dark' → açık zemin (dark logo)
+  const isLightBackground = variant === 'light';
+
+  // Asset seçimi: showText true → yatay logo, false → icon
+  const logoSrc = showText
+    ? isLightBackground
+      ? logoHorizontalDark
+      : logoVerticalLight
+    : isLightBackground
+      ? iconLight
+      : iconDark;
 
   return (
     <Box
@@ -36,59 +47,25 @@ export function Logo({
       sx={{
         display: 'flex',
         alignItems: 'center',
-        gap: gap,
         textDecoration: 'none',
       }}
     >
       <Box
         component="img"
-        src="/logo/icon.png"
+        src={logoSrc}
         alt="Stokonomi"
         sx={{
-          width: iconSize,
+          width: showText ? logoWidth : iconSize,
           height: iconSize,
           objectFit: 'contain',
           flexShrink: 0,
+          display: 'block',
         }}
         onError={(e) => {
-          // Logo yoksa placeholder
+          // Asset yüklenemezse görseli gizle, layout korunsun
           e.currentTarget.style.display = 'none';
-          const parent = e.currentTarget.parentElement;
-          if (parent) {
-            const placeholder = document.createElement('div');
-            placeholder.style.cssText = `
-              width: ${iconSize}px;
-              height: ${iconSize}px;
-              background: ${color};
-              border-radius: 8px;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: white;
-              font-weight: 700;
-              font-size: ${iconSize / 2}px;
-              font-family: Inter, sans-serif;
-            `;
-            placeholder.textContent = 'S';
-            parent.appendChild(placeholder);
-          }
         }}
       />
-
-      {showText && (
-        <Typography
-          component="span"
-          sx={{
-            fontWeight: 700,
-            fontSize: textSize,
-            color: color,
-            letterSpacing: '-0.02em',
-            fontFamily: 'Inter, sans-serif',
-          }}
-        >
-          STOKONOMI
-        </Typography>
-      )}
     </Box>
   );
 }

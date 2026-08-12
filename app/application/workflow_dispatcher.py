@@ -25,6 +25,7 @@ from uuid_extensions import uuid7
 from app.application.models.trace_context import TraceContextHolder
 from app.engine.contracts import WorkflowDispatchRequest, WorkflowDispatchResult
 from app.engine.workflow_engine import WorkflowEngine
+from app.application.forecast_scope import ForecastScopeService
 
 logger = logging.getLogger(__name__)
 
@@ -97,13 +98,14 @@ class WorkflowDispatcher:
         )
         
         trace_values = self._trace_values(trace_context)
+        prepared_params=ForecastScopeService().enrich(company_id,params or {})
         request = WorkflowDispatchRequest(
             execution_id=uuid7(),
             company_id=company_id,
             user_id=user_id,
             dataset_id=dataset_id,
             objective_type=objective_type,
-            params=params or {},
+            params=prepared_params,
             **trace_values,
         )
         
@@ -168,6 +170,7 @@ class WorkflowDispatcher:
         )
         
         trace_values = self._trace_values(trace_context)
+        prepared_params=ForecastScopeService().enrich(company_id,params or {},material_codes)
         request = WorkflowDispatchRequest(
             execution_id=uuid7(),
             company_id=company_id,
@@ -175,7 +178,7 @@ class WorkflowDispatcher:
             dataset_id=dataset_id,
             analysis_type=analysis_type,
             material_codes=material_codes,
-            params=params or {},
+            params=prepared_params,
             **trace_values,
         )
         

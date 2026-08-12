@@ -5,6 +5,7 @@ from statistics import pstdev
 from app.models.actuals import ActualWeeklyObservation
 from app.services.dataset.ingestion_policy import validate_demand_type
 from app.services.dataset.weekly_normalization import parse_weekly_period
+from app.application.forecast_vintage_service import canonical_targets
 
 FEATURE_SCHEMA_VERSION='xgboost_weekly_v1'
 FEATURE_NAMES=('lag_1','lag_2','lag_3','lag_4','rolling_mean_4','rolling_std_4','rolling_mean_8','rolling_std_8','week_of_year','seasonal_sin','seasonal_cos','trend_index')
@@ -23,3 +24,9 @@ class XGBoostWeeklyFeatureBuilder:
    X.append((history[-1],history[-2],history[-3],history[-4],sum(last4)/4,pstdev(last4),sum(last8)/8,pstdev(last8),float(week),sin(2*pi*week/53),cos(2*pi*week/53),float(i))) ;y.append(float(row.quantity));periods.append(row.period);ids.append(str(row.id))
   meta=rows[-1] if rows else None
   return XGBoostWeeklyTrainingMatrix(material_code,demand_type,cutoff,FEATURE_SCHEMA_VERSION,FEATURE_NAMES,tuple(X),tuple(y),tuple(periods),meta.product_level if meta else '',meta.product_group if meta else None,meta.product_class if meta else None,tuple(ids))
+ def future_inference(self,company_id,material_code,demand_type,forecast_cutoff_period,forecast_horizon):
+  demand_type=validate_demand_type(demand_type);cutoff=parse_weekly_period(forecast_cutoff_period).period
+  if not isinstance(forecast_horizon,int) or forecast_horizon<1:raise ValueError('forecast_horizon must be positive')
+  rows=sorted((r for r in self.session.query(ActualWeeklyObservation).filter_by(company_id=company_id,material_code=material_code,demand_type=demand_type).all() if parse_weekly_period(r.period).period<=cutoff),key=lambda r:(parse_weekly_period(r.period).year,parse_weekly_period(r.period).week))
+  if len(rows)<8:return None
+  meta=rows[-1];return {'target_periods':tuple(canonical_targets(cutoff,forecast_horizon)),'history':tuple(float(r.quantity) for r in rows),'product_level':meta.product_level,'product_group':meta.product_group,'product_class':meta.product_class,'feature_schema_version':FEATURE_SCHEMA_VERSION,'feature_names':FEATURE_NAMES}

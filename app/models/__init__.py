@@ -59,6 +59,11 @@ from app.models.actuals import ActualWeeklyObservation, ActualWeeklyRevision
 from app.models.forecast_vintage import ForecastVintage, ForecastVintagePoint
 from app.models.forecast_evaluation import ForecastEvaluation, ForecastEvaluationPoint
 from app.models.model_artifact import ModelArtifact
+from app.models.champion_challenger_decision import ChampionChallengerDecision
+from app.models.champion_registry import ChampionRegistryEntry, ChampionRegistryCurrent, ChampionRegistryTransition
+from app.models.retraining_job import RetrainingJob
+from app.models.retraining_resource_lease import RetrainingResourceLease
+from app.models.retraining_scheduler_tick import RetrainingSchedulerTick
 
 # Learning
 from app.models.learning import (
@@ -175,6 +180,9 @@ __all__ = [
     "ForecastVintagePoint",
     "ForecastEvaluation",
     "ForecastEvaluationPoint",
+    "RetrainingJob",
+    "RetrainingResourceLease",
+    "RetrainingSchedulerTick",
     # Learning
     "CompanyLearningMemory",
     "UserLearningData",
@@ -214,4 +222,8 @@ __all__ = [
     # DOCUMENT 06A
     "AIArtifact",
     "ModelArtifact",
+    "ChampionChallengerDecision",
+    "ChampionRegistryEntry",
+    "ChampionRegistryCurrent",
+    "ChampionRegistryTransition",
 ]
