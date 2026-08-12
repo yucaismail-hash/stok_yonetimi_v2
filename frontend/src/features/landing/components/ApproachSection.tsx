@@ -62,18 +62,17 @@ export function ApproachSection() {
     <Box
       id="yaklasim"
       sx={{
-        py: { xs: 8, md: 12 },
+        py: { xs: 8, md: 10 },
         bgcolor: (theme) => theme.palette.background.paper,
       }}
     >
       <Container maxWidth="xl">
-        {/* Section Header */}
         <Box
           sx={{
             textAlign: 'center',
             maxWidth: 720,
             mx: 'auto',
-            mb: { xs: 6, md: 8 },
+            mb: { xs: 6, md: 7 },
           }}
         >
           <Typography
@@ -128,25 +127,23 @@ export function ApproachSection() {
           </Typography>
         </Box>
 
-        {/* Steps - Desktop: Horizontal Timeline */}
-        <Box sx={{ display: { xs: 'none', md: 'block' } }}>
+        <Box sx={{ display: { xs: 'none', md: 'block' }, overflow: 'visible' }}>
           <Box
             sx={{
               display: 'grid',
               gridTemplateColumns: 'repeat(6, 1fr)',
               gap: 2,
               position: 'relative',
+              overflow: 'visible',
             }}
           >
-            {/* Connector Line - centered on icons */}
             <Box
               sx={{
                 position: 'absolute',
-                top: '50%',
-                left: '8.33%',
-                right: '8.33%',
+                top: 28,
+                left: '12.5%',
+                right: '12.5%',
                 height: 2,
-                transform: 'translateY(-50%)',
                 bgcolor: (theme) => theme.palette.divider,
                 zIndex: 0,
               }}
@@ -199,17 +196,17 @@ export function ApproachSection() {
                   sx={{
                     fontWeight: 600,
                     color: (theme) => theme.palette.text.primary,
-                    fontSize: '0.875rem',
-                    mb: 0.5,
+                    fontSize: '0.9rem',
+                    mb: 0.75,
                   }}
                 >
                   {step.title}
                 </Typography>
                 <Typography
-                  variant="caption"
+                  variant="body2"
                   sx={{
                     color: (theme) => theme.palette.text.secondary,
-                    fontSize: '0.7rem',
+                    fontSize: '0.8rem',
                     lineHeight: 1.5,
                     display: 'block',
                     maxWidth: 140,
@@ -223,7 +220,6 @@ export function ApproachSection() {
           </Box>
         </Box>
 
-        {/* Steps - Tablet: 3+2+1 or 3+3 */}
         <Box sx={{ display: { xs: 'none', sm: 'block', md: 'none' } }}>
           <Grid container spacing={4}>
             {steps.map((step, index) => (
@@ -282,7 +278,7 @@ export function ApproachSection() {
                     variant="caption"
                     sx={{
                       color: (theme) => theme.palette.text.secondary,
-                      fontSize: '0.7rem',
+                      fontSize: '0.75rem',
                       lineHeight: 1.5,
                       maxWidth: 180,
                     }}
@@ -295,7 +291,6 @@ export function ApproachSection() {
           </Grid>
         </Box>
 
-        {/* Steps - Mobile: Vertical */}
         <Box sx={{ display: { xs: 'block', sm: 'none' } }}>
           <Stack spacing={3}>
             {steps.map((step, index) => (
@@ -386,14 +381,13 @@ export function ApproachSection() {
           </Stack>
         </Box>
 
-        {/* Bottom Message */}
         <Box
           sx={{
-            mt: { xs: 6, md: 8 },
+            mt: { xs: 6, md: 6 },
             textAlign: 'center',
             maxWidth: 640,
             mx: 'auto',
-            pt: { xs: 4, md: 6 },
+            pt: { xs: 4, md: 5 },
             borderTop: (theme) => `1px solid ${theme.palette.divider}`,
           }}
         >

@@ -7,6 +7,9 @@ import Hero from './components/Hero';
 import ProblemSection from './components/ProblemSection';
 import ApproachSection from './components/ApproachSection';
 import HumanAiSection from './components/HumanAiSection';
+import AcademySection from './components/AcademySection';
+import DevelopmentStatusSection from './components/DevelopmentStatusSection';
+import FinalCtaSection from './components/FinalCtaSection';
 import Footer from './components/Footer';
 
 export default function LandingPage() {
@@ -17,6 +20,9 @@ export default function LandingPage() {
       <ProblemSection />
       <ApproachSection />
       <HumanAiSection />
+      <AcademySection />
+      <DevelopmentStatusSection />
+      <FinalCtaSection />
       <Footer />
     </Box>
   );

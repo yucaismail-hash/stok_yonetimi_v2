@@ -25,6 +25,9 @@ import ProfilePage from './features/profile/ProfilePage';
 import AdminPage from './features/admin/AdminPage';
 import TaskListPage from './features/tasks/TaskListPage';
 
+// ✅ ACADEMY
+import { AcademyPage, ArticlePage } from './features/academy';
+
 import { useAuth } from './hooks/useAuth';
 
 const queryClient = new QueryClient();
@@ -52,6 +55,10 @@ function AppRoutes() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+
+      {/* ✅ Academy Public Routes */}
+      <Route path="/akademi" element={<AcademyPage />} />
+      <Route path="/akademi/:slug" element={<ArticlePage />} />
 
       {/* Private Routes */}
       <Route element={<PrivateRoute />}>

@@ -201,7 +201,10 @@ Each authoritative architecture specification document now contains its bounded 
 | Event Evaluation | PENDING |
 | Learning Integration | PENDING |
 | Forecast Performance History | DERIVED / DEVELOPMENT VERIFIED |
-| Learning Evidence Boundary | DERIVED / DEVELOPMENT VERIFIED |
+| Learning Evidence Boundary | COMPLETE / IMMUTABLE / IDEMPOTENT |
+| Canonical Learning Evidence | IMMUTABLE / IDEMPOTENT / TENANT-SCOPED |
+| Pattern Intelligence Calculation | POSTGRESQL VERIFIED / READ-ONLY |
+| Pattern Learning Memory | DURABLE CURRENT PROJECTION / POSTGRESQL VERIFIED |
 | Performance Source Authority | FORECAST EVALUATION |
 | Sample Strength | EXPLICIT SAMPLE / PERIOD COVERAGE |
 | Historical Learning Score | SNAPSHOT ONLY / NO CAUSAL CLAIM |

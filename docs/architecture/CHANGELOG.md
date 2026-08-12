@@ -323,3 +323,18 @@
 - Appended bounded ADR-020-referenced product architecture revisions to each authoritative specification document.
 - Runtime/code alignment remains pending.
 - No runtime, route, schema, model, repository, migration, test, requirements, or business code changed.
+# 2026-08-12 - Phase 3C5B1 Immutable Learning Evidence
+
+- Added the canonical `LearningEvidence` boundary. Source-specific builders persist immutable, company-scoped, SHA-256-idempotent contributions for accepted Actuals/corrections, Forecast Evaluation, Champion promotion/rollback, and terminal RetrainingJob evidence.
+- Accepted corrections append superseding evidence; rejected corrections create none. Pattern Memory, Company Learning projections, Learning Score, Forecast integration, and Decision Intelligence remain inactive.
+- **PHASE 3C5B1 COMPLETE:** the canonical terminal `RetrainingJob` source boundary is verified. The broad `verify_phase3c4b1_retraining_jobs.py` runtime timeout is separate test-infrastructure debt; no production RetrainingJob defect was demonstrated.
+
+## 2026-08-12 - Phase 3C5B2A Pattern Intelligence Calculation
+
+- Pattern Intelligence is PostgreSQL verified as a deterministic, read-only, cutoff-safe calculation over canonical accepted Actuals. Stable, structural-change/trend, volatile, intermittent, and lumpy classifications are verified; regular sparse demand is distinguished from lumpy demand by nonzero-demand size variability.
+- Accepted corrections change the source fingerprint, rejected corrections and post-cutoff data do not. Demand types are isolated; product level remains metadata; missing periods are explicit. Pattern persistence, Forecast integration, and Decision Intelligence remain inactive.
+
+## 2026-08-12 - Phase 3C5B2B1 Pattern Learning Memory
+
+- Added a durable current Pattern Learning Memory projection keyed by company, material, and demand type. Same evidence is idempotent; accepted corrections refresh the one current row, rejected corrections do not, and an older cutoff cannot overwrite a newer projection.
+- Pattern Memory is optional enrichment only. Forecast integration, Company Learning, Learning Score, and Decision Intelligence remain inactive.

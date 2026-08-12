@@ -15,14 +15,16 @@ import {
 import { alpha } from '@mui/material/styles';
 import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
+import { useNavigate } from 'react-router-dom';
 import { Logo } from '../../../shared/ui';
 
 const navItems = [
-  { label: 'Yaklaşım', href: '#yaklasim' },
-  { label: 'Akademi', href: '#akademi' },
+  { label: 'Yaklaşım', href: '#yaklasim', isRoute: false },
+  { label: 'Akademi', href: '/akademi', isRoute: true },
 ];
 
 export function Navbar() {
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -38,12 +40,17 @@ export function Navbar() {
     setMobileOpen(!mobileOpen);
   };
 
-  const handleNavClick = (href: string) => {
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+  const handleNavClick = (item: { label: string; href: string; isRoute: boolean }) => {
+    if (item.isRoute) {
+      navigate(item.href);
+      setMobileOpen(false);
+    } else {
+      const element = document.querySelector(item.href);
+      if (element) {
+        element.scrollIntoView({ behavior: 'smooth' });
+      }
+      setMobileOpen(false);
     }
-    setMobileOpen(false);
   };
 
   const handleCtaClick = () => {
@@ -73,7 +80,7 @@ export function Navbar() {
         {navItems.map((item) => (
           <ListItemButton
             key={item.label}
-            onClick={() => handleNavClick(item.href)}
+            onClick={() => handleNavClick(item)}
             sx={{
               borderRadius: (theme) => theme.shape.borderRadius,
               '&:hover': {
@@ -147,7 +154,7 @@ export function Navbar() {
                     bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
                   },
                 }}
-                onClick={() => handleNavClick(item.href)}
+                onClick={() => handleNavClick(item)}
               >
                 {item.label}
               </Button>

@@ -46,18 +46,17 @@ export function HumanAiSection() {
     <Box
       id="human-ai"
       sx={{
-        py: { xs: 8, md: 12 },
+        py: { xs: 8, md: 10 },
         bgcolor: (theme) => alpha(theme.palette.primary.main, 0.02),
       }}
     >
       <Container maxWidth="xl">
-        {/* Section Header */}
         <Box
           sx={{
             textAlign: 'center',
             maxWidth: 720,
             mx: 'auto',
-            mb: { xs: 6, md: 8 },
+            mb: { xs: 6, md: 7 },
           }}
         >
           <Typography
@@ -113,14 +112,12 @@ export function HumanAiSection() {
           </Typography>
         </Box>
 
-        {/* Main Content: AI + Decision Support + Human */}
         <Grid container spacing={{ xs: 3, md: 4 }}>
-          {/* STOKONOMI AI */}
           <Grid size={{ xs: 12, md: 5 }}>
             <Paper
               elevation={0}
               sx={{
-                p: { xs: 3, md: 4 },
+                p: { xs: 2.5, sm: 3, md: 4 },
                 height: '100%',
                 borderRadius: (theme) => theme.shape.borderRadius,
                 border: (theme) => `1px solid ${theme.palette.divider}`,
@@ -129,14 +126,13 @@ export function HumanAiSection() {
                 flexDirection: 'column',
               }}
             >
-              {/* Header - centered */}
               <Box
                 sx={{
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  mb: 3,
-                  minHeight: 72,
+                  mb: { xs: 2, sm: 3, md: 3 },
+                  minHeight: { xs: 60, sm: 72, md: 72 },
                 }}
               >
                 <Box
@@ -144,22 +140,22 @@ export function HumanAiSection() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: 44,
-                    height: 44,
+                    width: { xs: 36, sm: 44, md: 44 },
+                    height: { xs: 36, sm: 44, md: 44 },
                     borderRadius: 2,
                     bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
                     color: (theme) => theme.palette.primary.main,
                     mb: 1,
                   }}
                 >
-                  <AnalyticsIcon />
+                  <AnalyticsIcon sx={{ fontSize: { xs: 18, sm: 22, md: 22 } }} />
                 </Box>
                 <Typography
                   variant="h6"
                   sx={{
                     fontWeight: 600,
                     color: (theme) => theme.palette.text.primary,
-                    fontSize: '1.1rem',
+                    fontSize: { xs: '1rem', sm: '1.1rem', md: '1.1rem' },
                     textAlign: 'center',
                   }}
                 >
@@ -167,13 +163,16 @@ export function HumanAiSection() {
                 </Typography>
               </Box>
 
-              {/* Capabilities - Grid layout */}
               <Box
                 sx={{
                   flex: 1,
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr 1fr', md: '1fr 1fr 1fr' },
-                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: '1fr 1fr',
+                    sm: '1fr 1fr 1fr',
+                    md: '1fr 1fr 1fr',
+                  },
+                  gap: { xs: 1.5, sm: 2, md: 2 },
                 }}
               >
                 {aiCapabilities.map((item) => (
@@ -184,8 +183,8 @@ export function HumanAiSection() {
                       flexDirection: 'column',
                       alignItems: 'center',
                       textAlign: 'center',
-                      minHeight: 90,
-                      p: 1,
+                      minHeight: { xs: 75, sm: 90, md: 90 },
+                      p: { xs: 1, sm: 1.5, md: 1.5 },
                     }}
                   >
                     <Box
@@ -193,8 +192,8 @@ export function HumanAiSection() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: 36,
-                        height: 36,
+                        width: { xs: 32, sm: 36, md: 36 },
+                        height: { xs: 32, sm: 36, md: 36 },
                         borderRadius: '50%',
                         bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
                         color: (theme) => theme.palette.primary.main,
@@ -202,14 +201,14 @@ export function HumanAiSection() {
                         flexShrink: 0,
                       }}
                     >
-                      <item.icon sx={{ fontSize: 18 }} />
+                      <item.icon sx={{ fontSize: { xs: 16, sm: 18, md: 18 } }} />
                     </Box>
                     <Typography
-                      variant="caption"
+                      variant="body2"
                       sx={{
                         color: (theme) => theme.palette.text.primary,
                         fontWeight: 500,
-                        fontSize: '0.75rem',
+                        fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.8rem' },
                         lineHeight: 1.4,
                       }}
                     >
@@ -221,7 +220,6 @@ export function HumanAiSection() {
             </Paper>
           </Grid>
 
-          {/* Karar Desteği - Center Connector */}
           <Grid
             size={{ xs: 12, md: 2 }}
             sx={{
@@ -236,16 +234,16 @@ export function HumanAiSection() {
                 flexDirection: { xs: 'row', md: 'column' },
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: { xs: 1.5, md: 1.5 },
-                py: { xs: 2, md: 0 },
-                px: { xs: 0, md: 1 },
+                gap: { xs: 1, sm: 1, md: 1.5 },
+                py: { xs: 1.5, sm: 1.5, md: 0 },
+                px: { xs: 0, sm: 0, md: 1 },
                 width: '100%',
               }}
             >
               <Box
                 sx={{
-                  width: { xs: '80px', md: '2px' },
-                  height: { xs: '2px', md: '60px' },
+                  width: { xs: '60px', sm: '60px', md: '2px' },
+                  height: { xs: '2px', sm: '2px', md: '40px' },
                   bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
                 }}
               />
@@ -254,8 +252,8 @@ export function HumanAiSection() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  width: 48,
-                  height: 48,
+                  width: { xs: 40, sm: 44, md: 48 },
+                  height: { xs: 40, sm: 44, md: 48 },
                   borderRadius: '50%',
                   bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
                   border: (theme) =>
@@ -264,14 +262,14 @@ export function HumanAiSection() {
                   flexShrink: 0,
                 }}
               >
-                <PsychologyIcon />
+                <PsychologyIcon sx={{ fontSize: { xs: 20, sm: 22, md: 24 } }} />
               </Box>
               <Typography
                 variant="caption"
                 sx={{
                   color: (theme) => theme.palette.primary.main,
                   fontWeight: 600,
-                  fontSize: '0.7rem',
+                  fontSize: { xs: '0.6rem', sm: '0.65rem', md: '0.7rem' },
                   letterSpacing: '0.5px',
                   textTransform: 'uppercase',
                   textAlign: 'center',
@@ -283,20 +281,19 @@ export function HumanAiSection() {
               </Typography>
               <Box
                 sx={{
-                  width: { xs: '80px', md: '2px' },
-                  height: { xs: '2px', md: '60px' },
+                  width: { xs: '60px', sm: '60px', md: '2px' },
+                  height: { xs: '2px', sm: '2px', md: '40px' },
                   bgcolor: (theme) => alpha(theme.palette.primary.main, 0.15),
                 }}
               />
             </Box>
           </Grid>
 
-          {/* KARAR VERİCİ */}
           <Grid size={{ xs: 12, md: 5 }}>
             <Paper
               elevation={0}
               sx={{
-                p: { xs: 3, md: 4 },
+                p: { xs: 2.5, sm: 3, md: 4 },
                 height: '100%',
                 borderRadius: (theme) => theme.shape.borderRadius,
                 border: (theme) => `1px solid ${theme.palette.divider}`,
@@ -305,14 +302,13 @@ export function HumanAiSection() {
                 flexDirection: 'column',
               }}
             >
-              {/* Header - centered */}
               <Box
                 sx={{
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  mb: 3,
-                  minHeight: 72,
+                  mb: { xs: 2, sm: 3, md: 3 },
+                  minHeight: { xs: 60, sm: 72, md: 72 },
                 }}
               >
                 <Box
@@ -320,22 +316,22 @@ export function HumanAiSection() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    width: 44,
-                    height: 44,
+                    width: { xs: 36, sm: 44, md: 44 },
+                    height: { xs: 36, sm: 44, md: 44 },
                     borderRadius: 2,
                     bgcolor: (theme) => alpha(theme.palette.success.main, 0.08),
                     color: (theme) => theme.palette.success.main,
                     mb: 1,
                   }}
                 >
-                  <PersonIcon />
+                  <PersonIcon sx={{ fontSize: { xs: 18, sm: 22, md: 22 } }} />
                 </Box>
                 <Typography
                   variant="h6"
                   sx={{
                     fontWeight: 600,
                     color: (theme) => theme.palette.text.primary,
-                    fontSize: '1.1rem',
+                    fontSize: { xs: '1rem', sm: '1.1rem', md: '1.1rem' },
                     textAlign: 'center',
                   }}
                 >
@@ -343,13 +339,16 @@ export function HumanAiSection() {
                 </Typography>
               </Box>
 
-              {/* Capabilities - Grid layout */}
               <Box
                 sx={{
                   flex: 1,
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr 1fr', md: '1fr 1fr' },
-                  gap: 2,
+                  gridTemplateColumns: {
+                    xs: '1fr 1fr',
+                    sm: '1fr 1fr',
+                    md: '1fr 1fr',
+                  },
+                  gap: { xs: 1.5, sm: 2, md: 2 },
                 }}
               >
                 {humanCapabilities.map((item) => (
@@ -360,8 +359,8 @@ export function HumanAiSection() {
                       flexDirection: 'column',
                       alignItems: 'center',
                       textAlign: 'center',
-                      minHeight: 90,
-                      p: 1,
+                      minHeight: { xs: 75, sm: 90, md: 90 },
+                      p: { xs: 1, sm: 1.5, md: 1.5 },
                     }}
                   >
                     <Box
@@ -369,8 +368,8 @@ export function HumanAiSection() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: 36,
-                        height: 36,
+                        width: { xs: 32, sm: 36, md: 36 },
+                        height: { xs: 32, sm: 36, md: 36 },
                         borderRadius: '50%',
                         bgcolor: (theme) => alpha(theme.palette.success.main, 0.06),
                         color: (theme) => theme.palette.success.main,
@@ -378,14 +377,14 @@ export function HumanAiSection() {
                         flexShrink: 0,
                       }}
                     >
-                      <item.icon sx={{ fontSize: 18 }} />
+                      <item.icon sx={{ fontSize: { xs: 16, sm: 18, md: 18 } }} />
                     </Box>
                     <Typography
-                      variant="caption"
+                      variant="body2"
                       sx={{
                         color: (theme) => theme.palette.text.primary,
                         fontWeight: 500,
-                        fontSize: '0.75rem',
+                        fontSize: { xs: '0.75rem', sm: '0.8rem', md: '0.8rem' },
                         lineHeight: 1.4,
                       }}
                     >
@@ -398,14 +397,13 @@ export function HumanAiSection() {
           </Grid>
         </Grid>
 
-        {/* Core Statement */}
         <Box
           sx={{
-            mt: { xs: 6, md: 8 },
+            mt: { xs: 6, md: 6 },
             textAlign: 'center',
             maxWidth: 680,
             mx: 'auto',
-            pt: { xs: 4, md: 6 },
+            pt: { xs: 4, md: 5 },
             borderTop: (theme) => `1px solid ${theme.palette.divider}`,
           }}
         >
@@ -436,7 +434,6 @@ export function HumanAiSection() {
           </Typography>
         </Box>
 
-        {/* Explainability Section */}
         <Box
           sx={{
             mt: { xs: 5, md: 6 },

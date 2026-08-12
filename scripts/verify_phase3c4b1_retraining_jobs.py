@@ -2,13 +2,16 @@
 
 import asyncio
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+print("[B1] module imports START", flush=True)
 
 import xgboost
+print("[B1] xgboost import END", flush=True)
 
 from app.application.actual_weekly_ledger import ActualWeeklyLedgerService
 from app.application.forecast_evaluation_service import ForecastEvaluationService
@@ -25,6 +28,7 @@ from app.models.model_artifact import ModelArtifact
 from app.models.retraining_job import RetrainingJob
 from app.models.runtime import RuntimeExecution, RuntimeResultReference, RuntimeTask, RuntimeTaskAttempt
 from scripts.support.retraining_eligibility_fixture import cleanup_fixture, create_tier_shape
+print("[B1] module imports END", flush=True)
 
 
 def _eligibility(fixture, watermark=None):
@@ -104,6 +108,14 @@ async def main():
     fit_calls = {"count": 0}
     xgboost.XGBRegressor.fit = lambda *args, **kwargs: (fit_calls.__setitem__("count", fit_calls["count"] + 1), original_fit(*args, **kwargs))[1]
     try:
+        stage = time.perf_counter()
+        def mark(name):
+            nonlocal stage
+            now = time.perf_counter()
+            print(f"[B1] {name} END duration_seconds={now-stage:.2f}", flush=True)
+            stage = now
+            print(f"[B1] {name} NEXT", flush=True)
+        print("[B1] fixture setup START", flush=True)
         tier3_x_sales = await create_tier_shape("tier3", 8, "MATERIAL_X", "sales")
         roots.append(tier3_x_sales)
         context = {name: tier3_x_sales[name] for name in ("company_id", "user_id", "dataset_id")}
@@ -114,6 +126,7 @@ async def main():
         tier2 = await create_tier_shape("tier2", 8, "TIER2", "sales", context=context)
         tier3_other_company = await create_tier_shape("tier3", 8, "MATERIAL_X", "sales")
         roots.append(tier3_other_company)
+        mark("fixture setup")
 
         service = RetrainingJobService()
         before_initial_jobs = _upstream_counts(tier3_x_sales["company_id"])
@@ -122,6 +135,7 @@ async def main():
         repeat = service.accept_candidate(_request(tier3_x_sales, first_evidence))
         assert (first.status, repeat.status, first.job_id, repeat.job_id) == ("CREATED", "ALREADY_EXISTS", first.job_id, first.job_id)
         assert first.candidate_fingerprint == repeat.candidate_fingerprint
+        mark("first and duplicate acceptance")
 
         t1 = _eligibility(tier1_stable)
         t0 = _eligibility(tier1_stable, t1.latest_evaluation_id)
@@ -130,6 +144,7 @@ async def main():
         assert [service.accept_candidate(_request(tier1_stable, item)).status for item in (t0, t1)] == ["NOT_ELIGIBLE", "NOT_ELIGIBLE"]
         assert service.accept_candidate(_request(tier2, t2)).status == "NOT_ELIGIBLE"
         assert before_initial_jobs == _upstream_counts(tier3_x_sales["company_id"])
+        mark("tier guard assertions")
 
         _approved_correction(tier3_x_sales, 220)
         corrected_evidence = _eligibility(tier3_x_sales)
@@ -138,11 +153,13 @@ async def main():
         assert corrected.status == "CREATED" and corrected.job_id != first.job_id
         assert corrected.candidate_fingerprint != first.candidate_fingerprint
         assert corrected.evaluation_evidence_fingerprint != first.evaluation_evidence_fingerprint
+        mark("accepted correction fingerprint")
 
         different_material = service.accept_candidate(_request(tier3_y_sales, _eligibility(tier3_y_sales)))
         different_demand = service.accept_candidate(_request(tier3_x_consumption, _eligibility(tier3_x_consumption)))
         different_company = service.accept_candidate(_request(tier3_other_company, _eligibility(tier3_other_company)))
         assert [row.status for row in (different_material, different_demand, different_company)] == ["CREATED", "CREATED", "CREATED"]
+        mark("scope isolation")
 
         barrier = threading.Barrier(2)
         race_request = _request(tier3_race, _eligibility(tier3_race))
@@ -167,12 +184,15 @@ async def main():
         assert fit_calls["count"] == 0
         fresh = RetrainingJobService().get(tier3_x_sales["company_id"], corrected.job_id)
         assert fresh is not None and fresh.candidate_fingerprint == corrected.candidate_fingerprint and fresh.evaluation_evidence_fingerprint == corrected.evaluation_evidence_fingerprint
+        mark("concurrency and fresh session")
         print("PHASE3C4B1 PASS", {
             "created_jobs_company_a": 5, "same_evidence": repeat.status,
             "correction_fingerprint_changed": True, "concurrency": sorted(row.status for row in outcomes),
             "cross_tenant": "NOT_FOUND", "fit_calls": fit_calls["count"], "upstream_counts": after,
         })
     finally:
+        cleanup_started = time.perf_counter()
+        print("[B1] cleanup START", flush=True)
         xgboost.XGBRegressor.fit = original_fit
         company_ids = {root["company_id"] for root in roots}
         for root in roots:
@@ -182,6 +202,7 @@ async def main():
             assert session.query(Company).filter(Company.id.in_(company_ids)).count() == 0, "synthetic company residue remains"
         finally:
             session.close()
+        print(f"[B1] cleanup END duration_seconds={time.perf_counter()-cleanup_started:.2f}", flush=True)
 
 
 if __name__ == "__main__":

@@ -22,13 +22,14 @@ export function Footer() {
   return (
     <Box
       sx={{
-        bgcolor: (theme) => theme.palette.text.primary,
-        py: { xs: 6, md: 8 },
+        bgcolor: '#0A0F1A',
+        py: { xs: 6, md: 7 },
+        borderTop: (theme) =>
+          `1px solid ${alpha(theme.palette.common.white, 0.06)}`,
       }}
     >
       <Container maxWidth="xl">
         <Grid container spacing={{ xs: 4, md: 6 }}>
-          {/* Logo ve Açıklama */}
           <Grid size={{ xs: 12, md: 5 }}>
             <Logo variant="light" size="medium" />
             <Typography
@@ -45,7 +46,6 @@ export function Footer() {
             </Typography>
           </Grid>
 
-          {/* Linkler */}
           <Grid size={{ xs: 12, md: 4 }}>
             <Stack spacing={1.5}>
               {footerLinks.map((item) => (
@@ -69,7 +69,6 @@ export function Footer() {
             </Stack>
           </Grid>
 
-          {/* LinkedIn Placeholder */}
           <Grid size={{ xs: 12, md: 3 }}>
             <Typography
               variant="caption"

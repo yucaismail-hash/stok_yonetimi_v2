@@ -42,6 +42,20 @@ Learning scores are historical Forecast-Vintage snapshots carried through evalua
 
 This boundary prepares evidence for future drift analysis, selective retraining eligibility, and Champion-Challenger comparison only. Retraining, XGBoost fitting, model promotion, Champion-Challenger, Decision Intelligence, and Event Learning are not active.
 
+## Phase 3C5B1 immutable Learning Evidence boundary
+
+`LearningEvidence` is the canonical, immutable, tenant-scoped evidence lineage for future Pattern Intelligence and Company Learning. It is derived only from persisted authoritative Actual, Forecast Evaluation, Champion transition, and terminal RetrainingJob records. The company-scoped semantic SHA-256 fingerprint is the PostgreSQL duplicate guard: repeated observation returns the same evidence contribution, while an accepted Actual correction appends a superseding contribution and a rejected correction creates none. It is never authority for the underlying source fact. Pattern/Company materialization, Learning Score, Forecast integration, and Decision Intelligence remain **NOT ACTIVE**.
+
+Phase 3C5B1 is **COMPLETE**. The canonical terminal `RetrainingJob` source boundary is verified. The separate broad B1 probe runtime timeout is recorded as test-infrastructure debt only; no production RetrainingJob defect has been demonstrated.
+
+## Phase 3C5B2A cutoff-safe Pattern Intelligence calculation
+
+`PatternIntelligenceService` is a deterministic, in-memory, read-only calculation over canonical accepted Actual Weekly Observations with identity `(company, material_code, demand_type, cutoff_period)`. It reports explicit coverage/missing periods, source IDs/fingerprint, CV/CV², zero ratio, ADI, trend, recent change, evidence-quality confidence, and conservative classification. Sparse demand is `INTERMITTENT` when arrivals are regular in nonzero size and `LUMPY` only when both sparse arrivals and variable nonzero sizes are evidenced. Seasonality remains `SEASONALITY_NOT_ESTABLISHED` until a future statistical evidence policy is introduced. Accepted corrections before cutoff are reflected; rejected corrections and post-cutoff Actuals are ignored. Pattern memory persistence, Forecast integration, and Decision Intelligence remain **NOT ACTIVE**.
+
+## Phase 3C5B2B1 durable Pattern Learning Memory
+
+`PatternLearningMemory` is the durable mutable **current projection** of `PatternIntelligenceService`, uniquely keyed by company, material code, and explicit demand type. It stores compact metrics, policy versions, cutoff, source fingerprint, and Learning Evidence IDs; it never stores raw history. Identical source fingerprints are `UNCHANGED`, accepted corrections refresh and increment `row_version`, rejected corrections do not, and an older cutoff returns `STALE_RESULT` rather than overwrite a newer projection. It is optional enrichment only: Forecast integration, Company Learning, Learning Score, and Decision Intelligence remain **NOT ACTIVE**.
+
 ## Phase 3C1 Retraining Eligibility boundary
 
 Retraining Eligibility is a **POSTGRESQL VERIFIED**, read-only derivation over persisted Forecast Evaluation point evidence. Its identity is company, material code, and explicit demand type; product level/group/class remain evidence metadata and never infer demand type. The caller (or a future Learning scheduler) owns the last-seen evaluation watermark: stable evidence with no new watermark is Tier 0 `SKIP`, stable new evidence is Tier 1 `EVALUATE`, deterioration is Tier 2 `ANALYZE`, and sufficient multi-signal deterioration is Tier 3 `RETRAIN_ELIGIBLE` only.

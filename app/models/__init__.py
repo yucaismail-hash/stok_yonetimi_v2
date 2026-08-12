@@ -64,6 +64,8 @@ from app.models.champion_registry import ChampionRegistryEntry, ChampionRegistry
 from app.models.retraining_job import RetrainingJob
 from app.models.retraining_resource_lease import RetrainingResourceLease
 from app.models.retraining_scheduler_tick import RetrainingSchedulerTick
+from app.models.learning_evidence import LearningEvidence
+from app.models.pattern_learning_memory import PatternLearningMemory
 
 # Learning
 from app.models.learning import (

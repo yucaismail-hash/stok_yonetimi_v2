@@ -1,4 +1,4 @@
-// src/features/landing/components/ProblemSection.tsx
+// src/features/landing/components/AcademySection.tsx
 import React from 'react';
 import {
   Box,
@@ -6,66 +6,63 @@ import {
   Typography,
   Grid,
   Paper,
+  Chip,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import {
-  Inventory as InventoryIcon,
-  Warning as WarningIcon,
+  School as SchoolIcon,
+  Security as SecurityIcon,
   Timeline as TimelineIcon,
-  LocalShipping as LocalShippingIcon,
+  Analytics as AnalyticsIcon,
 } from '@mui/icons-material';
 
-const problems = [
+const topics = [
   {
-    icon: InventoryIcon,
-    title: 'Fazla Stok',
+    icon: SchoolIcon,
+    category: 'Temel Kavramlar',
+    title: 'Stok Yönetimi Nedir?',
     description:
-      'İhtiyacın üzerinde stok; sermayeyi bağlar, depolama maliyetini artırır ve eskime riskini büyütür.',
+      'Stok yönetiminin temel amaçlarını, maliyet ve hizmet seviyesi dengesiyle birlikte ele alın.',
   },
   {
-    icon: WarningIcon,
-    title: 'Stok Yetersizliği',
+    icon: SecurityIcon,
+    category: 'Emniyet Stoku',
+    title: 'Emniyet Stoku Nedir?',
     description:
-      'Yetersiz stok; satış kaybına, üretim kesintisine ve hizmet seviyesinin düşmesine neden olabilir.',
+      'Talep ve tedarik belirsizliğine karşı emniyet stokunun neden gerekli olduğunu öğrenin.',
   },
   {
     icon: TimelineIcon,
-    title: 'Tahmin Belirsizliği',
+    category: 'Operasyon',
+    title: 'Yeniden Sipariş Noktası (ROP)',
     description:
-      'Talep geçmişteki davranışı her zaman tekrar etmez. Trend, dönemsel hareketler ve beklenmeyen değişimler tahmini zorlaştırır.',
+      'Ne zaman sipariş verilmesi gerektiğini belirleyen temel yaklaşımı örneklerle inceleyin.',
   },
   {
-    icon: LocalShippingIcon,
-    title: 'Tedarik Belirsizliği',
+    icon: AnalyticsIcon,
+    category: 'Tahmin',
+    title: 'Talep Tahmini Nedir?',
     description:
-      'Termin süreleri ve tedarikçi performansı değiştikçe doğru zamanda doğru miktarı bulundurmak zorlaşır.',
+      'Geçmiş veriden gelecekteki talebi tahmin etmenin temel mantığını ve sınırlarını keşfedin.',
   },
 ];
 
-export function ProblemSection() {
+export function AcademySection() {
   return (
     <Box
-      id="problem"
+      id="akademi"
       sx={{
-        py: { xs: 8, md: 12 },
+        py: { xs: 8, md: 10 },
         bgcolor: (theme) => theme.palette.background.default,
       }}
     >
-      <Container
-        maxWidth={false}
-        sx={{
-          maxWidth: 1200,
-          mx: 'auto',
-          px: { xs: 2, md: 3 },
-        }}
-      >
-        {/* Section Header */}
+      <Container maxWidth="xl">
         <Box
           sx={{
             textAlign: 'center',
-            maxWidth: 800,
+            maxWidth: 760,
             mx: 'auto',
-            mb: { xs: 6, md: 8 },
+            mb: { xs: 6, md: 6 },
           }}
         >
           <Typography
@@ -78,7 +75,7 @@ export function ProblemSection() {
               mb: 1,
             }}
           >
-            PROBLEM
+            STOKONOMİ AKADEMİ
           </Typography>
           <Typography
             variant="h2"
@@ -89,7 +86,7 @@ export function ProblemSection() {
               fontSize: { xs: '2rem', sm: '2.5rem', md: '3rem' },
             }}
           >
-            Stok probleminin merkezinde
+            Stok yönetimini
             <br />
             <Box
               component="span"
@@ -100,36 +97,69 @@ export function ProblemSection() {
                 WebkitTextFillColor: 'transparent',
               }}
             >
-              belirsizlik var.
+              daha anlaşılır
             </Box>
+            <br />
+            hale getiriyoruz.
           </Typography>
           <Typography
             variant="body1"
             sx={{
               color: (theme) => theme.palette.text.secondary,
-              maxWidth: 720,
+              maxWidth: 660,
               mx: 'auto',
               lineHeight: 1.8,
               fontSize: { xs: '0.95rem', md: '1.05rem' },
             }}
           >
-            Talep, tedarik süresi ve operasyon koşulları sürekli değişirken,
-            stok kararlarını yalnızca geçmiş ortalamalara göre vermek
-            işletmeleri iki temel risk arasında bırakır:
-            fazla stok ve stok yetersizliği.
+            Stokonomi Akademi; stok yönetimi, talep tahmini,
+            emniyet stoku ve karar destek süreçlerini
+            açık, uygulanabilir ve örneklerle anlatan bilgi merkezidir.
           </Typography>
+
+          <Box
+            sx={{
+              mt: 3,
+              pt: 3,
+              borderTop: (theme) => `1px solid ${theme.palette.divider}`,
+            }}
+          >
+            <Typography
+              variant="subtitle2"
+              sx={{
+                fontWeight: 600,
+                color: (theme) => theme.palette.text.primary,
+                fontSize: '1rem',
+                mb: 0.5,
+              }}
+            >
+              Bilgi, daha iyi kararların başlangıcıdır.
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                color: (theme) => theme.palette.text.secondary,
+                fontSize: '0.875rem',
+                lineHeight: 1.6,
+                maxWidth: 580,
+                mx: 'auto',
+              }}
+            >
+              Temel kavramlardan ileri analiz yöntemlerine kadar,
+              stok yönetimini sahadaki gerçek sorular üzerinden ele alıyoruz.
+            </Typography>
+          </Box>
         </Box>
 
-        {/* Problem Cards - 2x2 Grid */}
         <Grid container spacing={3}>
-          {problems.map((problem, index) => (
-            <Grid size={{ xs: 12, sm: 6, md: 6, lg: 6 }} key={index}>
+          {topics.map((topic, index) => (
+            <Grid size={{ xs: 12, sm: 6, md: 6, lg: 3 }} key={index}>
               <Paper
                 elevation={0}
                 sx={{
                   p: { xs: 2.5, md: 3.5 },
                   height: '100%',
-                  minHeight: 190,
+                  minHeight: 210,
                   display: 'flex',
                   flexDirection: 'column',
                   borderRadius: (theme) => theme.shape.borderRadius,
@@ -144,12 +174,29 @@ export function ProblemSection() {
                   },
                 }}
               >
-                {/* Header: Icon + Title in row */}
+                <Chip
+                  label={topic.category}
+                  size="small"
+                  sx={{
+                    alignSelf: 'flex-start',
+                    mb: 2,
+                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
+                    color: (theme) => theme.palette.primary.main,
+                    fontWeight: 500,
+                    fontSize: '0.65rem',
+                    borderRadius: 2,
+                    height: 24,
+                    '& .MuiChip-label': {
+                      px: 1.5,
+                    },
+                  }}
+                />
+
                 <Box
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 2,
+                    gap: 1.5,
                     mb: 1.5,
                   }}
                 >
@@ -158,30 +205,29 @@ export function ProblemSection() {
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      width: 44,
-                      height: 44,
+                      width: 36,
+                      height: 36,
                       borderRadius: 2,
-                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.08),
+                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
                       color: (theme) => theme.palette.primary.main,
                       flexShrink: 0,
                     }}
                   >
-                    <problem.icon sx={{ fontSize: 22 }} />
+                    <topic.icon sx={{ fontSize: 20 }} />
                   </Box>
                   <Typography
                     variant="h6"
                     sx={{
                       fontWeight: 600,
                       color: (theme) => theme.palette.text.primary,
-                      fontSize: '1rem',
+                      fontSize: '0.95rem',
                       lineHeight: 1.3,
                     }}
                   >
-                    {problem.title}
+                    {topic.title}
                   </Typography>
                 </Box>
 
-                {/* Description */}
                 <Typography
                   variant="body2"
                   sx={{
@@ -189,48 +235,46 @@ export function ProblemSection() {
                     lineHeight: 1.7,
                     fontSize: '0.875rem',
                     flex: 1,
-                    width: '100%',
                   }}
                 >
-                  {problem.description}
+                  {topic.description}
                 </Typography>
               </Paper>
             </Grid>
           ))}
         </Grid>
 
-        {/* Bottom Message */}
         <Box
           sx={{
-            mt: { xs: 6, md: 8 },
+            mt: { xs: 6, md: 6 },
             textAlign: 'center',
-            maxWidth: 680,
-            mx: 'auto',
-            pt: { xs: 4, md: 6 },
-            borderTop: (theme) => `1px solid ${theme.palette.divider}`,
           }}
         >
-          <Typography
-            variant="h5"
+          <Chip
+            label="İlk içerikler hazırlanıyor"
             sx={{
-              fontWeight: 600,
-              color: (theme) => theme.palette.text.primary,
-              mb: 1.5,
-              fontSize: { xs: '1.25rem', md: '1.5rem' },
-            }}
-          >
-            Bu nedenle stok yönetimi yalnızca bir hesaplama problemi değildir.
-          </Typography>
-          <Typography
-            variant="body1"
-            sx={{
+              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
               color: (theme) => theme.palette.text.secondary,
-              lineHeight: 1.8,
-              fontSize: { xs: '0.95rem', md: '1.05rem' },
+              fontWeight: 500,
+              fontSize: '0.8rem',
+              borderRadius: (theme) => theme.shape.borderRadius,
+              height: 36,
+              '& .MuiChip-label': {
+                px: 2.5,
+              },
+            }}
+          />
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              mt: 1.5,
+              color: (theme) => theme.palette.text.secondary,
+              fontSize: '0.75rem',
+              opacity: 0.6,
             }}
           >
-            Belirsizliği ölçmek, senaryoları sınamak ve kararları
-            veriye dayandırmak gerekir.
+            Akademi içerikleri yakında yayında
           </Typography>
         </Box>
       </Container>
@@ -238,4 +282,4 @@ export function ProblemSection() {
   );
 }
 
-export default ProblemSection;
+export default AcademySection;

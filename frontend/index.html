@@ -3,62 +3,95 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
+
     <!-- ✅ SEO Meta Etiketler -->
-    <title>Stokonomi - Stok Yönetim Sistemi</title>
-    <meta name="description" content="Stokonomi ile stok yönetimini optimize edin, talep tahmini yapın, emniyet stoku hesaplayın ve tedarik zincirinizi yönetin." />
-    <meta name="keywords" content="stok yönetimi, talep tahmini, emniyet stoku, tedarik zinciri, envanter optimizasyonu, stokonomi" />
+    <title>Stokonomi | Yapay Zekâ Destekli Stok ve Karar Destek Platformu</title>
+    <meta
+      name="description"
+      content="Stokonomi; stok optimizasyonu, talep tahmini, simülasyon ve doğrulama süreçlerini bir araya getiren yapay zekâ destekli karar destek platformudur."
+    />
     <meta name="robots" content="index, follow" />
-    <link rel="canonical" href="https://stokonomi.com" />
-    
+    <link rel="canonical" href="https://stokonomi.com/" />
+
     <!-- ✅ Open Graph / Social Media -->
-    <meta property="og:title" content="Stokonomi - Stok Yönetim Sistemi" />
-    <meta property="og:description" content="Stokonomi ile stok yönetimini optimize edin, talep tahmini yapın, emniyet stoku hesaplayın ve tedarik zincirinizi yönetin." />
     <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://stokonomi.com" />
-    <meta property="og:image" content="/logo/logo.png" />
-    
+    <meta property="og:url" content="https://stokonomi.com/" />
+    <meta
+      property="og:title"
+      content="İşletmeler stok değil, belirsizlik yönetiyor. | Stokonomi"
+    />
+    <meta
+      property="og:description"
+      content="Yapay zekâ destekli stok optimizasyonu, talep tahmini ve karar desteği için geliştirilen Stokonomi'yi keşfedin."
+    />
+    <meta property="og:site_name" content="Stokonomi" />
+    <meta property="og:locale" content="tr_TR" />
+
+    <!-- ✅ Open Graph Image -->
+    <meta property="og:image" content="https://stokonomi.com/og/stokonomi-og.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Stokonomi - İşletmeler stok değil, belirsizlik yönetiyor."
+    />
+    <meta property="og:image:type" content="image/png" />
+
     <!-- ✅ Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Stokonomi - Stok Yönetim Sistemi" />
-    <meta name="twitter:description" content="Stokonomi ile stok yönetimini optimize edin." />
-    <meta name="twitter:image" content="/logo/logo.png" />
-    
-    <!-- ✅ Schema.org / JSON-LD -->
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Stokonomi",
-        "description": "Stok Yönetim ve Optimizasyon Sistemi",
-        "applicationCategory": "BusinessApplication",
-        "operatingSystem": "Web",
-        "offers": {
-          "@type": "Offer",
-          "price": "0",
-          "priceCurrency": "TRY"
-        }
-      }
-    </script>
-    
-    <!-- ✅ Cache Kontrolü -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-    <meta http-equiv="Pragma" content="no-cache" />
-    <meta http-equiv="Expires" content="0" />
-    
-    <!-- ✅ Favicon'lar (Logo klasöründen) -->
+    <meta
+      name="twitter:title"
+      content="İşletmeler stok değil, belirsizlik yönetiyor. | Stokonomi"
+    />
+    <meta
+      name="twitter:description"
+      content="Yapay zekâ destekli stok optimizasyonu, talep tahmini ve karar desteği için geliştirilen Stokonomi'yi keşfedin."
+    />
+    <meta name="twitter:image" content="https://stokonomi.com/og/stokonomi-og.png" />
+    <meta
+      name="twitter:image:alt"
+      content="Stokonomi - İşletmeler stok değil, belirsizlik yönetiyor."
+    />
+
+    <!-- ✅ Theme Color -->
+    <meta name="theme-color" content="#0B5ED7" />
+
+    <!-- ✅ Favicon'lar -->
     <link rel="icon" type="image/png" sizes="32x32" href="/logo/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/logo/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/logo/apple-touch-icon.png" />
     <link rel="manifest" href="/logo/site.webmanifest" />
     <link rel="shortcut icon" href="/logo/favicon.ico" />
-    
+
     <!-- ✅ Android Chrome -->
     <link rel="icon" type="image/png" sizes="192x192" href="/logo/android-chrome-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/logo/android-chrome-512.png" />
-    
-    <!-- ✅ Polar SDK -->
-    <script src="https://cdn.jsdelivr.net/npm/@polar-sh/checkout@latest/dist/embed.global.js"></script>
+
+    <!-- ✅ Schema.org / JSON-LD -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://stokonomi.com/#organization",
+            "name": "Stokonomi",
+            "url": "https://stokonomi.com/",
+            "description": "Yapay zekâ destekli stok optimizasyonu, talep tahmini ve karar destek platformu."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://stokonomi.com/#website",
+            "url": "https://stokonomi.com/",
+            "name": "Stokonomi",
+            "inLanguage": "tr-TR",
+            "publisher": {
+              "@id": "https://stokonomi.com/#organization"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

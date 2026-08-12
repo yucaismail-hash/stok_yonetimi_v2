@@ -21,13 +21,20 @@ import {
   Storage as StorageIcon,
   Loop as LoopIcon,
 } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 export function Hero() {
+  const navigate = useNavigate();
+
   const handleCtaClick = (href: string) => {
     const element = document.querySelector(href);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const handleAcademyClick = () => {
+    navigate('/akademi');
   };
 
   return (
@@ -39,7 +46,7 @@ export function Hero() {
         position: 'relative',
         overflow: 'hidden',
         bgcolor: (theme) => theme.palette.background.default,
-        py: { xs: 6, md: 8 },
+        py: { xs: 6, md: 0 },
       }}
     >
       <Box
@@ -154,6 +161,7 @@ export function Hero() {
                   sx={{
                     px: 4,
                     py: 1.5,
+                    borderRadius: (theme) => theme.shape.borderRadius,
                     fontSize: '1rem',
                     fontWeight: 600,
                     textTransform: 'none',
@@ -165,10 +173,11 @@ export function Hero() {
                   variant="outlined"
                   size="large"
                   startIcon={<SchoolIcon />}
-                  onClick={() => handleCtaClick('#akademi')}
+                  onClick={handleAcademyClick}
                   sx={{
                     px: 4,
                     py: 1.5,
+                    borderRadius: (theme) => theme.shape.borderRadius,
                     fontSize: '1rem',
                     fontWeight: 600,
                     textTransform: 'none',
@@ -193,7 +202,7 @@ export function Hero() {
                 overflow: 'hidden',
                 border: (theme) => `1px solid ${theme.palette.divider}`,
                 bgcolor: (theme) => theme.palette.background.paper,
-                p: { xs: 3, md: 4 },
+                p: { xs: 2, sm: 3, md: 4 },
                 position: 'relative',
               }}
             >
@@ -216,8 +225,8 @@ export function Hero() {
                 sx={{
                   fontWeight: 600,
                   color: (theme) => theme.palette.text.primary,
-                  mb: 0.5,
-                  fontSize: '1rem',
+                  mb: { xs: 0.5, sm: 0.5, md: 0.5 },
+                  fontSize: { xs: '0.9rem', sm: '1rem', md: '1rem' },
                   letterSpacing: '-0.01em',
                 }}
               >
@@ -229,17 +238,18 @@ export function Hero() {
                 sx={{
                   color: (theme) => theme.palette.text.secondary,
                   display: 'block',
-                  mb: 3,
+                  mb: { xs: 2, sm: 3, md: 3 },
                   textTransform: 'uppercase',
                   letterSpacing: '0.5px',
+                  fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.7rem' },
                 }}
               >
                 Veriden karara giden yol
               </Typography>
 
-              <Divider sx={{ mb: 3 }} />
+              <Divider sx={{ mb: { xs: 2, sm: 3, md: 3 } }} />
 
-              <Stack spacing={2}>
+              <Stack spacing={{ xs: 1.5, sm: 2, md: 2 }}>
                 {[
                   { icon: <StorageIcon />, label: 'Veri', desc: 'Veriyi hazırlar' },
                   { icon: <AnalyticsIcon />, label: 'Analiz', desc: 'Davranışı analiz eder' },
@@ -253,7 +263,7 @@ export function Hero() {
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
-                      gap: 2,
+                      gap: { xs: 1.5, sm: 2, md: 2 },
                       opacity: 1 - index * 0.06,
                       transition: 'opacity 0.2s',
                       '&:hover': {
@@ -266,8 +276,8 @@ export function Hero() {
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        width: 40,
-                        height: 40,
+                        width: { xs: 32, sm: 40, md: 40 },
+                        height: { xs: 32, sm: 40, md: 40 },
                         borderRadius: (theme) => theme.shape.borderRadius,
                         bgcolor: (theme) =>
                           index === 5
@@ -280,7 +290,9 @@ export function Hero() {
                         flexShrink: 0,
                       }}
                     >
-                      {item.icon}
+                      {React.cloneElement(item.icon as React.ReactElement, {
+                        sx: { fontSize: { xs: 16, sm: 20, md: 20 } },
+                      })}
                     </Box>
                     <Box>
                       <Typography
@@ -291,7 +303,7 @@ export function Hero() {
                             index === 5
                               ? theme.palette.primary.main
                               : theme.palette.text.primary,
-                          fontSize: '0.875rem',
+                          fontSize: { xs: '0.8rem', sm: '0.875rem', md: '0.875rem' },
                         }}
                       >
                         {item.label}
@@ -300,7 +312,8 @@ export function Hero() {
                         variant="caption"
                         sx={{
                           color: (theme) => theme.palette.text.secondary,
-                          fontSize: '0.75rem',
+                          fontSize: { xs: '0.65rem', sm: '0.75rem', md: '0.75rem' },
+                          display: { xs: 'none', sm: 'block' },
                         }}
                       >
                         {item.desc}
@@ -311,7 +324,7 @@ export function Hero() {
                         sx={{
                           ml: 'auto',
                           color: (theme) => theme.palette.divider,
-                          fontSize: 20,
+                          fontSize: { xs: 16, sm: 20, md: 20 },
                           fontWeight: 300,
                           lineHeight: 1,
                         }}
@@ -325,8 +338,8 @@ export function Hero() {
 
               <Box
                 sx={{
-                  mt: 3,
-                  pt: 2,
+                  mt: { xs: 2, sm: 3, md: 3 },
+                  pt: { xs: 1.5, sm: 2, md: 2 },
                   borderTop: (theme) => `1px solid ${theme.palette.divider}`,
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -337,7 +350,7 @@ export function Hero() {
                   variant="caption"
                   sx={{
                     color: (theme) => theme.palette.text.secondary,
-                    fontSize: '0.7rem',
+                    fontSize: { xs: '0.6rem', sm: '0.7rem', md: '0.7rem' },
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px',
                   }}
@@ -354,8 +367,8 @@ export function Hero() {
                     <Box
                       key={i}
                       sx={{
-                        width: 6,
-                        height: 6,
+                        width: { xs: 5, sm: 6, md: 6 },
+                        height: { xs: 5, sm: 6, md: 6 },
                         borderRadius: '50%',
                         bgcolor: (theme) =>
                           i === 3 ? theme.palette.primary.main : theme.palette.divider,
