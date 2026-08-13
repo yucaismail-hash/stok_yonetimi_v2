@@ -338,3 +338,58 @@
 
 - Added a durable current Pattern Learning Memory projection keyed by company, material, and demand type. Same evidence is idempotent; accepted corrections refresh the one current row, rejected corrections do not, and an older cutoff cannot overwrite a newer projection.
 - Pattern Memory is optional enrichment only. Forecast integration, Company Learning, Learning Score, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C5B2B2 Incremental Pattern Refresh
+
+- Pattern refresh is an incremental caller-selected scope operation keyed by company, material, demand type, and cutoff. Accepted Actuals/corrections refresh only their requested scope; rejected corrections and duplicate/retry delivery converge without semantic change.
+- PostgreSQL projection guards provide concurrent convergence and prevent delayed older cutoffs from overwriting newer Pattern Memory. No global rescan, Forecast integration, Company Learning, or Decision Intelligence was added.
+
+## 2026-08-13 - Phase 3C5B3B Incremental Company Learning Refresh
+
+- Added an explicit company-scoped refresh facade that delegates aggregation and score calculation to the durable Company Learning materializer. Caller-selected companies only are refreshed; no global company discovery or rescan is performed.
+- Duplicate, concurrent, stale, pre-write-failure, response-loss retry, and fresh-session delivery converge through the persisted source-summary fingerprint and current-row version. Learning score is derived from current canonical evidence, never refresh count. Forecast integration and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C5B4A Learning Refresh Orchestration
+
+- Added a callable, evidence-routed orchestration boundary. Canonical Actual acceptance/correction evidence refreshes its exact Pattern scope before Company Learning; Forecast Evaluation, Champion promotion/rollback, and terminal RetrainingJob evidence refresh Company Learning only.
+- The orchestrator loads one tenant-scoped `LearningEvidence` row, validates its durable source scope, and has no global scan or automatic delivery hook. Duplicate, delayed, and retried delivery converges through existing Pattern and Company projection fingerprints; Forecast integration and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C5B4B1 Durable Learning Evidence Delivery
+
+- Added a durable, tenant-scoped Learning Evidence delivery intent in the same transaction as canonical `LearningEvidence` creation. A committed canonical evidence contribution therefore cannot lose its refresh intent through a process crash.
+- Delivery ownership is leased with PostgreSQL claim tokens, heartbeat, expiry reclaim, bounded retry, and terminal deterministic-failure classification. Delivery workers remain explicit: they delegate routing to the callable orchestrator, and no periodic worker, Forecast integration, or Decision Intelligence was activated.
+
+## 2026-08-13 - Phase 3C5B4B2 Learning Delivery Worker
+
+- Added a bounded, company-scoped worker that claims only from the durable delivery ledger and delegates every route to the existing Learning Refresh Orchestrator. It supports one-item and caller-limited batch consumption; no deployment timer, daemon, cron, or startup hook is configured.
+- PostgreSQL verification covers exclusive claims, heartbeat and reclaim, stale-worker rejection, retry and terminal failure, post-orchestrator crash recovery, correction safety, tenant isolation, and idempotent Pattern/Company projection convergence. Forecast, Supplier Learning, Event Intelligence, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C6B1 Supplier Delivery Observation Ledger
+
+- Added canonical company-scoped observed supplier-delivery facts with supplier-material identity, source references, dispatch/receipt and promise-deviation semantics, optional ordered/received quantities, and deterministic current evidence fingerprints. Declared Supplier master fields are not learning truth.
+- Accepted corrections retain auditable prior/proposed snapshots and advance current observed truth; rejected corrections remain auditable but leave it unchanged. Supplier Learning, Safety Stock mathematics, Supplier Business behavior, LearningEvidence emission, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C6B2 Read-Only Supplier Learning Calculation
+
+- Added deterministic, company/supplier/material-scoped calculation over canonical observed supplier deliveries. `supplier_learning_policy_v1` requires eight dispatch-to-receipt lead-time observations and derives Reliable, Variable, Late-Prone, Fulfillment-Risk, Deteriorating, or Mixed-Risk classifications only from observed metricsâ€”never manual Supplier scores.
+- Promise reliability and fulfillment remain separate optional metrics. The calculation is cutoff-safe and correction-aware, returns a SHA-256 source fingerprint and evidence-quality confidence, and creates no Supplier Learning memory, LearningEvidence, Safety Stock input, Supplier-analysis change, or Decision Intelligence action.
+
+## 2026-08-13 - Phase 3C6B3 Durable Supplier Learning Memory
+
+- Added the mutable current `SupplierLearningMemory` projection with unique company + supplier + material identity. The materializer accepts only trusted `SupplierLearningService` results, persists compact metrics and canonical observation/revision lineage, and is idempotent on the source fingerprint.
+- Accepted canonical corrections and later cutoffs refresh the same row; rejected corrections are unchanged. Older cutoff or obsolete same-cutoff results cannot overwrite newer current evidence. Supplier analysis, Safety Stock integration, LearningEvidence emission, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C6B4 Incremental Supplier Learning Refresh / Delivery
+
+- Added exact company/supplier/material Supplier Learning refresh routing. Canonical observed-delivery and accepted-correction LearningEvidence events atomically create the existing durable delivery intent, and the existing leased worker routes them only to SupplierLearningMemory.
+- Duplicate, concurrent, stale, retried, and post-refresh-crash deliveries converge through fingerprints and projection idempotency. Rejected corrections emit no supplier evidence; Company Learning, Pattern Learning, Supplier analysis, Safety Stock, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C6B5 Read-Only Supplier Learning Enrichment
+
+- Added an optional, company/supplier/material-scoped resolver that exposes compact durable Supplier Learning provenance only when its cutoff is compatible with the analysis context. Missing or incompatible evidence remains an explicit non-blocking fallback.
+- Learned evidence attaches as distinct explainability metadata. The existing Safety Stock operational lead-time source and mathematics are unchanged; no Supplier Learning task, writeback, Supplier-analysis change, Safety Stock integration, or Decision Intelligence activation was added.
+
+## 2026-08-13 - Phase 3C5B3A Company Learning Foundation
+
+- Added a company-scoped V2 current projection with deterministic evidence-maturity score. The 0–100 score measures durable evidence coverage, scope maturity, source diversity, and reconstructability—not Forecast accuracy or business performance.
+- Pattern, Learning Evidence, Forecast Evaluation, Retraining, and Champion summaries are read-only. Forecast integration, Supplier/Event Learning, and Decision Intelligence remain inactive.

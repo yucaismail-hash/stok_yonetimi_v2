@@ -2,9 +2,8 @@
 import React from 'react';
 import { Box } from '@mui/material';
 
-// Gerçek asset import'ları
+import logoHorizontalLight from '../../assets/brand/stokonomi-logo-horizontal-light.png';
 import logoHorizontalDark from '../../assets/brand/stokonomi-logo-horizontal-dark.png';
-import logoVerticalLight from '../../assets/brand/stokonomi-logo-vertical-light.png';
 import iconLight from '../../assets/brand/stokonomi-icon-light.png';
 import iconDark from '../../assets/brand/stokonomi-icon-dark.png';
 
@@ -16,9 +15,21 @@ interface LogoProps {
 }
 
 const sizeMap = {
-  small: { icon: 28, width: 120 },
-  medium: { icon: 36, width: 160 },
-  large: { icon: 48, width: 200 },
+  small: {
+    icon: 36,
+    width: 170,
+    height: 48,
+  },
+  medium: {
+    icon: 44,
+    width: 250,
+    height: 70,
+  },
+  large: {
+    icon: 56,
+    width: 300,
+    height: 82,
+  },
 };
 
 export function Logo({
@@ -27,17 +38,20 @@ export function Logo({
   showText = true,
   className = '',
 }: LogoProps) {
-  const { icon: iconSize, width: logoWidth } = sizeMap[size];
+  const {
+    icon: iconSize,
+    width: logoWidth,
+    height: logoHeight,
+  } = sizeMap[size];
 
-  // variant: 'light' → koyu zemin (light/white logo), 'default'/'dark' → açık zemin (dark logo)
-  const isLightBackground = variant === 'light';
+  // variant="light" = koyu zemin üzerinde kullanılacak açık renk logo
+  const isDarkBackground = variant === 'light';
 
-  // Asset seçimi: showText true → yatay logo, false → icon
   const logoSrc = showText
-    ? isLightBackground
+    ? isDarkBackground
       ? logoHorizontalDark
-      : logoVerticalLight
-    : isLightBackground
+      : logoHorizontalLight
+    : isDarkBackground
       ? iconLight
       : iconDark;
 
@@ -45,25 +59,24 @@ export function Logo({
     <Box
       className={className}
       sx={{
-        display: 'flex',
+        display: 'inline-flex',
         alignItems: 'center',
+        justifyContent: 'center',
         textDecoration: 'none',
+        lineHeight: 0,
+        flexShrink: 0,
       }}
     >
       <Box
         component="img"
         src={logoSrc}
-        alt="Stokonomi"
+        alt="Stokonomi - Karar Destek Platformu"
         sx={{
           width: showText ? logoWidth : iconSize,
-          height: iconSize,
+          height: showText ? logoHeight : iconSize,
           objectFit: 'contain',
-          flexShrink: 0,
           display: 'block',
-        }}
-        onError={(e) => {
-          // Asset yüklenemezse görseli gizle, layout korunsun
-          e.currentTarget.style.display = 'none';
+          flexShrink: 0,
         }}
       />
     </Box>

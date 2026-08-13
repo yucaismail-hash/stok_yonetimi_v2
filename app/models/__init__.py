@@ -66,6 +66,10 @@ from app.models.retraining_resource_lease import RetrainingResourceLease
 from app.models.retraining_scheduler_tick import RetrainingSchedulerTick
 from app.models.learning_evidence import LearningEvidence
 from app.models.pattern_learning_memory import PatternLearningMemory
+from app.models.company_learning_memory_v2 import CompanyLearningMemoryV2
+from app.models.learning_refresh_delivery import LearningRefreshDelivery
+from app.models.supplier_delivery_observation import SupplierDeliveryObservation, SupplierDeliveryObservationRevision
+from app.models.supplier_learning_memory import SupplierLearningMemory
 
 # Learning
 from app.models.learning import (
@@ -185,6 +189,7 @@ __all__ = [
     "RetrainingJob",
     "RetrainingResourceLease",
     "RetrainingSchedulerTick",
+    "SupplierLearningMemory",
     # Learning
     "CompanyLearningMemory",
     "UserLearningData",

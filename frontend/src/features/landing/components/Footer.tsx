@@ -31,7 +31,17 @@ export function Footer() {
       <Container maxWidth="xl">
         <Grid container spacing={{ xs: 4, md: 6 }}>
           <Grid size={{ xs: 12, md: 5 }}>
-            <Logo variant="light" size="medium" />
+            <Box
+              sx={{
+                width: { xs: 220, md: 260 },
+                '& img': {
+                  width: '100%',
+                  height: 'auto',
+                },
+              }}
+            >
+              <Logo variant="light" size="large" />
+            </Box>
             <Typography
               variant="body2"
               sx={{

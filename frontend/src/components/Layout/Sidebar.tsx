@@ -1,7 +1,7 @@
 import { Drawer, List, ListItem, ListItemIcon, ListItemText, Toolbar, Divider, ListItemButton, Box, Typography } from '@mui/material';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
-import stokonomiLogo from '/src/assets/stokonomi_logo_yeni.png';
+import stokonomiLogo from '../../assets/brand/stokonomi-logo-horizontal-light.png';
 import {
   LayoutDashboard,
   Shield,
@@ -129,9 +129,11 @@ export default function Sidebar({ drawerWidth }: SidebarProps) {
             src={stokonomiLogo}
             alt="Stokonomi - Karar Destek Platformu"
             sx={{
-              width: 300,
-              height: 200,
+              width: '100%',
+              maxWidth: 200,
+              height: 60,
               objectFit: 'contain',
+              display: 'block',
             }}
           />
         </Box>

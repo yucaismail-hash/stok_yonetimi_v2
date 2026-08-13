@@ -7,10 +7,14 @@ export const article: Article = {
   description:
     'Stok yönetiminin temel amaçlarını, maliyet ve hizmet seviyesi dengesiyle birlikte ele alan kapsamlı giriş rehberi.',
   category: 'Temel Kavramlar',
-  publishedAt: '2026-01-15',
-  updatedAt: '2026-01-15',
+  publishedAt: '2026-08-13',
+  updatedAt: '2026-08-13',
   readingTime: 8,
   status: 'published',
+  // ✅ SEO alanları
+  seoTitle: 'Stok Yönetimi Nedir? Amaçları, Süreci ve Örnek Hesaplama | Stokonomi',
+  seoDescription:
+    'Stok yönetiminin temel amaçlarını, sürecini ve basit bir hesaplama örneğini öğrenin. Talep tahmini ve emniyet stoku gibi kavramları keşfedin.',
   sections: [
     {
       type: 'paragraph',

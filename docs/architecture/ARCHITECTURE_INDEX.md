@@ -205,6 +205,12 @@ Each authoritative architecture specification document now contains its bounded 
 | Canonical Learning Evidence | IMMUTABLE / IDEMPOTENT / TENANT-SCOPED |
 | Pattern Intelligence Calculation | POSTGRESQL VERIFIED / READ-ONLY |
 | Pattern Learning Memory | DURABLE CURRENT PROJECTION / POSTGRESQL VERIFIED |
+| Pattern Memory Refresh | INCREMENTAL / SCOPE-BASED / POSTGRESQL VERIFIED |
+| Company Learning Memory V2 | DURABLE COMPANY CURRENT PROJECTION / POSTGRESQL VERIFIED |
+| Company Learning Refresh | INCREMENTAL / COMPANY-SCOPED / POSTGRESQL VERIFIED |
+| Learning Refresh Orchestrator | CALLABLE / EVIDENCE-ROUTED / POSTGRESQL VERIFIED |
+| Learning Evidence Delivery | DURABLE / LEASED / POSTGRESQL VERIFIED |
+| Learning Delivery Worker | LEASED / BOUNDED / POSTGRESQL VERIFIED |
 | Performance Source Authority | FORECAST EVALUATION |
 | Sample Strength | EXPLICIT SAMPLE / PERIOD COVERAGE |
 | Historical Learning Score | SNAPSHOT ONLY / NO CAUSAL CLAIM |
@@ -218,6 +224,11 @@ Each authoritative architecture specification document now contains its bounded 
 | Four-Task Business Workflow | PRESERVED |
 | Five-Task Business Workflow | VERIFIED |
 | Supplier Branch Learning | NOT INVOKED |
+| Supplier Delivery Observation Ledger | CANONICAL OBSERVED AUTHORITY / POSTGRESQL VERIFIED |
+| Supplier Learning Calculation | DETERMINISTIC / READ-ONLY / POSTGRESQL VERIFIED |
+| Supplier Learning Memory | DURABLE CURRENT PROJECTION / POSTGRESQL VERIFIED |
+| Supplier Learning Refresh / Delivery | INCREMENTAL EXACT-SCOPE / POSTGRESQL VERIFIED |
+| Supplier Learning Enrichment | READ-ONLY / OPTIONAL / SAFETY-STOCK-NON-IMPACT VERIFIED |
 
 ## Phase 3C1 Retraining Eligibility
 

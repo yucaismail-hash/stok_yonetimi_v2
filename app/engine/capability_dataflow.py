@@ -34,6 +34,21 @@ def supplier_lead_time_evidence(supplier, material_code):
         return {'status':'used','lead_time_source':'supplier_weighted','lead_time_mean_days':avg,'lead_time_std_days':std,'supplier_ids':[row[0] for row in matches],'supplier_result_reference_ids':ref}
     return {'status':'insufficient','lead_time_source':'dataset_manual','supplier_result_reference_ids':ref}
 
+def attach_supplier_learning_context(operational_evidence, resolution):
+    """Metadata-only B5 enrichment; it must never affect operational lead time."""
+    result = dict(operational_evidence)
+    result['supplier_learning'] = resolution.evidence if resolution and resolution.status == 'AVAILABLE' else {
+        'supplier_learning_available': False, 'status': resolution.status if resolution else 'NO_LEARNED_SUPPLIER_EVIDENCE'}
+    return result
+
+def supplier_learning_context_for_scope(resolver, company_id, supplier_id, material_code, *, cutoff_date=None):
+    """Explicit canonical-scope helper for optional Supplier/Safety Stock explainability.
+
+    Callers retain responsibility for establishing the canonical supplier UUID;
+    dataset supplier labels are not silently treated as that authority.
+    """
+    return resolver.resolve(company_id, supplier_id, material_code, cutoff_date=cutoff_date)
+
 def assemble_safety_stock_business_input(primary_input, supplier):
     rows=[]
     for item in primary_input.get('items',[]):

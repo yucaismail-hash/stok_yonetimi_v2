@@ -35,4 +35,7 @@ export interface Article {
   readingTime: number;
   status: 'published' | 'draft';
   sections: Section[];
+  // ✅ SEO alanları
+  seoTitle?: string;
+  seoDescription?: string;
 }

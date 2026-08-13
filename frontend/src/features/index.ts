@@ -11,7 +11,6 @@ export * from './profile';
 export * from './admin';
 export * from './tasks';
 export * from './auth';
-export * from './pricing';
 export * from './executive-summary';
 export * from './ai-analysis';
 export * from './not-found';

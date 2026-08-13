@@ -4,6 +4,9 @@ venv/
 __pycache__/
 *.pyc
 .env
+directus/.env
+directus/.env.*
+!directus/.env.example
 .DS_Store
 dist/
 *.log

@@ -23,6 +23,7 @@ from app.models.forecast_evaluation import ForecastEvaluation
 from app.models.forecast_vintage import ForecastVintage
 from app.models.learning import CompanyLearningMemory, UserLearningData
 from app.models.learning_evidence import LearningEvidence
+from app.models.learning_refresh_delivery import LearningRefreshDelivery
 from app.models.model_artifact import ModelArtifact
 from app.models.retraining_job import RetrainingJob
 from app.models.runtime import RuntimeExecution, RuntimeResultReference, RuntimeTask, RuntimeTaskAttempt
@@ -85,7 +86,8 @@ def _accept_correction(fixture, quantity, approve):
 def _cleanup_root(root):
     session = SessionLocal()
     try:
-        # Remove dependent immutable evidence first, newest superseding rows first.
+        # Remove dependent delivery intents then immutable evidence, newest first.
+        session.query(LearningRefreshDelivery).filter_by(company_id=root["company_id"]).delete(synchronize_session=False)
         for evidence in session.query(LearningEvidence).filter_by(company_id=root["company_id"]).order_by(LearningEvidence.recorded_at.desc(), LearningEvidence.id.desc()).all():
             session.delete(evidence)
             # SQLAlchemy may otherwise batch parent and child self-FK deletes.
@@ -100,6 +102,7 @@ def _cleanup_root(root):
 def _cleanup_rollback(ids, refs):
     session = SessionLocal()
     try:
+        session.query(LearningRefreshDelivery).filter_by(company_id=ids.company_id).delete(synchronize_session=False)
         for evidence in session.query(LearningEvidence).filter_by(company_id=ids.company_id).order_by(LearningEvidence.recorded_at.desc(), LearningEvidence.id.desc()).all():
             session.delete(evidence)
             session.flush()

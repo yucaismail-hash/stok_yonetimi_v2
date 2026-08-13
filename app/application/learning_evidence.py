@@ -12,12 +12,15 @@ from app.models.actuals import ActualWeeklyObservation, ActualWeeklyRevision
 from app.models.champion_registry import ChampionRegistryTransition
 from app.models.forecast_evaluation import ForecastEvaluation, ForecastEvaluationPoint
 from app.models.learning_evidence import LearningEvidence
+from app.models.learning_refresh_delivery import LearningRefreshDelivery
 from app.models.retraining_job import RetrainingJob
+from app.models.supplier_delivery_observation import SupplierDeliveryObservation, SupplierDeliveryObservationRevision
 
 
 LEARNING_EVIDENCE_CONTRACT_VERSION = "learning_evidence_v1"
 LEARNING_EVIDENCE_PAYLOAD_VERSION = "1.0.0"
 TERMINAL_RETRAINING_STATES = {"trained", "not_trainable", "failed"}
+LEARNING_REFRESH_DELIVERY_CONTRACT_VERSION = "learning_refresh_delivery_v1"
 
 
 @dataclass(frozen=True)
@@ -64,6 +67,12 @@ class LearningEvidenceService:
     def record_retraining_completed(self, company_id, job_id):
         return self._record(company_id, "RETRAINING_COMPLETED", job_id)
 
+    def record_supplier_delivery_observed(self, company_id, observation_id):
+        return self._record(company_id, "SUPPLIER_DELIVERY_OBSERVED", observation_id)
+
+    def record_supplier_delivery_corrected(self, company_id, revision_id):
+        return self._record(company_id, "SUPPLIER_DELIVERY_CORRECTED", revision_id)
+
     def get(self, company_id, evidence_id):
         session = self._session_factory()
         try:
@@ -108,8 +117,15 @@ class LearningEvidenceService:
                 contract_version=LEARNING_EVIDENCE_CONTRACT_VERSION, payload_version=LEARNING_EVIDENCE_PAYLOAD_VERSION,
                 **specification["row"],
             )
-            session.add(row)
             try:
+                session.add(row); session.flush()
+                # The immutable evidence and its delivery intent commit atomically: a
+                # process crash cannot leave persisted evidence without durable work.
+                session.add(LearningRefreshDelivery(
+                    company_id=company_id, learning_evidence_id=row.id,
+                    delivery_contract_version=LEARNING_REFRESH_DELIVERY_CONTRACT_VERSION,
+                    state="pending", attempt_count=0, row_version=1,
+                ))
                 session.commit()
                 return LearningEvidenceWriteResult("CREATED", row.id, fingerprint)
             except IntegrityError:
@@ -132,6 +148,8 @@ class LearningEvidenceService:
             "CHAMPION_PROMOTED": self._champion_transition,
             "CHAMPION_ROLLED_BACK": self._champion_transition,
             "RETRAINING_COMPLETED": self._retraining_completed,
+            "SUPPLIER_DELIVERY_OBSERVED": self._supplier_delivery_observed,
+            "SUPPLIER_DELIVERY_CORRECTED": self._supplier_delivery_corrected,
         }
         if event_type not in builders:
             raise ValueError("LEARNING_EVIDENCE_EVENT_UNSUPPORTED")
@@ -203,3 +221,43 @@ class LearningEvidenceService:
         revision_identity = "retraining_terminal:" + str(job.id) + ":" + job.state + ":" + (str(job.model_artifact_id) if job.model_artifact_id else "none")
         semantic = {"event_type": event_type, "company_id": str(company_id), "source_entity_type": "retraining_job", "source_entity_id": str(job.id), "source_revision_identity": revision_identity, "material_code": job.material_code, "demand_type": job.demand_type, "affected_periods": [job.evaluation_start_period, job.evaluation_end_period], "payload": payload}
         return self._base({"material_code": job.material_code, "demand_type": job.demand_type, "source_entity_type": "retraining_job", "source_entity_id": job.id, "source_revision_identity": revision_identity, "affected_start_period": job.evaluation_start_period, "affected_end_period": job.evaluation_end_period, "evidence_payload": payload, "occurred_at": job.completed_at or job.created_at or datetime.now(timezone.utc)}, semantic)
+
+    def _supplier_delivery_observed(self, session, company_id, source_id, event_type):
+        observation = session.query(SupplierDeliveryObservation).filter_by(id=source_id, company_id=company_id).one_or_none()
+        if observation is None:
+            raise LookupError("SUPPLIER_DELIVERY_OBSERVATION_NOT_FOUND")
+        payload = {"observation_id": str(observation.id), "supplier_id": str(observation.supplier_id),
+                   "material_code": observation.material_code, "receipt_date": observation.actual_receipt_date,
+                   "evidence_fingerprint": observation.current_evidence_fingerprint}
+        revision_identity = "supplier_delivery_observation:" + str(observation.id) + ":" + observation.current_evidence_fingerprint
+        semantic = {"event_type": event_type, "company_id": str(company_id), "source_entity_type": "supplier_delivery_observation",
+                    "source_entity_id": str(observation.id), "source_revision_identity": revision_identity,
+                    "material_code": observation.material_code, "supplier_id": str(observation.supplier_id), "payload": payload}
+        return self._base({"material_code": observation.material_code, "demand_type": None,
+                           "source_entity_type": "supplier_delivery_observation", "source_entity_id": observation.id,
+                           "source_revision_identity": revision_identity, "evidence_payload": payload,
+                           "occurred_at": observation.occurred_at}, semantic)
+
+    def _supplier_delivery_corrected(self, session, company_id, source_id, event_type):
+        revision = session.query(SupplierDeliveryObservationRevision).filter_by(id=source_id, company_id=company_id).one_or_none()
+        if revision is None or revision.approval_status != "accepted":
+            raise ValueError("ACCEPTED_SUPPLIER_DELIVERY_CORRECTION_REQUIRED")
+        observation = session.query(SupplierDeliveryObservation).filter_by(id=revision.observation_id, company_id=company_id).one_or_none()
+        if observation is None:
+            raise ValueError("SUPPLIER_DELIVERY_CORRECTION_OBSERVATION_UNAVAILABLE")
+        previous = session.query(LearningEvidence).filter(
+            LearningEvidence.company_id == company_id, LearningEvidence.source_entity_type == "supplier_delivery_observation",
+            LearningEvidence.source_entity_id == observation.id,
+            LearningEvidence.event_type.in_(("SUPPLIER_DELIVERY_OBSERVED", "SUPPLIER_DELIVERY_CORRECTED")),
+        ).order_by(LearningEvidence.recorded_at.desc(), LearningEvidence.id.desc()).first()
+        payload = {"observation_id": str(observation.id), "revision_id": str(revision.id), "supplier_id": str(observation.supplier_id),
+                   "material_code": observation.material_code, "accepted_evidence_fingerprint": observation.current_evidence_fingerprint}
+        revision_identity = "accepted_supplier_delivery_revision:" + str(revision.id)
+        semantic = {"event_type": event_type, "company_id": str(company_id), "source_entity_type": "supplier_delivery_observation",
+                    "source_entity_id": str(observation.id), "source_revision_identity": revision_identity,
+                    "material_code": observation.material_code, "supplier_id": str(observation.supplier_id), "payload": payload}
+        return self._base({"material_code": observation.material_code, "demand_type": None,
+                           "source_entity_type": "supplier_delivery_observation", "source_entity_id": observation.id,
+                           "source_revision_identity": revision_identity, "evidence_payload": payload,
+                           "occurred_at": revision.approved_at or revision.created_at or datetime.now(timezone.utc),
+                           "supersedes_evidence_id": previous.id if previous else None}, semantic)

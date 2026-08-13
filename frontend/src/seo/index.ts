@@ -1,3 +1,3 @@
 // src/seo/index.ts
-// Phase 2'de doldurulacak
-export {};
+export { default as Seo } from './Seo';
+export type { SeoProps } from './Seo';
