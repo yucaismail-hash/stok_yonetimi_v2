@@ -12,6 +12,9 @@ from app.models.learning_evidence import LearningEvidence
 from app.models.retraining_job import RetrainingJob
 from app.models.supplier_delivery_observation import SupplierDeliveryObservation, SupplierDeliveryObservationRevision
 from app.application.supplier_learning_refresh import SupplierLearningRefreshService
+from app.application.event_intelligence_refresh import EventIntelligenceRefreshService
+from app.models.company import UserMaterial
+from app.models.event_observation import EventObservation
 
 
 class LearningRefreshRoutingError(ValueError):
@@ -42,6 +45,8 @@ class LearningRefreshOrchestrationResult:
     supplier_memory_id: object | None = None
     failure_stage: str | None = None
     failure_code: str | None = None
+    event_statuses: tuple = ()
+    event_memory_ids: tuple = ()
 
     @property
     def outcome(self):
@@ -58,6 +63,7 @@ class _Route:
     pattern_cutoff_period: str | None
     supplier_id: object | None = None
     supplier_cutoff_date: object | None = None
+    event_requests: tuple = ()
 
     @property
     def refreshes_pattern(self):
@@ -67,19 +73,24 @@ class _Route:
     def refreshes_supplier(self):
         return self.supplier_id is not None
 
+    @property
+    def refreshes_event(self): return bool(self.event_requests)
+
 
 class LearningRefreshOrchestrator:
     """Routes one persisted LearningEvidence item; it never discovers dirty work."""
 
     _ACTUAL_EVENTS = {"ACTUAL_ACCEPTED", "ACTUAL_CORRECTED"}
     _SUPPLIER_EVENTS = {"SUPPLIER_DELIVERY_OBSERVED", "SUPPLIER_DELIVERY_CORRECTED"}
+    _EVENT_EVENTS = {"EVENT_OBSERVED", "EVENT_CORRECTED", "EVENT_CANCELLED"}
     _COMPANY_ONLY_EVENTS = {
         "FORECAST_EVALUATED", "CHAMPION_PROMOTED", "CHAMPION_ROLLED_BACK", "RETRAINING_COMPLETED",
     }
 
     def __init__(self, session_factory=SessionLocal, *, pattern_refresh_service=None,
                  company_refresh_service=None, before_pattern_refresh=None,
-                 before_company_refresh=None, supplier_refresh_service=None, before_supplier_refresh=None):
+                 before_company_refresh=None, supplier_refresh_service=None, before_supplier_refresh=None,
+                 event_refresh_service=None, before_event_refresh=None):
         self._session_factory = session_factory
         self._pattern_refresh = pattern_refresh_service or PatternLearningRefreshService()
         self._company_refresh = company_refresh_service or CompanyLearningRefreshService()
@@ -87,12 +98,14 @@ class LearningRefreshOrchestrator:
         self._before_company = before_company_refresh
         self._supplier_refresh = supplier_refresh_service or SupplierLearningRefreshService()
         self._before_supplier = before_supplier_refresh
+        self._event_refresh = event_refresh_service or EventIntelligenceRefreshService()
+        self._before_event = before_event_refresh
 
     def orchestrate(self, company_id, learning_evidence_id):
         """Refresh exactly the projections authorized by one immutable evidence row."""
         started = perf_counter()
         route = self._load_and_validate(company_id, learning_evidence_id)
-        pattern = company = supplier = None
+        pattern = company = supplier = None; event_results = ()
         stage = None
         try:
             if route.refreshes_pattern:
@@ -113,14 +126,21 @@ class LearningRefreshOrchestrator:
                 # Supplier delivery evidence intentionally does not alter Company
                 # Learning until a separately versioned company policy consumes it.
                 return self._result(route, pattern, company, started, supplier=supplier)
+            if route.refreshes_event:
+                stage = "BEFORE_EVENT_REFRESH"
+                if self._before_event: self._before_event(route)
+                stage = "EVENT_REFRESH"
+                event_results = self._event_refresh.refresh_batch(route.event_requests)
+                if route.event_type in self._EVENT_EVENTS:
+                    return self._result(route, pattern, company, started, supplier=supplier, event_results=event_results)
             stage = "BEFORE_COMPANY_REFRESH"
             if self._before_company:
                 self._before_company(route)
             stage = "COMPANY_REFRESH"
             company = self._company_refresh.refresh(route.company_id, source_change_type=route.event_type)
-            return self._result(route, pattern, company, started, supplier=supplier)
+            return self._result(route, pattern, company, started, supplier=supplier, event_results=event_results)
         except Exception as exc:
-            return self._result(route, pattern, company, started, stage, type(exc).__name__, supplier)
+            return self._result(route, pattern, company, started, stage, type(exc).__name__, supplier, event_results)
 
     def _load_and_validate(self, company_id, learning_evidence_id):
         session = self._session_factory()
@@ -132,6 +152,8 @@ class LearningRefreshOrchestrator:
                 raise LearningEvidenceTenantViolation("LEARNING_EVIDENCE_TENANT_MISMATCH")
             if evidence.event_type in self._ACTUAL_EVENTS:
                 return self._actual_route(session, evidence)
+            if evidence.event_type in self._EVENT_EVENTS:
+                return self._event_route(session, evidence)
             if evidence.event_type in self._SUPPLIER_EVENTS:
                 return self._supplier_route(session, evidence)
             if evidence.event_type == "FORECAST_EVALUATED":
@@ -177,7 +199,42 @@ class LearningRefreshOrchestrator:
         if latest is None:
             raise LearningRefreshRoutingError("LEARNING_EVIDENCE_SOURCE_SCOPE_MISMATCH")
         return _Route(evidence.id, evidence.company_id, evidence.event_type,
-                      evidence.material_code, evidence.demand_type, latest[0])
+                      evidence.material_code, evidence.demand_type, latest[0], event_requests=tuple(self._actual_event_requests(session, evidence)))
+
+    def _event_route(self, session, evidence):
+        if evidence.source_entity_type != "event_observation": raise LearningRefreshRoutingError("LEARNING_EVIDENCE_SOURCE_SCOPE_MISMATCH")
+        event=session.query(EventObservation).filter_by(id=evidence.source_entity_id,company_id=evidence.company_id).one_or_none(); payload=evidence.evidence_payload or {}
+        if event is None or payload.get("event_id") != str(event.id) or not payload.get("event_identity") or not payload.get("demand_type"): raise LearningRefreshRoutingError("LEARNING_EVIDENCE_SOURCE_SCOPE_MISMATCH")
+        scopes=self._event_scope_requests(session,evidence.company_id,payload)
+        if payload.get("previous_snapshot"): scopes.extend(self._event_scope_requests(session,evidence.company_id,payload["previous_snapshot"]))
+        unique={(x["material_code"],x["demand_type"],x["event_identity"]):x for x in scopes}
+        return _Route(evidence.id,evidence.company_id,evidence.event_type,evidence.material_code,evidence.demand_type,None,event_requests=tuple(unique.values()))
+
+    def _event_scope_requests(self, session, company_id, payload):
+        demand=payload.get("demand_type");identity=payload.get("event_identity");scope=payload.get("scope_type");value=payload.get("scope_value")
+        if not demand or not identity or scope not in {"MATERIAL","PRODUCT_GROUP","PRODUCT_CLASS","COMPANY"}: raise LearningRefreshRoutingError("LEARNING_EVIDENCE_SOURCE_SCOPE_MISMATCH")
+        q=session.query(UserMaterial.material_code).filter_by(company_id=company_id)
+        if scope=="MATERIAL":q=q.filter_by(material_code=value)
+        elif scope=="PRODUCT_GROUP":q=q.filter(UserMaterial.group==value)
+        elif scope=="PRODUCT_CLASS":q=q.filter(UserMaterial.product_class==value)
+        requests=[]
+        for material in sorted({x[0] for x in q.all()}):
+            latest=session.query(ActualWeeklyObservation.period).filter_by(company_id=company_id,material_code=material,demand_type=demand).order_by(ActualWeeklyObservation.period.desc()).first()
+            if latest:requests.append({"company_id":company_id,"material_code":material,"demand_type":demand,"event_identity":identity,"cutoff_period":latest[0]})
+        return requests
+
+    def _actual_event_requests(self, session, evidence):
+        actual=session.query(ActualWeeklyObservation).filter_by(id=evidence.source_entity_id,company_id=evidence.company_id).one_or_none()
+        if actual is None:return ()
+        metadata=session.query(UserMaterial).filter_by(company_id=evidence.company_id,material_code=actual.material_code).order_by(UserMaterial.id).first()
+        events=session.query(EventObservation).filter_by(company_id=evidence.company_id,demand_type=actual.demand_type,status="ACTIVE").filter(EventObservation.start_period<=actual.period,EventObservation.end_period>=actual.period).all()
+        requests=[]
+        for event in events:
+            match=event.scope_type=="COMPANY" or (event.scope_type=="MATERIAL" and event.scope_value==actual.material_code) or (metadata and event.scope_type=="PRODUCT_GROUP" and event.scope_value==metadata.group) or (metadata and event.scope_type=="PRODUCT_CLASS" and event.scope_value==metadata.product_class)
+            if match:
+                latest=session.query(ActualWeeklyObservation.period).filter_by(company_id=evidence.company_id,material_code=actual.material_code,demand_type=actual.demand_type).order_by(ActualWeeklyObservation.period.desc()).first()
+                if latest: requests.append({"company_id":evidence.company_id,"material_code":actual.material_code,"demand_type":actual.demand_type,"event_identity":event.event_identity,"cutoff_period":latest[0]})
+        return requests
 
     @staticmethod
     def _supplier_route(session, evidence):
@@ -238,11 +295,12 @@ class LearningRefreshOrchestrator:
             raise LearningRefreshRoutingError("LEARNING_EVIDENCE_SOURCE_SCOPE_MISMATCH")
 
     @staticmethod
-    def _result(route, pattern, company, started, failure_stage=None, failure_code=None, supplier=None):
+    def _result(route, pattern, company, started, failure_stage=None, failure_code=None, supplier=None, event_results=()):
         return LearningRefreshOrchestrationResult(
             route.evidence_id, route.company_id, route.event_type, route.material_code, route.demand_type,
             pattern.status if pattern else None, company.status if company else None,
             pattern.memory_id if pattern else None, company.memory_id if company else None,
             (perf_counter() - started) * 1000, supplier.status if supplier else None,
             supplier.memory_id if supplier else None, failure_stage, failure_code,
+            tuple(x.status for x in event_results), tuple(x.memory_id for x in event_results),
         )

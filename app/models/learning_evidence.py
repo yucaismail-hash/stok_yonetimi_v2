@@ -29,7 +29,7 @@ class LearningEvidence(BaseModel):
 
     __table_args__ = (
         UniqueConstraint("company_id", "evidence_fingerprint", name="uq_learning_evidence_company_fingerprint"),
-        CheckConstraint("event_type IN ('ACTUAL_ACCEPTED', 'ACTUAL_CORRECTED', 'FORECAST_EVALUATED', 'CHAMPION_PROMOTED', 'CHAMPION_ROLLED_BACK', 'RETRAINING_COMPLETED', 'SUPPLIER_DELIVERY_OBSERVED', 'SUPPLIER_DELIVERY_CORRECTED')", name="ck_learning_evidence_event_type"),
+        CheckConstraint("event_type IN ('ACTUAL_ACCEPTED', 'ACTUAL_CORRECTED', 'FORECAST_EVALUATED', 'CHAMPION_PROMOTED', 'CHAMPION_ROLLED_BACK', 'RETRAINING_COMPLETED', 'SUPPLIER_DELIVERY_OBSERVED', 'SUPPLIER_DELIVERY_CORRECTED', 'EVENT_OBSERVED', 'EVENT_CORRECTED', 'EVENT_CANCELLED')", name="ck_learning_evidence_event_type"),
         CheckConstraint("affected_start_period IS NULL OR affected_start_period ~ '^[0-9]{4}-W[0-9]{2}$'", name="ck_learning_evidence_start_period"),
         CheckConstraint("affected_end_period IS NULL OR affected_end_period ~ '^[0-9]{4}-W[0-9]{2}$'", name="ck_learning_evidence_end_period"),
         Index("ix_learning_evidence_company_scope", "company_id", "material_code", "demand_type", "recorded_at"),

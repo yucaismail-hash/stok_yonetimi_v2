@@ -146,7 +146,9 @@ class LearningRefreshDeliveryService:
                 retryable = outcome.failure_code not in {"LearningEvidenceNotFound", "LearningEvidenceTenantViolation", "LearningRefreshRoutingError"}
                 return self.fail(company_id, delivery_id, claim_token, exc, retryable=retryable)
             summary = {"event_type": outcome.event_type, "pattern_status": outcome.pattern_status,
-                       "company_status": outcome.company_status, "duration_ms": round((perf_counter() - started) * 1000, 3)}
+                       "company_status": outcome.company_status, "event_statuses": list(outcome.event_statuses),
+                       "event_memory_ids": [str(x) if x else None for x in outcome.event_memory_ids],
+                       "duration_ms": round((perf_counter() - started) * 1000, 3)}
             return self.complete(company_id, delivery_id, claim_token, summary)
         except (LearningEvidenceNotFound, LearningEvidenceTenantViolation, LearningRefreshRoutingError) as exc:
             return self.fail(company_id, delivery_id, claim_token, exc, retryable=False)

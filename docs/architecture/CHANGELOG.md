@@ -389,6 +389,31 @@
 - Added an optional, company/supplier/material-scoped resolver that exposes compact durable Supplier Learning provenance only when its cutoff is compatible with the analysis context. Missing or incompatible evidence remains an explicit non-blocking fallback.
 - Learned evidence attaches as distinct explainability metadata. The existing Safety Stock operational lead-time source and mathematics are unchanged; no Supplier Learning task, writeback, Supplier-analysis change, Safety Stock integration, or Decision Intelligence activation was added.
 
+## 2026-08-13 - Phase 3C7B1 Canonical Event Observation Ledger
+
+- Added company-scoped Event Observation occurrences with explicit material/group/class/company scope, explicit demand type, authority/source provenance, recurring event identity, and deterministic source idempotency.
+- Immutable accepted/rejected revision lineage preserves as-of reconstruction; cancellation is an accepted state transition, never deletion. Dataset Events remain optional validation input, while weather/FX/inflation/search context remains outside this canonical event ledger. Event Intelligence calculation, Forecast integration, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C7B2 Read-Only Event Association Calculation
+
+- Added the deterministic, cutoff-safe `EventAssociationService` over canonical accepted Actuals and as-of Event Observation revisions. It returns versioned baseline, lag, recurrence, non-causal association, evidence-quality confidence, overlap/confounding, and SHA-256 source-fingerprint evidence without writing Event Intelligence memory.
+- Forecast Vintage points are preferred only when compatible and available before an event; otherwise the explicit pre-event/non-event accepted-Actual fallback applies. PostgreSQL verification covers correction and cancellation lineage, same-cutoff future leakage, demand/scope isolation, overlap protection, fresh-session reconstruction, and zero persistence mutation. Forecast integration, Simulation changes, Event Intelligence persistence, and Decision Intelligence remain inactive.
+
+## 2026-08-13 - Phase 3C7B3 Durable Event Intelligence Memory
+
+- Added the additive `EventIntelligenceMemory` current projection and its guarded materializer. Identity is company/material/demand/event identity; policy, source fingerprint, Event/Actual/Vintage lineage, compact metrics, source scope metadata, confidence, confounding, cutoff, and row version are durable.
+- The materializer relies exclusively on the cutoff-safe Event Association boundary. It is idempotent for unchanged evidence, refreshes the same row for accepted new evidence, rejects stale cutoff writes, and converges concurrent first materializations. Insufficient or confounded insufficient results are not materialized. Forecast, Simulation, Learning, retraining, model/registry mutation, and Decision Intelligence remain inactive.
+
+## 2026-08-14 - Phase 3C7B4 Event LearningEvidence Delivery
+
+- Accepted event observation, correction, and cancellation transitions now atomically create immutable Event LearningEvidence and one leased delivery. Routing refreshes only bounded matching Event Memory scopes; accepted scope corrections reconcile both previous and accepted scopes, while accepted Actual corrections reconcile only overlapping active Events.
+- PostgreSQL verification covers idempotency, recurring occurrences, cancellation, exact material/group/class/company routing, demand and tenant isolation, leases/reclaim/stale tokens, retry and completion-loss recovery, fresh-worker reconstruction, and exact cleanup. Event delivery does not invoke Forecast, Simulation, Decision Intelligence, training, promotion, or global discovery scans.
+
+## 2026-08-14 - Phase 3C7B5 Read-only Event Enrichment
+
+- Forecast and Simulation now optionally expose compact, non-causal Event Intelligence context only when the company/material/demand scope and evidence cutoff are compatible. Missing or later-cutoff memory returns structured fallback metadata; multiple event identities remain separate.
+- Forecast values, Simulation mechanics, Champion selection, XGBoost features, workflow tasks, and Decision Intelligence are unchanged. PostgreSQL proof confirms numerical non-impact, scope isolation, and no Event writeback.
+
 ## 2026-08-13 - Phase 3C5B3A Company Learning Foundation
 
 - Added a company-scoped V2 current projection with deterministic evidence-maturity score. The 0–100 score measures durable evidence coverage, scope maturity, source diversity, and reconstructability—not Forecast accuracy or business performance.

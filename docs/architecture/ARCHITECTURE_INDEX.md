@@ -229,6 +229,11 @@ Each authoritative architecture specification document now contains its bounded 
 | Supplier Learning Memory | DURABLE CURRENT PROJECTION / POSTGRESQL VERIFIED |
 | Supplier Learning Refresh / Delivery | INCREMENTAL EXACT-SCOPE / POSTGRESQL VERIFIED |
 | Supplier Learning Enrichment | READ-ONLY / OPTIONAL / SAFETY-STOCK-NON-IMPACT VERIFIED |
+| Canonical Event Observation Ledger | EVENT AUTHORITY / POSTGRESQL VERIFIED |
+| Event Intelligence Association Calculation | DETERMINISTIC / READ-ONLY / CUTOFF-SAFE / POSTGRESQL VERIFIED |
+| Event Intelligence Memory | DURABLE CURRENT PROJECTION / POSTGRESQL VERIFIED |
+| Event LearningEvidence Delivery | ATOMIC / BOUNDED EVENT-ONLY ROUTING / POSTGRESQL VERIFIED |
+| Event Forecast / Simulation Enrichment | READ-ONLY / OPTIONAL / NUMERICAL-NON-IMPACT VERIFIED |
 
 ## Phase 3C1 Retraining Eligibility
 

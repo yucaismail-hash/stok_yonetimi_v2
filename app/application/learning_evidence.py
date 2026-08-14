@@ -15,6 +15,8 @@ from app.models.learning_evidence import LearningEvidence
 from app.models.learning_refresh_delivery import LearningRefreshDelivery
 from app.models.retraining_job import RetrainingJob
 from app.models.supplier_delivery_observation import SupplierDeliveryObservation, SupplierDeliveryObservationRevision
+from app.models.event_observation import EventObservation, EventRevision
+from app.models.company import UserMaterial
 
 
 LEARNING_EVIDENCE_CONTRACT_VERSION = "learning_evidence_v1"
@@ -72,6 +74,10 @@ class LearningEvidenceService:
 
     def record_supplier_delivery_corrected(self, company_id, revision_id):
         return self._record(company_id, "SUPPLIER_DELIVERY_CORRECTED", revision_id)
+
+    def record_event_observed(self, company_id, event_id): return self._record(company_id, "EVENT_OBSERVED", event_id)
+    def record_event_corrected(self, company_id, revision_id): return self._record(company_id, "EVENT_CORRECTED", revision_id)
+    def record_event_cancelled(self, company_id, revision_id): return self._record(company_id, "EVENT_CANCELLED", revision_id)
 
     def get(self, company_id, evidence_id):
         session = self._session_factory()
@@ -150,6 +156,9 @@ class LearningEvidenceService:
             "RETRAINING_COMPLETED": self._retraining_completed,
             "SUPPLIER_DELIVERY_OBSERVED": self._supplier_delivery_observed,
             "SUPPLIER_DELIVERY_CORRECTED": self._supplier_delivery_corrected,
+            "EVENT_OBSERVED": self._event_observed,
+            "EVENT_CORRECTED": self._event_revision,
+            "EVENT_CANCELLED": self._event_revision,
         }
         if event_type not in builders:
             raise ValueError("LEARNING_EVIDENCE_EVENT_UNSUPPORTED")
@@ -261,3 +270,43 @@ class LearningEvidenceService:
                            "source_revision_identity": revision_identity, "evidence_payload": payload,
                            "occurred_at": revision.approved_at or revision.created_at or datetime.now(timezone.utc),
                            "supersedes_evidence_id": previous.id if previous else None}, semantic)
+
+    @staticmethod
+    def _event_snapshot(revision):
+        snapshot = dict(revision.proposed_snapshot)
+        return snapshot
+
+    def _event_observed(self, session, company_id, source_id, event_type):
+        event = session.query(EventObservation).filter_by(id=source_id, company_id=company_id).one_or_none()
+        if event is None or event.current_revision_id is None:
+            raise LookupError("EVENT_OBSERVATION_NOT_FOUND")
+        revision = session.query(EventRevision).filter_by(id=event.current_revision_id, company_id=company_id, event_observation_id=event.id, approval_status="accepted").one_or_none()
+        if revision is None:
+            raise ValueError("ACCEPTED_EVENT_OBSERVATION_REQUIRED")
+        return self._event_evidence(session, company_id, event, revision, event_type, supersedes=False)
+
+    def _event_revision(self, session, company_id, source_id, event_type):
+        revision = session.query(EventRevision).filter_by(id=source_id, company_id=company_id, approval_status="accepted").one_or_none()
+        if revision is None:
+            raise ValueError("ACCEPTED_EVENT_REVISION_REQUIRED")
+        event = session.query(EventObservation).filter_by(id=revision.event_observation_id, company_id=company_id).one_or_none()
+        if event is None:
+            raise ValueError("EVENT_REVISION_OBSERVATION_UNAVAILABLE")
+        snapshot = self._event_snapshot(revision)
+        is_cancelled = snapshot.get("status") == "CANCELLED"
+        if (event_type == "EVENT_CANCELLED") != is_cancelled:
+            raise ValueError("EVENT_CANCELLATION_SOURCE_MISMATCH")
+        return self._event_evidence(session, company_id, event, revision, event_type, supersedes=True)
+
+    def _event_evidence(self, session, company_id, event, revision, event_type, *, supersedes):
+        snapshot=self._event_snapshot(revision)
+        demand=snapshot["demand_type"]; start=snapshot["start_date"]; end=snapshot["end_date"]
+        payload={"event_id":str(event.id),"revision_id":str(revision.id),"event_identity":snapshot["event_identity"],"event_type":snapshot["event_type"],"scope_type":snapshot["scope_type"],"scope_value":snapshot.get("scope_value"),"demand_type":demand,"start_date":start,"end_date":end,"status":snapshot["status"],"event_evidence_fingerprint":revision.proposed_evidence_fingerprint}
+        if supersedes:
+            payload["previous_snapshot"] = revision.previous_snapshot
+        identity=("event_observation:"+str(event.id)+":"+str(revision.id))
+        previous=None
+        if supersedes:
+            previous=session.query(LearningEvidence).filter(LearningEvidence.company_id==company_id,LearningEvidence.source_entity_type=="event_observation",LearningEvidence.source_entity_id==event.id,LearningEvidence.event_type.in_(("EVENT_OBSERVED","EVENT_CORRECTED","EVENT_CANCELLED"))).order_by(LearningEvidence.recorded_at.desc(),LearningEvidence.id.desc()).first()
+        semantic={"event_type":event_type,"company_id":str(company_id),"source_entity_type":"event_observation","source_entity_id":str(event.id),"source_revision_identity":identity,"event_identity":snapshot["event_identity"],"demand_type":demand,"scope":[snapshot["scope_type"],snapshot.get("scope_value")],"periods":[event.start_period,event.end_period],"payload":payload}
+        return self._base({"material_code":snapshot.get("scope_value") if snapshot["scope_type"]=="MATERIAL" else None,"demand_type":demand,"source_entity_type":"event_observation","source_entity_id":event.id,"source_revision_identity":identity,"affected_start_period":event.start_period,"affected_end_period":event.end_period,"evidence_payload":payload,"occurred_at":revision.approved_at or revision.created_at or datetime.now(timezone.utc),"supersedes_evidence_id":previous.id if previous else None},semantic)

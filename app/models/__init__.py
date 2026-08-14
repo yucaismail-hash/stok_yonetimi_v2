@@ -70,6 +70,8 @@ from app.models.company_learning_memory_v2 import CompanyLearningMemoryV2
 from app.models.learning_refresh_delivery import LearningRefreshDelivery
 from app.models.supplier_delivery_observation import SupplierDeliveryObservation, SupplierDeliveryObservationRevision
 from app.models.supplier_learning_memory import SupplierLearningMemory
+from app.models.event_observation import EventObservation, EventRevision
+from app.models.event_intelligence_memory import EventIntelligenceMemory
 
 # Learning
 from app.models.learning import (
@@ -190,6 +192,9 @@ __all__ = [
     "RetrainingResourceLease",
     "RetrainingSchedulerTick",
     "SupplierLearningMemory",
+    "EventObservation",
+    "EventRevision",
+    "EventIntelligenceMemory",
     # Learning
     "CompanyLearningMemory",
     "UserLearningData",

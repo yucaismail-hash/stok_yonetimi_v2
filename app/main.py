@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 
 from app.database import engine, Base, init_db, SessionLocal
 from app.api.v2 import router as v2_router
+from app.api.public import PUBLIC_ACADEMY_PATH_PATTERN, router as public_academy_router
 
 # ============================================
 # V1 API'LER (GEÇİCİ OLARAK DEVRE DIŞI)
@@ -86,6 +87,7 @@ async def token_middleware(request: Request, call_next):
         r"^/admin/processing-transactions",
         r"^/api/pricing/preview",
         r"^/api/import-wizard",
+        PUBLIC_ACADEMY_PATH_PATTERN,
         # ✅ V2 API'leri token kontrolünden muaf (kendi içinde kontrol edecek)
         r"^/api/v2/",
     ]
@@ -228,6 +230,9 @@ app.add_middleware(
 
 # ✅ V2 Router - Yeni mimari
 app.include_router(v2_router)
+
+# Public Academy content API
+app.include_router(public_academy_router)
 
 # ✅ Auth Router
 app.include_router(auth_router, prefix="/auth", tags=["authentication"])
