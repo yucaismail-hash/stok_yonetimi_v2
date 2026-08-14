@@ -22,15 +22,22 @@ class ForecastScopeService:
   if demand is None:raise ForecastScopeError('authoritative forecast demand_type is required')
   s=self._session_factory()
   try:
-   query=s.query(ActualWeeklyObservation.period).filter_by(company_id=company_id,demand_type=demand)
+   query=s.query(ActualWeeklyObservation).filter_by(company_id=company_id,demand_type=demand)
    if material_codes:query=query.filter(ActualWeeklyObservation.material_code.in_(material_codes))
-   periods=[parse_weekly_period(row[0]).period for row in query.all()]
+   observations=query.all();periods=[parse_weekly_period(row.period).period for row in observations]
    if not periods:raise ForecastScopeError('canonical accepted Actual history is required for forecast scope')
    cutoff=max(periods,key=lambda value:(parse_weekly_period(value).year,parse_weekly_period(value).week))
+   product_metadata={}
+   for row in observations:
+    if material_codes and row.material_code not in material_codes: continue
+    current=product_metadata.get(row.material_code)
+    if current is None or (parse_weekly_period(row.period).year,parse_weekly_period(row.period).week) > (parse_weekly_period(current['_period']).year,parse_weekly_period(current['_period']).week):
+     product_metadata[row.material_code]={'product_level':row.product_level,'product_group':row.product_group,'product_class':row.product_class,'_period':row.period}
+   for value in product_metadata.values(): value.pop('_period',None)
   finally:s.close()
   declared=context.get('input_cutoff_period',values.get('forecast_cutoff_period'))
   if declared is not None and parse_weekly_period(declared).period!=cutoff:raise ForecastScopeError('declared forecast cutoff disagrees with canonical Actual history')
-  context={**context,'demand_type':demand,'input_cutoff_period':cutoff,'scope_mode':'current_canonical'};values.update({'scope_mode':'current_canonical','demand_type':demand,'forecast_cutoff_period':cutoff,'forecast_vintage':context});return values
+  context={**context,'demand_type':demand,'input_cutoff_period':cutoff,'product_metadata':product_metadata,'scope_mode':'current_canonical'};values.update({'scope_mode':'current_canonical','demand_type':demand,'forecast_cutoff_period':cutoff,'forecast_vintage':context});return values
  def _replay(self,company_id,values,context,material_codes):
   source=values.get('source_execution_id',context.get('source_execution_id'))
   try:source_id=UUID(str(source))

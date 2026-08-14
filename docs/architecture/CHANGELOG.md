@@ -414,6 +414,12 @@
 - Forecast and Simulation now optionally expose compact, non-causal Event Intelligence context only when the company/material/demand scope and evidence cutoff are compatible. Missing or later-cutoff memory returns structured fallback metadata; multiple event identities remain separate.
 - Forecast values, Simulation mechanics, Champion selection, XGBoost features, workflow tasks, and Decision Intelligence are unchanged. PostgreSQL proof confirms numerical non-impact, scope isolation, and no Event writeback.
 
+## 2026-08-14 - Phase 3D2 Canonical Decision Evidence Resolver
+
+- Added a read-only, company/material/demand/cutoff/context-scoped Decision Evidence Resolver. It normalizes compact persisted Forecast, runtime, learned-memory, Champion, and Retraining provenance into a deterministic fingerprinted envelope; no recommendation or Decision Snapshot is generated.
+- Closed the Pattern cutoff contract: `PatternLearningMemory` is a mutable current projection, not historical vintage storage. Compatible current Pattern is available; a newer current Pattern is `INCOMPATIBLE / FUTURE_EVIDENCE` and is not consumed. Historical Pattern rationale will be frozen by the Phase 3D4 immutable Decision Snapshot, not by versioning this projection.
+- Required evidence is context-specific; optional evidence degrades gracefully. Future-cutoff evidence is marked incompatible, Simulation remains scenario evidence, Backtest validation evidence, learned memory context only, Champion provenance only, and LLM decision authority remains inactive.
+
 ## 2026-08-13 - Phase 3C5B3A Company Learning Foundation
 
 - Added a company-scoped V2 current projection with deterministic evidence-maturity score. The 0–100 score measures durable evidence coverage, scope maturity, source diversity, and reconstructability—not Forecast accuracy or business performance.
