@@ -42,7 +42,8 @@ class DecisionPolicy:
             add("REVIEW_SUPPLIER","MEDIUM",40,"SUPPLIER_"+risks[0],("supplier_learning",),"supplier risk evidence improves")
             support.extend("SUPPLIER_"+x for x in risks)
         events=optional.get("event",{}).get("entries",())
-        if events:
+        actionable_events=tuple(event for event in events if event.get("classification") in {"POSITIVE_ASSOCIATION","NEGATIVE_ASSOCIATION"})
+        if actionable_events:
             add("MONITOR_EVENT_RISK","LOW",50,"EVENT_ASSOCIATION",("event",),"event association evidence changes")
             support.append("EVENT_ASSOCIATION_NON_CAUSAL")
         retraining=optional.get("retraining",{})

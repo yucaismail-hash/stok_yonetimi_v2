@@ -22,10 +22,12 @@ def main():
     structural=p.evaluate(envelope(optional=(("pattern",state(classification="STRUCTURAL_CHANGE")),)));assert "REVIEW_FORECAST" in candidate_types(structural)
     for classification in ("LATE_PRONE","DETERIORATING","MIXED_RISK"):
         r=p.evaluate(envelope(optional=(("supplier_learning",state(entries=({"classification":classification},))),)));assert "REVIEW_SUPPLIER" in candidate_types(r)
-    event=p.evaluate(envelope(optional=(("event",state(entries=({"event_identity":"E"},))),)));assert "MONITOR_EVENT_RISK" in candidate_types(event)
+    for classification in ("POSITIVE_ASSOCIATION","NEGATIVE_ASSOCIATION"):
+        event=p.evaluate(envelope(optional=(("event",state(entries=({"event_identity":"E","classification":classification},))),)));assert "MONITOR_EVENT_RISK" in candidate_types(event)
+    no_clear=p.evaluate(envelope(optional=(("event",state(entries=({"event_identity":"E","classification":"NO_CLEAR_EFFECT"},))),)));assert "MONITOR_EVENT_RISK" not in candidate_types(no_clear)
     for signal in ("stockout_risk","excess_risk"):
         r=p.evaluate(envelope(optional=(("simulation",state(signal=signal)),)));assert "REVIEW_SAFETY_STOCK" in candidate_types(r)
-    multi=p.evaluate(envelope(optional=(("pattern",state(classification="VOLATILE")),("supplier_learning",state(entries=({"classification":"LATE_PRONE"},))),("event",state(entries=({"event_identity":"E"},))),)));assert candidate_types(multi)==("REVIEW_FORECAST","REVIEW_SUPPLIER","MONITOR_EVENT_RISK")
+    multi=p.evaluate(envelope(optional=(("pattern",state(classification="VOLATILE")),("supplier_learning",state(entries=({"classification":"LATE_PRONE"},))),("event",state(entries=({"event_identity":"E","classification":"POSITIVE_ASSOCIATION"},))),)));assert candidate_types(multi)==("REVIEW_FORECAST","REVIEW_SUPPLIER","MONITOR_EVENT_RISK")
     low=p.evaluate(envelope(optional=(("company_learning",state(maturity_level="low")),)));assert low.confidence < stable.confidence and candidate_types(low)==("HOLD_POLICY",)
     missing=p.evaluate(envelope());assert missing.status=="READY" and missing.confidence < stable.confidence
     assert p.evaluate(envelope(optional=(("company_learning",state(maturity_level="mature")),)))==stable

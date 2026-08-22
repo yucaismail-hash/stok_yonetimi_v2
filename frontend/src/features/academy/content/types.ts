@@ -26,16 +26,43 @@ export interface Section {
 }
 
 export interface Article {
+  id?: string;
   slug: string;
   title: string;
   description: string;
   category: string;
   publishedAt: string;
-  updatedAt: string;
+  updatedAt: string | null;
   readingTime: number;
   status: 'published' | 'draft';
   sections: Section[];
   // ✅ SEO alanları
-  seoTitle?: string;
-  seoDescription?: string;
+  seoTitle?: string | null;
+  seoDescription?: string | null;
+  featuredImage?: string | null;
+  featuredImageAlt?: string | null;
+}
+
+export interface AcademyArticleListItem {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  category: string;
+  publishedAt: string;
+  updatedAt: string | null;
+  readingTime: number;
+  featuredImage: string | null;
+  featuredImageAlt: string | null;
+}
+
+export interface AcademyArticleDetail extends AcademyArticleListItem {
+  status: 'published';
+  sections: Section[];
+  seoTitle: string | null;
+  seoDescription: string | null;
+}
+
+export interface AcademyArticleListResponse {
+  items: AcademyArticleListItem[];
 }

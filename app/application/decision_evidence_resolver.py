@@ -68,7 +68,10 @@ class DecisionEvidenceResolver:
    if not scoped:return {'status':'ABSENT'}
    return {'status':'INCOMPATIBLE','reason':'FUTURE_EVIDENCE' if known_future else 'CUTOFF_UNKNOWN'}
   row,source_cutoff=compatible[0]
-  return {'status':'AVAILABLE','source_id':str(row.id),'runtime_result_reference_id':str(row.id),'result_version':row.result_version,'contract_version':row.contract_version,'cutoff_period':source_cutoff}
+  selected=self._result_item(row.inline_result,m)
+  out={'status':'AVAILABLE','source_id':str(row.id),'runtime_result_reference_id':str(row.id),'result_version':row.result_version,'contract_version':row.contract_version,'cutoff_period':source_cutoff}
+  if isinstance(selected,dict) and selected.get('policy_signal') in {'stockout_risk','excess_risk','weak_validation'}:out['signal']=selected['policy_signal']
+  return out
  def _pattern(self,s,c,m,d,cutoff):
   row=s.query(PatternLearningMemory).filter_by(company_id=c,material_code=m,demand_type=d).one_or_none();out=self._status(row,cutoff)
   if row:out.update({'classification':row.pattern_classification,'confidence':str(row.confidence),'cutoff_period':row.cutoff_period,'fingerprint':row.source_pattern_fingerprint})
@@ -104,6 +107,10 @@ class DecisionEvidenceResolver:
   items=result.get('items')
   if not isinstance(items,list): return False
   return any(isinstance(item,dict) and item.get('material_code')==material_code for item in items)
+ @staticmethod
+ def _result_item(result,material_code):
+  if not isinstance(result,dict) or not isinstance(result.get('items'),list):return None
+  return next((item for item in result['items'] if isinstance(item,dict) and item.get('material_code')==material_code),None)
  @staticmethod
  def _runtime_cutoff(execution):
   metadata=execution.metadata_ or {}; request_metadata=metadata.get('request_metadata') or {}

@@ -7,47 +7,18 @@ import {
   Grid,
   Paper,
   Chip,
+  Button,
+  Skeleton,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
-import {
-  School as SchoolIcon,
-  Security as SecurityIcon,
-  Timeline as TimelineIcon,
-  Analytics as AnalyticsIcon,
-} from '@mui/icons-material';
-
-const topics = [
-  {
-    icon: SchoolIcon,
-    category: 'Temel Kavramlar',
-    title: 'Stok Yönetimi Nedir?',
-    description:
-      'Stok yönetiminin temel amaçlarını, maliyet ve hizmet seviyesi dengesiyle birlikte ele alın.',
-  },
-  {
-    icon: SecurityIcon,
-    category: 'Emniyet Stoku',
-    title: 'Emniyet Stoku Nedir?',
-    description:
-      'Talep ve tedarik belirsizliğine karşı emniyet stokunun neden gerekli olduğunu öğrenin.',
-  },
-  {
-    icon: TimelineIcon,
-    category: 'Operasyon',
-    title: 'Yeniden Sipariş Noktası (ROP)',
-    description:
-      'Ne zaman sipariş verilmesi gerektiğini belirleyen temel yaklaşımı örneklerle inceleyin.',
-  },
-  {
-    icon: AnalyticsIcon,
-    category: 'Tahmin',
-    title: 'Talep Tahmini Nedir?',
-    description:
-      'Geçmiş veriden gelecekteki talebi tahmin etmenin temel mantığını ve sınırlarını keşfedin.',
-  },
-];
+import { Link } from 'react-router-dom';
+import { useAcademyArticles } from '../../academy/api';
+import { getAcademyCategoryIcon } from '../../academy/components/categoryIcons';
 
 export function AcademySection() {
+  const articlesQuery = useAcademyArticles();
+  const articles = (articlesQuery.data ?? []).slice(0, 4);
+
   return (
     <Box
       id="akademi"
@@ -151,98 +122,68 @@ export function AcademySection() {
           </Box>
         </Box>
 
-        <Grid container spacing={3}>
-          {topics.map((topic, index) => (
-            <Grid size={{ xs: 12, sm: 6, md: 6, lg: 3 }} key={index}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: { xs: 2.5, md: 3.5 },
-                  height: '100%',
-                  minHeight: 210,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderRadius: (theme) => theme.shape.borderRadius,
-                  border: (theme) => `1px solid ${theme.palette.divider}`,
-                  bgcolor: (theme) => theme.palette.background.paper,
-                  transition: 'all 0.25s ease-in-out',
-                  '&:hover': {
-                    borderColor: (theme) => theme.palette.primary.main,
-                    boxShadow: (theme) =>
-                      `0 8px 32px ${alpha(theme.palette.primary.main, 0.06)}`,
-                    transform: 'translateY(-2px)',
-                  },
-                }}
-              >
-                <Chip
-                  label={topic.category}
-                  size="small"
-                  sx={{
-                    alignSelf: 'flex-start',
-                    mb: 2,
-                    bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
-                    color: (theme) => theme.palette.primary.main,
-                    fontWeight: 500,
-                    fontSize: '0.65rem',
-                    borderRadius: 2,
-                    height: 24,
-                    '& .MuiChip-label': {
-                      px: 1.5,
-                    },
-                  }}
-                />
+        {articlesQuery.isLoading && (
+          <Grid container spacing={3} aria-label="Akademi içerikleri yükleniyor">
+            {[0, 1, 2, 3].map((item) => (
+              <Grid size={{ xs: 12, sm: 6, md: 6, lg: 3 }} key={item}>
+                <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.5 }, minHeight: 210, border: 1, borderColor: 'divider' }}>
+                  <Skeleton width="45%" height={24} />
+                  <Skeleton width="85%" height={34} sx={{ mt: 2 }} />
+                  <Skeleton height={22} />
+                  <Skeleton width="70%" height={22} />
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        )}
 
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 1.5,
-                    mb: 1.5,
-                  }}
-                >
-                  <Box
+        {articlesQuery.isError && (
+          <Paper elevation={0} sx={{ maxWidth: 680, mx: 'auto', p: { xs: 3, md: 4 }, textAlign: 'center', border: 1, borderColor: 'divider' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>Akademi içeriklerine şu anda erişilemiyor.</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>Bu geçici bir içerik servisi hatası olabilir.</Typography>
+            <Button size="small" variant="outlined" onClick={() => void articlesQuery.refetch()}>Tekrar Dene</Button>
+          </Paper>
+        )}
+
+        {!articlesQuery.isLoading && !articlesQuery.isError && articles.length === 0 && (
+          <Paper elevation={0} sx={{ maxWidth: 680, mx: 'auto', p: { xs: 3, md: 4 }, textAlign: 'center', border: 1, borderColor: 'divider' }}>
+            <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>Stokonomi Akademi içerikleri hazırlanıyor.</Typography>
+            <Typography variant="body2" color="text.secondary">Yayına hazır içerikler burada yer alacak.</Typography>
+          </Paper>
+        )}
+
+        {!articlesQuery.isLoading && !articlesQuery.isError && articles.length > 0 && (
+          <Grid container spacing={3}>
+            {articles.map((article) => {
+              const CategoryIcon = getAcademyCategoryIcon(article.category);
+              return (
+                <Grid size={{ xs: 12, sm: 6, md: 6, lg: 3 }} key={article.id}>
+                  <Paper
+                    component={Link}
+                    to={`/akademi/${article.slug}`}
+                    elevation={0}
                     sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      width: 36,
-                      height: 36,
-                      borderRadius: 2,
-                      bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
-                      color: (theme) => theme.palette.primary.main,
-                      flexShrink: 0,
+                      p: { xs: 2.5, md: 3.5 }, height: '100%', minHeight: 210, display: 'flex', flexDirection: 'column',
+                      borderRadius: (theme) => theme.shape.borderRadius, border: (theme) => `1px solid ${theme.palette.divider}`,
+                      bgcolor: 'background.paper', color: 'inherit', textDecoration: 'none', transition: 'all 0.25s ease-in-out',
+                      '&:hover': { borderColor: 'primary.main', boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.primary.main, 0.06)}`, transform: 'translateY(-2px)' },
                     }}
                   >
-                    <topic.icon sx={{ fontSize: 20 }} />
-                  </Box>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      fontWeight: 600,
-                      color: (theme) => theme.palette.text.primary,
-                      fontSize: '0.95rem',
-                      lineHeight: 1.3,
-                    }}
-                  >
-                    {topic.title}
-                  </Typography>
-                </Box>
-
-                <Typography
-                  variant="body2"
-                  sx={{
-                    color: (theme) => theme.palette.text.secondary,
-                    lineHeight: 1.7,
-                    fontSize: '0.875rem',
-                    flex: 1,
-                  }}
-                >
-                  {topic.description}
-                </Typography>
-              </Paper>
-            </Grid>
-          ))}
-        </Grid>
+                    <Chip label={article.category} size="small" sx={{ alignSelf: 'flex-start', mb: 2, bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06), color: 'primary.main' }} />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 2, bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06), color: 'primary.main', flexShrink: 0 }}>
+                        <CategoryIcon sx={{ fontSize: 20 }} />
+                      </Box>
+                      <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '0.95rem', lineHeight: 1.3 }}>{article.title}</Typography>
+                    </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, fontSize: '0.875rem', flex: 1, mb: 2 }}>{article.description}</Typography>
+                    <Typography variant="caption" color="text.secondary">{article.readingTime} dakika okuma</Typography>
+                  </Paper>
+                </Grid>
+              );
+            })}
+          </Grid>
+        )}
 
         <Box
           sx={{
@@ -250,20 +191,9 @@ export function AcademySection() {
             textAlign: 'center',
           }}
         >
-          <Chip
-            label="İlk içerikler hazırlanıyor"
-            sx={{
-              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06),
-              color: (theme) => theme.palette.text.secondary,
-              fontWeight: 500,
-              fontSize: '0.8rem',
-              borderRadius: (theme) => theme.shape.borderRadius,
-              height: 36,
-              '& .MuiChip-label': {
-                px: 2.5,
-              },
-            }}
-          />
+          <Button component={Link} to="/akademi" variant="outlined" sx={{ textTransform: 'none', fontWeight: 600 }}>
+            Tüm içerikleri gör
+          </Button>
           <Typography
             variant="caption"
             sx={{
@@ -274,7 +204,7 @@ export function AcademySection() {
               opacity: 0.6,
             }}
           >
-            Akademi içerikleri yakında yayında
+            Stokonomi Akademi
           </Typography>
         </Box>
       </Container>

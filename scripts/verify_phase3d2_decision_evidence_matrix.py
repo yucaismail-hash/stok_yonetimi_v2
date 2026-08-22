@@ -65,12 +65,12 @@ def _execution(s, ids, material, demand, cutoff, kind):
     return execution
 
 
-def _runtime(s, ids, material, demand, cutoff, kind):
+def _runtime(s, ids, material, demand, cutoff, kind, signal=None):
     execution = _execution(s, ids, material, demand, cutoff, kind)
     reference = RuntimeResultReference(
         id=uuid7(), company_id=ids["company_id"], execution_id=execution.execution_id,
         result_type=kind, result_version="phase3d2-v1", contract_version="1", storage_kind="inline_jsonb",
-        inline_result={"items": [{"material_code": material, "demand_type": demand}]}, validation_status="validated",
+        inline_result={"items": [{"material_code": material, "demand_type": demand, **({"policy_signal": signal} if signal else {})}]}, validation_status="validated",
     )
     s.add(reference); s.flush()
     return execution, reference
@@ -102,19 +102,19 @@ def _pattern(ids, material, demand, cutoff, fingerprint):
     )
 
 
-def _event(ids, identity, cutoff):
+def _event(ids, identity, cutoff, classification="POSITIVE", material_code="MAT-A", demand_type="sales"):
     return EventIntelligenceMemory(
-        company_id=ids["company_id"], material_code="MAT-A", demand_type="sales", event_identity=identity,
+        company_id=ids["company_id"], material_code=material_code, demand_type=demand_type, event_identity=identity,
         feature_schema_version="v1", baseline_policy_version="v1", lag_policy_version="v1", association_policy_version="v1",
-        confidence_policy_version="v1", classification="POSITIVE", confidence=Decimal(".8"), occurrence_count=2,
+        confidence_policy_version="v1", classification=classification, confidence=Decimal(".8"), occurrence_count=2,
         included_occurrence_ids=[], included_revision_ids=[], cutoff_period=cutoff, source_fingerprint=sha256(identity.encode()).hexdigest(),
         source_actual_observation_ids=[], source_actual_revision_ids=[], source_scope_metadata={}, overlap_confounded=False,
     )
 
 
-def _supplier_memory(ids, supplier):
+def _supplier_memory(ids, supplier, material_code="MAT-A"):
     return SupplierLearningMemory(
-        company_id=ids["company_id"], supplier_id=supplier.id, material_code="MAT-A", supplier_code="SUP-A", supplier_name="Supplier A",
+        company_id=ids["company_id"], supplier_id=supplier.id, material_code=material_code, supplier_code="SUP-A", supplier_name="Supplier A",
         product_level="finished_good", supplier_learning_policy_version="v1", feature_version="v1", confidence_policy_version="v1",
         classification="RELIABLE", confidence=Decimal(".9"), sample_count=8, lead_time_sample_count=8,
         window_start=date(2026, 1, 1), window_end=date(2026, 5, 17), cutoff_date=date(2026, 5, 17),

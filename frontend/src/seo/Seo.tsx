@@ -1,5 +1,6 @@
 // src/seo/Seo.tsx
 import { useEffect } from 'react';
+import { DEFAULT_OG_IMAGE, SEO_SITE_URL } from './constants';
 
 export interface SeoProps {
   title: string;
@@ -82,10 +83,6 @@ function injectJsonLd(data: object) {
   document.head.appendChild(script);
 }
 
-function getBaseUrl() {
-  return 'https://stokonomi.com';
-}
-
 export default function Seo({
   title,
   description,
@@ -95,12 +92,12 @@ export default function Seo({
   ogTitle,
   ogDescription,
   ogUrl,
-  ogImage = 'https://stokonomi.com/og/stokonomi-og.png',
+  ogImage = DEFAULT_OG_IMAGE,
   ogImageAlt,
   twitterCard = 'summary_large_image',
   twitterTitle,
   twitterDescription,
-  twitterImage = 'https://stokonomi.com/og/stokonomi-og.png',
+  twitterImage = DEFAULT_OG_IMAGE,
   articlePublishedTime,
   articleModifiedTime,
   faqs = [],
@@ -108,10 +105,10 @@ export default function Seo({
   noindex = false,
 }: SeoProps) {
   useEffect(() => {
-    const finalRobots = noindex ? 'noindex, follow' : robots;
+    const finalRobots = noindex ? 'noindex, nofollow' : robots;
     const finalOgTitle = ogTitle || title;
     const finalOgDescription = ogDescription || description;
-    const finalOgUrl = ogUrl || canonical || getBaseUrl();
+    const finalOgUrl = ogUrl || canonical || SEO_SITE_URL;
     const finalTwitterTitle = twitterTitle || title;
     const finalTwitterDescription = twitterDescription || description;
 
@@ -168,12 +165,12 @@ export default function Seo({
         publisher: {
           '@type': 'Organization',
           name: 'Stokonomi',
-          url: 'https://stokonomi.com/',
+          url: `${SEO_SITE_URL}/`,
         },
         author: {
           '@type': 'Organization',
           name: 'Stokonomi',
-          url: 'https://stokonomi.com/',
+          url: `${SEO_SITE_URL}/`,
         },
         image: ogImage,
       });
