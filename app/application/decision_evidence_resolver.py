@@ -74,22 +74,22 @@ class DecisionEvidenceResolver:
   return out
  def _pattern(self,s,c,m,d,cutoff):
   row=s.query(PatternLearningMemory).filter_by(company_id=c,material_code=m,demand_type=d).one_or_none();out=self._status(row,cutoff)
-  if row:out.update({'classification':row.pattern_classification,'confidence':str(row.confidence),'cutoff_period':row.cutoff_period,'fingerprint':row.source_pattern_fingerprint})
+  if row:out.update({'classification':row.pattern_classification,'confidence':str(row.confidence),'cutoff_period':row.cutoff_period,'fingerprint':row.source_pattern_fingerprint,'policy_versions':{'pattern':row.pattern_policy_version,'feature':row.feature_version,'confidence':row.confidence_policy_version},'row_version':row.row_version})
   return out
  def _company(self,s,c):
   row=s.query(CompanyLearningMemoryV2).filter_by(company_id=c).one_or_none();out=self._status(row)
-  if row:out.update({'maturity_score':str(row.evidence_maturity_score),'maturity_level':row.evidence_maturity_level,'fingerprint':row.source_summary_fingerprint})
+  if row:out.update({'maturity_score':str(row.evidence_maturity_score),'maturity_level':row.evidence_maturity_level,'fingerprint':row.source_summary_fingerprint,'policy_versions':{'company_learning':row.company_learning_policy_version,'learning_score':row.learning_score_policy_version},'row_version':row.row_version})
   return out
  def _events(self,s,c,m,d,cutoff):
   rows=s.query(EventIntelligenceMemory).filter_by(company_id=c,material_code=m,demand_type=d).order_by(EventIntelligenceMemory.event_identity).all();ok=[r for r in rows if self._compatible(r.cutoff_period,cutoff)]
   if not ok:return {'status':'INCOMPATIBLE' if rows else 'ABSENT','reason':'FUTURE_EVIDENCE' if rows else None,'entries':[]}
-  return {'status':'AVAILABLE','entries':tuple({'source_id':str(r.id),'event_identity':r.event_identity,'classification':r.classification,'cutoff_period':r.cutoff_period,'fingerprint':r.source_fingerprint,'confounded':bool(r.overlap_confounded)} for r in ok)}
+  return {'status':'AVAILABLE','entries':tuple({'source_id':str(r.id),'event_identity':r.event_identity,'classification':r.classification,'confidence':str(r.confidence),'cutoff_period':r.cutoff_period,'fingerprint':r.source_fingerprint,'confounded':bool(r.overlap_confounded),'policy_versions':{'feature':r.feature_schema_version,'baseline':r.baseline_policy_version,'lag':r.lag_policy_version,'association':r.association_policy_version,'confidence':r.confidence_policy_version},'row_version':r.row_version} for r in ok)}
  def _supplier_learning(self,s,c,m,cutoff):
   rows=s.query(SupplierLearningMemory).filter_by(company_id=c,material_code=m).order_by(SupplierLearningMemory.supplier_id).all()
   parsed=parse_weekly_period(cutoff); cutoff_date=date.fromisocalendar(parsed.year,parsed.week,7)
   compatible=[r for r in rows if r.cutoff_date<=cutoff_date]
   if not compatible:return {'status':'INCOMPATIBLE' if rows else 'ABSENT','reason':'FUTURE_EVIDENCE' if rows else None,'entries':()}
-  return {'status':'AVAILABLE','entries':tuple({'source_id':str(r.id),'classification':r.classification,'fingerprint':r.source_fingerprint,'cutoff_date':str(r.cutoff_date)} for r in compatible)}
+  return {'status':'AVAILABLE','entries':tuple({'source_id':str(r.id),'supplier_id':str(r.supplier_id),'classification':r.classification,'confidence':str(r.confidence),'fingerprint':r.source_fingerprint,'cutoff_date':str(r.cutoff_date),'policy_versions':{'supplier_learning':r.supplier_learning_policy_version,'feature':r.feature_version,'confidence':r.confidence_policy_version},'row_version':r.row_version,'lead_time_cv':str(r.lead_time_coefficient_of_variation) if r.lead_time_coefficient_of_variation is not None else None,'late_ratio':str(r.late_ratio) if r.late_ratio is not None else None,'underfulfillment_ratio':str(r.underfulfillment_ratio) if r.underfulfillment_ratio is not None else None} for r in compatible)}
  def _champion(self,s,c,m,d):
   cur=s.query(ChampionRegistryCurrent).filter_by(company_id=c,material_code=m,demand_type=d).one_or_none()
   if not cur:return {'status':'ABSENT'}
@@ -105,12 +105,24 @@ class DecisionEvidenceResolver:
  def _result_has_material(result,material_code):
   if not isinstance(result,dict): return False
   items=result.get('items')
-  if not isinstance(items,list): return False
-  return any(isinstance(item,dict) and item.get('material_code')==material_code for item in items)
+  if isinstance(items,list) and any(isinstance(item,dict) and item.get('material_code')==material_code for item in items): return True
+  # Supplier operational results are authoritative per material through the
+  # adapter's persisted supplier material_mappings, not through item rows.
+  suppliers=result.get('suppliers')
+  return isinstance(suppliers,list) and any(
+   isinstance(supplier,dict) and any(isinstance(mapping,dict) and mapping.get('material_code')==material_code for mapping in supplier.get('material_mappings',()))
+   for supplier in suppliers)
  @staticmethod
  def _result_item(result,material_code):
-  if not isinstance(result,dict) or not isinstance(result.get('items'),list):return None
-  return next((item for item in result['items'] if isinstance(item,dict) and item.get('material_code')==material_code),None)
+  if not isinstance(result,dict):return None
+  if isinstance(result.get('items'),list):
+   item=next((item for item in result['items'] if isinstance(item,dict) and item.get('material_code')==material_code),None)
+   if item is not None:return item
+  suppliers=result.get('suppliers')
+  if isinstance(suppliers,list):
+   matches=[supplier for supplier in suppliers if isinstance(supplier,dict) and any(isinstance(mapping,dict) and mapping.get('material_code')==material_code for mapping in supplier.get('material_mappings',()))]
+   if matches:return {'material_code':material_code,'supplier_ids':tuple(str(supplier.get('supplier_id')) for supplier in matches)}
+  return None
  @staticmethod
  def _runtime_cutoff(execution):
   metadata=execution.metadata_ or {}; request_metadata=metadata.get('request_metadata') or {}

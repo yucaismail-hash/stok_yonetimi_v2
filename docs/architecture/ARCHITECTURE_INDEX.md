@@ -544,6 +544,27 @@ Each authoritative architecture specification document now contains its bounded 
 | Learning | NOT INVOKED |
 | Decision Intelligence | NOT INVOKED |
 
+## Phase 3D5 Business Decision Plan
+
+| Contract | Status |
+|---|---|
+| Analytical Business Workflow authority | VERIFIED — completion precedes Decision support |
+| Dynamic Operational Plan | DERIVED / READ-ONLY |
+| DecisionSnapshot | DURABLE PER-SKU AUTHORITY |
+| Decision failure isolation | VERIFIED — completed analytics remain unchanged |
+| Per-SKU limitation and retry | VERIFIED — no global Decision transaction |
+| Autonomous action / ERP / LLM | NOT ACTIVE |
+
+## Phase 3D6 User Explanation and Feedback
+
+| Boundary | Contract |
+|---|---|
+| DecisionSnapshot | Historical decision authority. |
+| Structured explanation | Deterministic, read-only presentation context reconstructed only from immutable Snapshot/Candidate/frozen provenance. |
+| LLM | Optional narrative translator only; it has no decision, metric, confidence, causality, or action authority. |
+| Feedback | Immutable user-opinion audit evidence, not correctness truth and not approval. |
+| Learning from feedback | Deferred to a future explicitly versioned policy. Execution/ERP actions remain inactive. |
+
 | Phase 2E Capability Dataflow | BINDING â€” validated same-tenant upstream evidence, Simulation no-recompute, and Backtest no-reselection |
 | Standalone Simulation Durable Execution | DEVELOPMENT VERIFIED â€” real Monte Carlo, one task, fresh-process retrieval |
 

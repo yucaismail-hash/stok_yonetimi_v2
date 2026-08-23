@@ -1,5 +1,24 @@
 # Architecture Changelog
 
+## 2026-08-23 - Phase 3D4 immutable Decision Snapshot
+
+- Added canonical `DecisionSnapshot` and ordered `DecisionSnapshotCandidate` audit vintages. Their semantic identity is company, material, demand type, context, cutoff, policy version, envelope fingerprint, and policy fingerprint; PostgreSQL uniqueness makes repeated and concurrent materialization converge to one immutable snapshot.
+- Snapshot source provenance freezes the compact canonical resolver values actually used, including mutable Pattern, Company Learning, Supplier Learning, and Event memory semantics. Later current-projection updates cannot rewrite an earlier decision vintage; Resolver remains cutoff authority and DecisionPolicy remains candidate authority.
+- Snapshot persistence is audit-only. It does not approve, execute, alter Forecast/Safety Stock/Supplier/ERP state, or grant LLM authority. User review, immutable execution events, and any current pointer remain deferred.
+
+## 2026-08-23 - Phase 3D3B Decision Policy semantic closeout
+
+- `decision_policy_v1` is the deterministic candidate authority: it orders candidates by priority, canonical candidate order, candidate type, then reason codes. Current priorities are Simulation/Safety Stock `10`, Backtest Forecast review `20`, Pattern Forecast review `30`, Retraining context `35`, Supplier review `40`, Event monitoring `50`, and stable hold `90`.
+- Same-kind candidate requests now converge into one candidate while preserving sorted reason-code and supporting-evidence provenance. A weak Backtest is not self-conflicting; `FORECAST_SIGNAL_VS_WEAK_BACKTEST` is emitted only when a distinct Pattern or Retraining forecast-review context is also present. Independent simultaneous risks are `MIXED`; an explicit contradiction is `CONFLICTED`; missing required evidence is `INSUFFICIENT` with confidence `0`.
+- Confidence is evidence quality, not outcome probability: `round((0.6 + 0.4 * optional_available_coverage) * maturity_weight, 3)`, where maturity weights are mature `1.0`, developing `0.85`, low `0.7`, and unknown `0.8`. Required-evidence failure gates the policy result; Company maturity changes confidence only, never operational candidates or their ordering.
+- Simulation remains scenario-only, Backtest validation-only, Supplier review-context-only, and Event monitoring non-causal. The policy remains pure, versioned, read-only, LLM-independent, and has no Decision persistence, human-approval replacement, ERP action, or autonomous execution authority.
+
+## 2026-08-23 - Phase 3D3A deterministic Decision Policy closeout
+
+- `decision_policy_v1` is PostgreSQL verified as a deterministic, read-only candidate boundary over the canonical Decision Evidence envelope. Compatible persisted simulation, Backtest, Supplier Learning, and Event context produce ordered review/monitor candidates; cutoff, demand, and tenant isolation prevent future or neighboring evidence from participating.
+- Decision pipeline performance baseline v1 was measured for one persisted `SKU` / `sales` / `REPLENISHMENT` scope in the development PostgreSQL environment. Excluding fixture setup and cleanup, five warm iterations measured Resolver mean/median `2783.180`/`2757.470 ms`, Policy mean/median `0.689`/`0.683 ms`, and combined mean/median `2783.869`/`2758.326 ms`; Resolver accounted for approximately `99.975%` of measured time. This is a 1-SKU reference only, not a linear production-scale forecast.
+- The baseline resolved eight available and three absent sources into four candidates, with zero persistence mutation. Query count was not measured. Future scale measurements are 10, 50, 100, and 250 SKU before any caching, batching, query-consolidation, or worker-concurrency decision. Decision Snapshot, human approval/execution, ERP writeback, and LLM authority remain inactive.
+
 ## 2026-08-12 - Phase 3C4 Selective Retraining orchestration closeout
 
 - PostgreSQL closeout verified the complete explicit periodic-equivalent chain: durable scheduler tick, scanner activation, correction-safe job acceptance, cooldown/priority/resource admission, leased worker, Challenger training, and immutable ModelArtifact. At-least-once tick delivery converges to one effective job/runtime/task/fit/artifact.
@@ -419,6 +438,16 @@
 - Added a read-only, company/material/demand/cutoff/context-scoped Decision Evidence Resolver. It normalizes compact persisted Forecast, runtime, learned-memory, Champion, and Retraining provenance into a deterministic fingerprinted envelope; no recommendation or Decision Snapshot is generated.
 - Closed the Pattern cutoff contract: `PatternLearningMemory` is a mutable current projection, not historical vintage storage. Compatible current Pattern is available; a newer current Pattern is `INCOMPATIBLE / FUTURE_EVIDENCE` and is not consumed. Historical Pattern rationale will be frozen by the Phase 3D4 immutable Decision Snapshot, not by versioning this projection.
 - Required evidence is context-specific; optional evidence degrades gracefully. Future-cutoff evidence is marked incompatible, Simulation remains scenario evidence, Backtest validation evidence, learned memory context only, Champion provenance only, and LLM decision authority remains inactive.
+
+## 2026-08-23 - Phase 3D5 Business Decision Plan Closeout
+
+- A completed Business Workflow remains the analytical authority. Its Forecast, optional Supplier, Safety Stock, Simulation, and Backtest tasks complete before the derived Decision layer resolves evidence, evaluates deterministic policy, materializes immutable per-SKU DecisionSnapshots, and returns a compact Dynamic Operational Plan.
+- Probe-controlled Decision failures are isolated per material: they neither alter completed runtime state nor analytical evidence. A limitation now carries material, failure stage, and error class for safe retry observability. Retry reuses completed evidence and existing semantic snapshots; no autonomous action, ERP write, Learning refresh, retraining, or Champion mutation is activated.
+
+## 2026-08-23 - Phase 3D6 User Explanation / Feedback Boundary
+
+- Added deterministic, historical Snapshot explanation context and append-only company-scoped user feedback events.
+- Feedback is opinion/audit evidence only: it neither changes Decision confidence nor grants operational approval; learning and execution integration remain deferred/inactive.
 
 ## 2026-08-13 - Phase 3C5B3A Company Learning Foundation
 

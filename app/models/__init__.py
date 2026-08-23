@@ -73,6 +73,7 @@ from app.models.supplier_learning_memory import SupplierLearningMemory
 from app.models.event_observation import EventObservation, EventRevision
 from app.models.event_intelligence_memory import EventIntelligenceMemory
 from app.models.decision_snapshot import DecisionSnapshot, DecisionSnapshotCandidate
+from app.models.decision_feedback import DecisionFeedbackEvent
 
 # Learning
 from app.models.learning import (
@@ -196,6 +197,9 @@ __all__ = [
     "EventObservation",
     "EventRevision",
     "EventIntelligenceMemory",
+    "DecisionSnapshot",
+    "DecisionSnapshotCandidate",
+    "DecisionFeedbackEvent",
     # Learning
     "CompanyLearningMemory",
     "UserLearningData",

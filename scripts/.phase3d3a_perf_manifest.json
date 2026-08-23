@@ -1,7 +1,0 @@
-{
-  "company_id": "06a8a236-e2b3-7a6f-8000-fd26d75dc1ae",
-  "material_code": "SKU",
-  "demand_type": "sales",
-  "decision_cutoff_period": "2026-W20",
-  "decision_context": "REPLENISHMENT"
-}

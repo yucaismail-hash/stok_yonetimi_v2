@@ -115,8 +115,8 @@ def multi_risk():
         assert tuple(row["type"] for row in rows) == expected_types
         assert tuple(row["priority"] for row in rows) == (10, 20, 40, 50)
         assert len(set(row["type"] for row in rows)) == len(rows)
-        assert result.agreement_status == "CONFLICTED"
-        assert result.conflicting_evidence == ("FORECAST_SIGNAL_VS_WEAK_BACKTEST",)
+        assert result.agreement_status == "MIXED"
+        assert result.conflicting_evidence == ()
         assert set(result.supporting_evidence) == {
             "BACKTEST_VALIDATION_WEAK", "EVENT_ASSOCIATION_NON_CAUSAL", "SIMULATION_SCENARIO_RISK", "SUPPLIER_LATE_PRONE",
         }

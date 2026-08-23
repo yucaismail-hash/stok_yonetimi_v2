@@ -50,7 +50,7 @@ def main():
   total=perf_counter();progress('[1] fixture/setup start')
   stable=build('stable');e,r=evaluate(stable);assert types(r)==('HOLD_POLICY',)
   missing=build('missing',safety=False);e0,r0=evaluate(missing);assert e0.status=='INSUFFICIENT_REQUIRED_EVIDENCE' and r0.status=='INSUFFICIENT'
-  weak=build('weak',backtest='weak_validation');_,rw=evaluate(weak);assert 'REVIEW_FORECAST' in types(rw) and rw.agreement_status=='CONFLICTED'
+  weak=build('weak',backtest='weak_validation');_,rw=evaluate(weak);assert 'REVIEW_FORECAST' in types(rw) and rw.agreement_status=='ALIGNED'
   structural=build('pattern',pattern='STRUCTURAL_CHANGE');_,rp=evaluate(structural);assert 'REVIEW_FORECAST' in types(rp)
   late=build('late',supplier='LATE_PRONE');_,rl=evaluate(late);assert 'REVIEW_SUPPLIER' in types(rl)
   mixed=build('mixed',supplier='MIXED_RISK');_,rm=evaluate(mixed);assert 'REVIEW_SUPPLIER' in types(rm)

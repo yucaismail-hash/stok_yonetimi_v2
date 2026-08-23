@@ -18,7 +18,7 @@ def main():
     stable=p.evaluate(envelope(optional=(("company_learning",state(maturity_level="mature")),)))
     assert stable.status=="READY" and candidate_types(stable)==("HOLD_POLICY",)
     insufficient=p.evaluate(envelope("INSUFFICIENT_REQUIRED_EVIDENCE"));assert insufficient.status=="INSUFFICIENT" and not insufficient.candidates
-    weak=p.evaluate(envelope(optional=(("backtest",state(signal="weak_validation")),)));assert "REVIEW_FORECAST" in candidate_types(weak) and weak.agreement_status=="CONFLICTED"
+    weak=p.evaluate(envelope(optional=(("backtest",state(signal="weak_validation")),)));assert "REVIEW_FORECAST" in candidate_types(weak) and weak.agreement_status=="ALIGNED"
     structural=p.evaluate(envelope(optional=(("pattern",state(classification="STRUCTURAL_CHANGE")),)));assert "REVIEW_FORECAST" in candidate_types(structural)
     for classification in ("LATE_PRONE","DETERIORATING","MIXED_RISK"):
         r=p.evaluate(envelope(optional=(("supplier_learning",state(entries=({"classification":classification},))),)));assert "REVIEW_SUPPLIER" in candidate_types(r)
