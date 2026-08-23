@@ -72,6 +72,7 @@ from app.models.supplier_delivery_observation import SupplierDeliveryObservation
 from app.models.supplier_learning_memory import SupplierLearningMemory
 from app.models.event_observation import EventObservation, EventRevision
 from app.models.event_intelligence_memory import EventIntelligenceMemory
+from app.models.decision_snapshot import DecisionSnapshot, DecisionSnapshotCandidate
 
 # Learning
 from app.models.learning import (
