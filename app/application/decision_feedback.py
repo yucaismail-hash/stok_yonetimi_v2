@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from json import dumps
 from time import perf_counter
+from sqlalchemy.exc import IntegrityError
 
 from app.database import SessionLocal
 from app.models.company import User
@@ -27,6 +28,10 @@ class DecisionFeedbackService:
     def _fingerprint(user_id, snapshot_id, ordinal, candidate_type, feedback_type, comment):
         value = (str(user_id), str(snapshot_id), ordinal, candidate_type, feedback_type, comment or "")
         return sha256(dumps(value, separators=(",", ":")).encode()).hexdigest()
+
+    @staticmethod
+    def _semantic_key(fingerprint, supersedes_feedback_id):
+        return f"{fingerprint}:{supersedes_feedback_id or 'root'}"
 
     @staticmethod
     def _event(row):
@@ -56,15 +61,21 @@ class DecisionFeedbackService:
                 if previous is None: raise ValueError("superseded feedback does not belong to user and snapshot")
                 if (previous.candidate_ordinal, previous.candidate_type) != (candidate_ordinal, candidate_type): raise ValueError("superseded feedback candidate mismatch")
             fingerprint = self._fingerprint(user_id, snapshot.id, candidate_ordinal, candidate_type, feedback_type, comment)
-            duplicate = session.query(DecisionFeedbackEvent).filter_by(company_id=company_id, user_id=user_id, decision_snapshot_id=snapshot.id,
-                candidate_ordinal=candidate_ordinal, candidate_type=candidate_type, feedback_type=feedback_type,
-                feedback_fingerprint=fingerprint, supersedes_feedback_id=supersedes_feedback_id).one_or_none()
+            semantic_key = self._semantic_key(fingerprint, supersedes_feedback_id)
+            duplicate = session.query(DecisionFeedbackEvent).filter_by(company_id=company_id, semantic_key=semantic_key).one_or_none()
             if duplicate: return DecisionFeedbackResult("ALREADY_EXISTS", duplicate.id, (perf_counter()-started)*1000)
             event = DecisionFeedbackEvent(company_id=company_id, user_id=user_id, decision_snapshot_id=snapshot.id,
                 candidate_ordinal=candidate_ordinal, candidate_type=candidate_type, feedback_type=feedback_type, comment=comment,
-                source_metadata=source_metadata or {}, supersedes_feedback_id=supersedes_feedback_id, feedback_fingerprint=fingerprint)
-            session.add(event); session.commit()
-            return DecisionFeedbackResult("CREATED", event.id, (perf_counter()-started)*1000)
+                source_metadata=source_metadata or {}, supersedes_feedback_id=supersedes_feedback_id, feedback_fingerprint=fingerprint, semantic_key=semantic_key)
+            session.add(event)
+            try:
+                session.commit()
+                return DecisionFeedbackResult("CREATED", event.id, (perf_counter()-started)*1000)
+            except IntegrityError:
+                session.rollback()
+                duplicate = session.query(DecisionFeedbackEvent).filter_by(company_id=company_id, semantic_key=semantic_key).one_or_none()
+                if duplicate: return DecisionFeedbackResult("ALREADY_EXISTS", duplicate.id, (perf_counter()-started)*1000)
+                raise
         finally: session.close()
 
     def list_for_snapshot(self, company_id, decision_snapshot_id):

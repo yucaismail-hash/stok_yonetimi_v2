@@ -19,11 +19,19 @@ class DecisionFeedbackEvent(BaseModel):
     source_metadata = Column(JSONB, nullable=False, default=dict)
     supersedes_feedback_id = Column(PG_UUID(as_uuid=True), ForeignKey("decision_feedback_events.id", ondelete="RESTRICT"), nullable=True)
     feedback_fingerprint = Column(String(64), nullable=False)
+    semantic_key = Column(String(128), nullable=False)
 
-    __table_args__ = (UniqueConstraint(
-        "company_id", "user_id", "decision_snapshot_id", "candidate_ordinal", "candidate_type",
-        "feedback_type", "feedback_fingerprint", "supersedes_feedback_id",
-        name="uq_decision_feedback_event_semantic_identity"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "company_id", "user_id", "decision_snapshot_id", "candidate_ordinal", "candidate_type",
+            "feedback_type", "feedback_fingerprint", "supersedes_feedback_id",
+            name="uq_decision_feedback_event_semantic_identity",
+        ),
+        UniqueConstraint(
+            "company_id", "semantic_key",
+            name="uq_decision_feedback_company_semantic_key",
+        ),
+    )
 
 
 @event.listens_for(DecisionFeedbackEvent, "before_update")
