@@ -104,14 +104,17 @@ class LocalForecastRunner:
                 error=result.errors[0].to_dict()
                 failed=store.fail_task_attempt(execution_id,task_id,company_id,task.lease_token,error,result.errors[0].retryable)
                 session.flush(); session.refresh(execution)
-                store.fail_execution(execution_id,company_id,execution.row_version,error,current_stage=failed.task_id)
+                if failed.state == 'failed':
+                    store.fail_execution(execution_id,company_id,execution.row_version,error,current_stage=failed.task_id)
                 session.commit(); return None
             result_type={Capability.DEMAND_FORECAST:'forecast',Capability.SAFETY_STOCK:'safety_stock',Capability.SUPPLIER_ANALYSIS:'supplier',Capability.SIMULATION:'simulation',Capability.BACKTEST:'backtest'}[capability]
             ref=store.complete_task_attempt(execution_id,task_id,company_id,task.lease_token,result_type,result.result);session.flush();session.refresh(execution)
             if capability is Capability.DEMAND_FORECAST:
                 from app.application.forecast_vintage_service import ForecastVintageService
                 session.refresh(ref); ForecastVintageService(session).project(execution,ref,params)
-            if all(t.state=='completed' for t in store.get_tasks(execution_id,company_id) if t.required): store.complete_execution(execution_id,company_id,execution.row_version)
+            if all(t.state=='completed' for t in store.get_tasks(execution_id,company_id) if t.required):
+                store.complete_execution(execution_id,company_id,execution.row_version)
+                store.aggregate_business_workflow(execution_id,company_id)
             session.refresh(ref);session.expunge(ref)
             session.commit();return ref
         finally: session.close()

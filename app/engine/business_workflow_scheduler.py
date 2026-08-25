@@ -1,8 +1,10 @@
-"""Persisted, non-executing readiness evaluation for Business Workflow tasks."""
+"""Persisted readiness evaluation for Business Workflow tasks."""
 from app.engine.runtime_store import RuntimeStore
 class BusinessWorkflowReadinessError(ValueError): pass
 class BusinessWorkflowScheduler:
- def __init__(self,session): self.store=RuntimeStore(session)
+ def __init__(self,session,runner_factory=None):
+  self.store=RuntimeStore(session)
+  self._runner_factory=runner_factory
  def readiness(self,execution_id,company_id):
   execution=self.store.get_execution(execution_id,company_id)
   if not execution: raise BusinessWorkflowReadinessError('execution unavailable')
@@ -24,5 +26,8 @@ class BusinessWorkflowScheduler:
   row=ready[0]
   if row['capability'] not in ('demand_forecast','safety_stock','supplier','simulation','backtest'): raise BusinessWorkflowReadinessError('unsupported business capability')
   # Reuse the verified runner lifecycle for the first durable task only.
-  from app.engine.local_forecast_runner import LocalForecastRunner
-  return await LocalForecastRunner().run_business_task(execution_id,company_id,row['task_id'])
+  if self._runner_factory is None:
+   from app.engine.local_forecast_runner import LocalForecastRunner
+   runner=LocalForecastRunner()
+  else: runner=self._runner_factory()
+  return await runner.run_business_task(execution_id,company_id,row['task_id'])
