@@ -4,13 +4,35 @@ from datetime import datetime
 from typing import Annotated, Literal, Union
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
 
 class AcademySchema(BaseModel):
     """Reject fields that are not part of the Academy content contract."""
 
     model_config = ConfigDict(extra="forbid")
+
+
+class AcademyInternalLink(AcademySchema):
+    text: StrictStr = Field(min_length=1)
+    href: StrictStr
+
+    @field_validator("href")
+    @classmethod
+    def href_must_be_an_academy_path(cls, value: str) -> str:
+        import re
+
+        if not re.fullmatch(r"/akademi/[a-z0-9]+(?:-[a-z0-9]+)*", value):
+            raise ValueError("internal Academy links must use /akademi/{slug}")
+        return value
 
 
 class HeadingSection(AcademySchema):
@@ -22,6 +44,16 @@ class HeadingSection(AcademySchema):
 class ParagraphSection(AcademySchema):
     type: Literal["paragraph"]
     content: StrictStr
+    links: list[AcademyInternalLink] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def links_must_match_the_paragraph(self) -> "ParagraphSection":
+        hrefs = [link.href for link in self.links]
+        if len(hrefs) != len(set(hrefs)):
+            raise ValueError("paragraph links cannot repeat a target")
+        if any(link.text not in self.content for link in self.links):
+            raise ValueError("each paragraph link text must occur in its content")
+        return self
 
 
 class BulletListSection(AcademySchema):

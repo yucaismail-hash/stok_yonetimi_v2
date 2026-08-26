@@ -86,6 +86,41 @@ def test_faq_item_missing_answer_is_rejected():
         AcademyArticleDirectusDto.model_validate(payload)
 
 
+def test_paragraph_internal_academy_link_is_accepted():
+    payload = _article_payload()
+    payload["sections"] = [
+        {
+            "type": "paragraph",
+            "content": "Emniyet stoku stokout riskini azaltabilir.",
+            "links": [
+                {
+                    "text": "Emniyet stoku",
+                    "href": "/akademi/emniyet-stoku-nedir",
+                }
+            ],
+        }
+    ]
+    article = AcademyArticleDirectusDto.model_validate(payload)
+    assert article.sections[0].links[0].href == "/akademi/emniyet-stoku-nedir"
+
+
+@pytest.mark.parametrize(
+    "href",
+    ["https://example.com", "javascript:alert(1)", "/akademi/UPPER", "/dashboard"],
+)
+def test_paragraph_internal_link_rejects_unsafe_paths(href):
+    payload = _article_payload()
+    payload["sections"] = [
+        {
+            "type": "paragraph",
+            "content": "Emniyet stoku stokout riskini azaltabilir.",
+            "links": [{"text": "Emniyet stoku", "href": href}],
+        }
+    ]
+    with pytest.raises(ValidationError):
+        AcademyArticleDirectusDto.model_validate(payload)
+
+
 def test_public_list_mapping_uses_camel_case():
     article = AcademyArticleDirectusDto.model_validate(_article_payload())
     public_item = AcademyArticleListItem.from_directus(article)

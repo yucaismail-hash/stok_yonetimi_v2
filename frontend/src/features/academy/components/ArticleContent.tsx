@@ -14,12 +14,45 @@ import {
   TableRow,
   Paper,
   Divider,
+  Link as MuiLink,
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
+import { Link as RouterLink } from 'react-router-dom';
 import { Section, FAQ } from '../content/types';
 
 interface ArticleContentProps {
   sections: Section[];
+}
+
+function renderParagraphContent(section: Section) {
+  const content = section.content ?? '';
+  const links = section.links;
+
+  if (!links?.length) return content;
+
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+
+  for (const link of links) {
+    const start = content.indexOf(link.text, cursor);
+    if (start === -1) return content;
+
+    if (start > cursor) parts.push(content.slice(cursor, start));
+    parts.push(
+      <MuiLink
+        component={RouterLink}
+        to={link.href}
+        key={`${link.href}-${start}`}
+        sx={{ fontWeight: 600 }}
+      >
+        {link.text}
+      </MuiLink>,
+    );
+    cursor = start + link.text.length;
+  }
+
+  if (cursor < content.length) parts.push(content.slice(cursor));
+  return parts;
 }
 
 export default function ArticleContent({ sections }: ArticleContentProps) {
@@ -58,7 +91,7 @@ export default function ArticleContent({ sections }: ArticleContentProps) {
               mb: 2,
             }}
           >
-            {section.content}
+            {renderParagraphContent(section)}
           </Typography>
         );
 

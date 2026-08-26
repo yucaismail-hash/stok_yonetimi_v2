@@ -2,6 +2,7 @@ import type {
   AcademyArticleDetail,
   AcademyArticleListItem,
   AcademyArticleListResponse,
+  AcademyInternalLink,
   FAQ,
   Section,
 } from '../content/types';
@@ -47,6 +48,29 @@ function parseFaq(value: unknown): FAQ {
   return { question: string(item.question), answer: string(item.answer) };
 }
 
+const ACADEMY_INTERNAL_PATH = /^\/akademi\/[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function parseInternalLinks(value: unknown, content: string): AcademyInternalLink[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new AcademyPayloadError();
+
+  const links = value.map((item) => {
+    const link = record(item);
+    const text = string(link.text);
+    const href = string(link.href);
+    if (!text || !ACADEMY_INTERNAL_PATH.test(href) || !content.includes(text)) {
+      throw new AcademyPayloadError();
+    }
+    return { text, href };
+  });
+
+  if (new Set(links.map((link) => link.href)).size !== links.length) {
+    throw new AcademyPayloadError();
+  }
+
+  return links;
+}
+
 export function parseAcademySection(value: unknown): Section {
   const section = record(value);
   const type = string(section.type);
@@ -56,7 +80,10 @@ export function parseAcademySection(value: unknown): Section {
       if (section.level !== 2 && section.level !== 3) throw new AcademyPayloadError();
       return { type, level: section.level, content: string(section.content) };
     }
-    case 'paragraph':
+    case 'paragraph': {
+      const content = string(section.content);
+      return { type, content, links: parseInternalLinks(section.links, content) };
+    }
     case 'callout':
     case 'formula':
     case 'example':
