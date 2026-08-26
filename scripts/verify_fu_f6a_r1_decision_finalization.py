@@ -24,6 +24,7 @@ from app.database import SessionLocal
 from app.engine.business_workflow_scheduler import BusinessWorkflowScheduler
 from app.models.actuals import ActualWeeklyObservation, ActualWeeklyRevision
 from app.models.business_workflow_decision_finalization import BusinessWorkflowDecisionFinalization
+from app.models.business_workflow_decision_snapshot_reference import BusinessWorkflowDecisionSnapshotReference
 from app.models.company import Company, User
 from app.models.dataset import Dataset
 from app.models.decision_snapshot import DecisionSnapshot, DecisionSnapshotCandidate
@@ -246,6 +247,7 @@ async def main():
                 eids = [value[0] for value in session.query(RuntimeExecution.execution_id).filter_by(company_id=cid).all()]
                 vids = [value[0] for value in session.query(ForecastVintage.id).filter_by(company_id=cid).all()]
                 sids = [value[0] for value in session.query(DecisionSnapshot.id).filter_by(company_id=cid).all()]
+                session.query(BusinessWorkflowDecisionSnapshotReference).filter_by(company_id=cid).delete(synchronize_session=False)
                 session.query(BusinessWorkflowDecisionFinalization).filter_by(company_id=cid).delete(synchronize_session=False)
                 session.query(DecisionSnapshotCandidate).filter(DecisionSnapshotCandidate.decision_snapshot_id.in_(sids)).delete(synchronize_session=False)
                 session.query(DecisionSnapshot).filter_by(company_id=cid).delete(synchronize_session=False)
@@ -367,6 +369,7 @@ def shard_cleanup():
         eids = [value[0] for value in session.query(RuntimeExecution.execution_id).filter_by(company_id=company_id).all()]
         vids = [value[0] for value in session.query(ForecastVintage.id).filter_by(company_id=company_id).all()]
         sids = [value[0] for value in session.query(DecisionSnapshot.id).filter_by(company_id=company_id).all()]
+        session.query(BusinessWorkflowDecisionSnapshotReference).filter_by(company_id=company_id).delete(synchronize_session=False)
         session.query(BusinessWorkflowDecisionFinalization).filter_by(company_id=company_id).delete(synchronize_session=False)
         session.query(DecisionSnapshotCandidate).filter(DecisionSnapshotCandidate.decision_snapshot_id.in_(sids)).delete(synchronize_session=False)
         session.query(DecisionSnapshot).filter_by(company_id=company_id).delete(synchronize_session=False)

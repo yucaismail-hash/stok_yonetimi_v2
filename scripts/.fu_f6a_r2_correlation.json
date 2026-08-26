@@ -1,0 +1,15 @@
+{
+  "aggregate_result_reference_id": "06a8f455-ec59-7991-8000-25b598ce5c6d",
+  "analytics_ms": 178291.48220003117,
+  "association_id": "06a8f456-963b-7383-8000-e28379efdb0c",
+  "company_id": "06a8f44a-18e1-7a2e-8001-12f83fc644df",
+  "cutoff_period": "2026-W32",
+  "dataset_id": "06a8f44a-5563-701d-8000-5e00013c1d89",
+  "decision_context": "REPLENISHMENT",
+  "decision_finalization_id": "06a8f456-0423-7555-8000-4f664b236c8d",
+  "demand_type": "sales",
+  "execution_id": "06a8f44b-eefc-7229-8000-e409b55b503a",
+  "material_code": "SKU-R2",
+  "snapshot_id": "06a8f456-72a2-7696-8000-1f129c2ea4ce",
+  "user_id": "06a8f44a-20a8-74b9-8000-faf5085cf5c4"
+}
