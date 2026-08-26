@@ -74,6 +74,7 @@ from app.models.event_observation import EventObservation, EventRevision
 from app.models.event_intelligence_memory import EventIntelligenceMemory
 from app.models.decision_snapshot import DecisionSnapshot, DecisionSnapshotCandidate
 from app.models.business_workflow_decision_finalization import BusinessWorkflowDecisionFinalization
+from app.models.business_workflow_decision_snapshot_reference import BusinessWorkflowDecisionSnapshotReference
 from app.models.decision_feedback import DecisionFeedbackEvent
 
 # Learning
@@ -201,6 +202,7 @@ __all__ = [
     "DecisionSnapshot",
     "DecisionSnapshotCandidate",
     "BusinessWorkflowDecisionFinalization",
+    "BusinessWorkflowDecisionSnapshotReference",
     "DecisionFeedbackEvent",
     # Learning
     "CompanyLearningMemory",

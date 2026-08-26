@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from uuid_extensions import uuid7
 
 from app.application.business_decision_plan import BusinessDecisionPlanService
+from app.application.business_workflow_decision_snapshot_reference import BusinessWorkflowDecisionSnapshotReferenceService
 from app.database import SessionLocal
 from app.models.business_workflow_decision_finalization import BusinessWorkflowDecisionFinalization
 from app.models.runtime import RuntimeExecution, RuntimeResultReference
@@ -40,9 +41,10 @@ class BusinessWorkflowDecisionFinalizationService:
 
     _CLAIMABLE = {"pending", "failed", "partially_succeeded"}
 
-    def __init__(self, session_factory=SessionLocal, plan_service_factory=None, lease_seconds=300):
+    def __init__(self, session_factory=SessionLocal, plan_service_factory=None, reference_service_factory=None, lease_seconds=300):
         self._sf = session_factory
         self._plan_service_factory = plan_service_factory or BusinessDecisionPlanService
+        self._reference_service_factory = reference_service_factory or BusinessWorkflowDecisionSnapshotReferenceService
         self._lease_seconds = lease_seconds
 
     @staticmethod
@@ -193,6 +195,12 @@ class BusinessWorkflowDecisionFinalizationService:
                 session.close()
         try:
             plan = self._plan_service_factory().materialize(company_id, execution_id)
+        except Exception as exc:
+            return self._finish(claim, error=exc)
+        try:
+            # Each successfully materialized Snapshot receives execution-local,
+            # immutable provenance before the lifecycle can report success.
+            self._reference_service_factory().ensure_for_plan(company_id, execution_id, claim.finalization_id, plan)
         except Exception as exc:
             return self._finish(claim, error=exc)
         return self._finish(claim, plan=plan)
