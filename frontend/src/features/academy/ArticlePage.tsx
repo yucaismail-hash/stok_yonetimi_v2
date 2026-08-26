@@ -41,8 +41,6 @@ function ArticleState({ kind, onRetry }: ArticleStateProps) {
         <Seo
           title="İçeriğe Erişilemiyor | Stokonomi Akademi"
           description="Akademi içeriğine şu anda geçici olarak erişilemiyor."
-          robots="noindex, nofollow"
-          noindex
         />
       )}
       <Box
