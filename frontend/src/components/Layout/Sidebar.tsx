@@ -2,6 +2,7 @@ import { Drawer, List, ListItem, ListItemIcon, ListItemText, Toolbar, Divider, L
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import stokonomiLogo from '../../assets/brand/stokonomi-logo-horizontal-light.png';
+import { useCurrentPilotDataset } from '../../features/dataset/api/pilotDatasetQueries';
 import {
   LayoutDashboard,
   Shield,
@@ -9,8 +10,6 @@ import {
   Dice5,
   School,
   Truck,
-  ClipboardList,
-  User,
   Sparkles,
 } from 'lucide-react';
 
@@ -31,27 +30,31 @@ const menuGroups = [
     ]
   },
   {
-    title: 'ANALİZLER',
+    title: 'KLASİK ARAÇLAR',
     items: [
-      { 
+      {
         path: '/safety-stock', 
         label: 'Emniyet Stoku', 
-        icon: <Shield size={18} strokeWidth={1.8} /> 
+        icon: <Shield size={18} strokeWidth={1.8} />,
+        requiresDataset: true,
       },
       { 
         path: '/forecast', 
         label: 'Talep Tahmini', 
-        icon: <TrendingUp size={18} strokeWidth={1.8} /> 
+        icon: <TrendingUp size={18} strokeWidth={1.8} />,
+        requiresDataset: true,
       },
       { 
         path: '/simulation', 
         label: 'Senaryo Simülasyonu', 
-        icon: <Dice5 size={18} strokeWidth={1.8} /> 
+        icon: <Dice5 size={18} strokeWidth={1.8} />,
+        requiresDataset: true,
       },
       { 
         path: '/backtest', 
         label: 'Geçmiş Performans Testi', 
-        icon: <School size={18} strokeWidth={1.8} /> 
+        icon: <School size={18} strokeWidth={1.8} />,
+        requiresDataset: true,
       },
     ]
   },
@@ -61,20 +64,11 @@ const menuGroups = [
       { 
         path: '/supplier', 
         label: 'Tedarikçi Analizi', 
-        icon: <Truck size={18} strokeWidth={1.8} /> 
+        icon: <Truck size={18} strokeWidth={1.8} />,
+        requiresDataset: true,
       },
     ]
   },
-  {
-    title: 'SİSTEM',
-    items: [
-      { 
-        path: '/tasks', 
-        label: 'Görev Merkezi', 
-        icon: <ClipboardList size={18} strokeWidth={1.8} /> 
-      },
-    ]
-  }
 ];
 
 // ✅ Admin için ekstra menü
@@ -87,8 +81,9 @@ const adminItem = {
 export default function Sidebar({ drawerWidth }: SidebarProps) {
   const location = useLocation();
   const { user } = useAuth();
+  const currentDataset = useCurrentPilotDataset(user?.company_id);
 
-  const isAdmin = user?.email === 'admin@stok.com' || user?.email === 'admin@admin.com';
+  const isAdmin = user?.role === 'admin';
 
   return (
     <Drawer
@@ -166,11 +161,15 @@ export default function Sidebar({ drawerWidth }: SidebarProps) {
               {/* Grup Öğeleri */}
               {group.items.map((item) => {
                 const isActive = location.pathname === item.path;
+                const requiresDataset = 'requiresDataset' in item && item.requiresDataset;
+                const disabled = Boolean(requiresDataset && (currentDataset.isLoading || currentDataset.isError || !currentDataset.data));
                 return (
                   <ListItem key={item.path} disablePadding sx={{ mb: 0.25 }}>
                     <ListItemButton
                       component={Link}
-                      to={item.path}
+                      to={disabled ? '/dashboard' : item.path}
+                      disabled={disabled}
+                      aria-label={disabled ? `${item.label}: önce veri seti yükleyin` : item.label}
                       sx={{
                         borderRadius: 1.5,
                         py: 0.5,

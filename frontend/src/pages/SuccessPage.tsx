@@ -207,7 +207,7 @@ export default function SuccessPage() {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                   <Typography variant="body2" color="text.secondary">Yeni Bakiye</Typography>
                   <Chip
-                    label={`${user?.token_balance || 0} Kredi`}
+                    label="Kredi bilgisi yenilenemedi"
                     size="small"
                     color="success"
                     sx={{ fontWeight: 'bold' }}

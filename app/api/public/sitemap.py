@@ -17,7 +17,7 @@ from app.services.content.directus_client import (
 
 
 router = APIRouter(tags=["SEO"])
-SITE_URL = "https://stokonomi.com"
+SITE_URL = "https://www.stokonomi.com"
 SITEMAP_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=600"
 XMLNS = "http://www.sitemaps.org/schemas/sitemap/0.9"
 

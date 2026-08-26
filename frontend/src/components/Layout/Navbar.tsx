@@ -54,6 +54,7 @@ import {
   Clock,
 } from 'lucide-react';
 import CreditPurchaseDialog from '../CreditPurchaseDialog';
+import { useCurrentPilotDataset } from '../../features/dataset/api/pilotDatasetQueries';
 
 interface CreditPackage {
   id: number;
@@ -79,7 +80,7 @@ interface Notification {
 }
 
 interface DatasetStatus {
-  id: number | null;
+  id: string | null;
   file_name: string | null;
   product_count: number;
   period_count: number;
@@ -167,6 +168,7 @@ const getTimeAgo = (dateStr: string | null): string => {
 
 export default function Navbar({ drawerWidth }: NavbarProps) {
   const { user, logout, refreshUser } = useAuth();
+  const currentDatasetQuery = useCurrentPilotDataset(user?.company_id);
   const navigate = useNavigate();
   const location = useLocation();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -174,7 +176,8 @@ export default function Navbar({ drawerWidth }: NavbarProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [tokenBalance, setTokenBalance] = useState(user?.token_balance || 0);
+  // Kredi bakiyesi canonical /auth/me sözleşmesinin parçası değildir.
+  const [tokenBalance, setTokenBalance] = useState<number | null>(null);
 
   const [datasetStatus, setDatasetStatus] = useState<DatasetStatus>({
     id: null,
@@ -203,6 +206,25 @@ export default function Navbar({ drawerWidth }: NavbarProps) {
   // 📌 Dataset Status'ü Getir
   const fetchDatasetStatus = async () => {
     setDatasetLoading(true);
+    const result = await currentDatasetQuery.refetch();
+    if (result.isError) {
+      setDatasetLoading(false);
+      return;
+    }
+    const current = result.data;
+    setDatasetStatus({
+      id: current?.dataset_id ?? null,
+      file_name: current?.source_name ?? null,
+      product_count: current?.material_count ?? 0,
+      period_count: 0,
+      data_points: current?.record_count ?? 0,
+      created_at: current?.created_at ?? null,
+      is_active: Boolean(current),
+      status: current ? 'ready' : 'none',
+      last_update: current?.accepted_at ?? null,
+    });
+    setDatasetLoading(false);
+    return;
     try {
       const res = await api.get('/api/upload/datasets?limit=1');
       if (res.data.success && res.data.datasets?.length > 0) {
@@ -260,15 +282,15 @@ export default function Navbar({ drawerWidth }: NavbarProps) {
   }, []);
 
   useEffect(() => {
-    setTokenBalance(user?.token_balance || 0);
-  }, [user?.token_balance]);
+    setTokenBalance(null);
+  }, [user]);
 
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
         await refreshUser();
         const state = useAuth.getState();
-        setTokenBalance(state.user?.token_balance || 0);
+        setTokenBalance(null);
       } catch (error) {
         console.error('❌ Bakiye yenileme hatası:', error);
       }
@@ -280,7 +302,7 @@ export default function Navbar({ drawerWidth }: NavbarProps) {
     try {
       await refreshUser();
       const state = useAuth.getState();
-      setTokenBalance(state.user?.token_balance || 0);
+      setTokenBalance(null);
     } catch (error) {
       console.error('❌ Bakiye yenileme hatası:', error);
     }
@@ -596,7 +618,7 @@ export default function Navbar({ drawerWidth }: NavbarProps) {
           setPaymentMessage(null);
         }}
         onPurchase={handlePurchase}
-        currentBalance={tokenBalance}
+        currentBalance={tokenBalance ?? 0}
         isLoading={isCreatingCheckout}
         paymentStatus={paymentStatus}
         paymentMessage={paymentMessage}
@@ -701,7 +723,7 @@ export default function Navbar({ drawerWidth }: NavbarProps) {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {tokenBalance.toLocaleString('tr-TR')} Analiz Kredisi
+                    {tokenBalance === null ? 'Kredi bilgisi kullanılamıyor' : `${tokenBalance.toLocaleString('tr-TR')} Analiz Kredisi`}
                   </Typography>
                 }
                 size="small"

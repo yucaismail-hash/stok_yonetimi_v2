@@ -1,5 +1,6 @@
 """Transitional durable worker for standalone Forecast and Safety Stock capabilities."""
 from datetime import datetime, timezone
+import logging
 
 from app.database import SessionLocal
 from app.engine.adapters.forecast_adapter import forecast_adapter
@@ -18,6 +19,9 @@ from app.analysis.safety_stock import ComprehensiveSafetyStockOptimizer
 from app.simulation.monte_carlo import MonteCarloInventorySimulator
 from app.analysis.backtest import BacktestEngine
 from app.analysis.supplier import SupplierPerformanceAnalyzer
+
+
+logger = logging.getLogger(__name__)
 
 
 class LocalForecastRunner:
@@ -112,9 +116,22 @@ class LocalForecastRunner:
             if capability is Capability.DEMAND_FORECAST:
                 from app.application.forecast_vintage_service import ForecastVintageService
                 session.refresh(ref); ForecastVintageService(session).project(execution,ref,params)
+            terminal_analytics = False
             if all(t.state=='completed' for t in store.get_tasks(execution_id,company_id) if t.required):
                 store.complete_execution(execution_id,company_id,execution.row_version)
                 store.aggregate_business_workflow(execution_id,company_id)
+                terminal_analytics = True
             session.refresh(ref);session.expunge(ref)
-            session.commit();return ref
+            session.commit()
+            if terminal_analytics:
+                # Advisory Decision work begins only after the analytical terminal
+                # transaction has committed. It must never change that outcome.
+                try:
+                    from app.application.business_workflow_decision_finalization import BusinessWorkflowDecisionFinalizationService
+                    BusinessWorkflowDecisionFinalizationService().finalize(company_id, execution_id)
+                except Exception:
+                    # If lifecycle persistence itself is temporarily unavailable, the
+                    # completed workflow remains authoritative and recovery can retry.
+                    logger.exception("post-analytics Decision finalization invocation failed", extra={"execution_id": str(execution_id), "company_id": str(company_id)})
+            return ref
         finally: session.close()

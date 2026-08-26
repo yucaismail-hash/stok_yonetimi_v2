@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://stokonomi.com/sitemap.xml
+Sitemap: https://www.stokonomi.com/sitemap.xml

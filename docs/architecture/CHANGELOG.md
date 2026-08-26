@@ -1,5 +1,10 @@
 # Architecture Changelog
 
+## 2026-08-26 - FU-F6A-R1 post-analytics Decision finalization
+
+- Added a leased, retryable `BusinessWorkflowDecisionFinalization` lifecycle after a Business Workflow's analytical terminal commit and validated aggregate result.
+- Decision finalization is advisory, is not a RuntimeTask, and cannot change completed Forecast/Supplier/Safety Stock/Simulation/Backtest evidence. Immutable execution-to-Snapshot provenance remains deferred to FU-F6A-R2.
+
 ## 2026-08-23 - Phase 3D4 immutable Decision Snapshot
 
 - Added canonical `DecisionSnapshot` and ordered `DecisionSnapshotCandidate` audit vintages. Their semantic identity is company, material, demand type, context, cutoff, policy version, envelope fingerprint, and policy fingerprint; PostgreSQL uniqueness makes repeated and concurrent materialization converge to one immutable snapshot.
@@ -448,6 +453,16 @@
 
 - Added deterministic, historical Snapshot explanation context and append-only company-scoped user feedback events.
 - Feedback is opinion/audit evidence only: it neither changes Decision confidence nor grants operational approval; learning and execution integration remain deferred/inactive.
+
+## 2026-08-25 - Phase 3D7 Production Authority Hardening
+
+- Retired the mounted legacy v2 Decision route so LLM-derived `ai_summary` cannot serve as an active parallel Decision authority.
+- Added a non-null feedback semantic key with PostgreSQL uniqueness for concurrency-safe retry convergence while preserving immutable feedback supersession.
+
+## 2026-08-25 - Phase 3D Decision Intelligence Closeout
+
+- Closed the canonical Decision boundary: completed analytical workflow evidence is normalized by the cutoff-safe Resolver, evaluated by deterministic policy, frozen in immutable Snapshots, surfaced through a derived plan and Snapshot-only explanation, and complemented by non-authoritative immutable user feedback.
+- Production scale claims remain intentionally deferred beyond verified 1-SKU fixtures; no LLM Decision authority, feedback-to-Learning path, ERP write, or autonomous action has been activated.
 
 ## 2026-08-13 - Phase 3C5B3A Company Learning Foundation
 

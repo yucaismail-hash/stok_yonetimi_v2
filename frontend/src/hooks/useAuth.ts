@@ -5,40 +5,21 @@ import { persist } from 'zustand/middleware';
 import { login as apiLogin, register as apiRegister, getUser } from '../services/auth';
 import api from '../services/api';
 
-interface User {
-  id: number;
+export interface User {
+  id: string;
+  company_id: string;
   email: string;
   full_name: string;
-  company_name: string;
-  token_balance: number;
-  sector_id: number | null;
-  sector_name?: string | null;
-  created_at: string;
-  polar_customer_id?: string;
-  billing_address?: string;
-  billing_city?: string;
-  billing_state?: string;
-  billing_country?: string;
-  billing_postal_code?: string;
-  tax_id?: string;
-  tax_office?: string;
-  identity_number?: string;
+  role: string;
+  language: string;
+  timezone: string;
 }
 
 interface RegisterParams {
   email: string;
   password: string;
   full_name?: string;
-  company_name?: string;
-  sector_id?: number | null;
-  billing_address?: string;
-  billing_city?: string;
-  billing_state?: string;
-  billing_country?: string;
-  billing_postal_code?: string;
-  tax_id?: string;
-  tax_office?: string;
-  identity_number?: string;
+  company_name: string;
 }
 
 interface AuthState {
@@ -104,16 +85,7 @@ export const useAuth = create<AuthState>()(
             email: params.email,
             password: params.password,
             full_name: params.full_name || '',
-            company_name: params.company_name || '',
-            sector_id: params.sector_id || null,
-            billing_address: params.billing_address || '',
-            billing_city: params.billing_city || '',
-            billing_state: params.billing_state || '',
-            billing_country: params.billing_country || 'TR',
-            billing_postal_code: params.billing_postal_code || '',
-            tax_id: params.tax_id || '',
-            tax_office: params.tax_office || '',
-            identity_number: params.identity_number || '',
+            company_name: params.company_name,
           });
           const success = await get().login(params.email, params.password);
           set({ isLoading: false });
@@ -140,7 +112,14 @@ export const useAuth = create<AuthState>()(
       logout: () => {
         set({ user: null, token: null, error: null, _lastRefresh: 0 });
         localStorage.removeItem('auth-storage');
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('activeDatasetId');
+        localStorage.removeItem('activeDatasetStatus');
         sessionStorage.removeItem('lastUserRefresh');
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('loadAnalysisId');
+        sessionStorage.removeItem('loadAnalysisType');
+        sessionStorage.removeItem('loadDatasetId');
       },
 
       fetchUser: async () => {
@@ -193,18 +172,7 @@ export const useAuth = create<AuthState>()(
         }
       },
 
-      refreshToken: async () => {
-        const { token } = get();
-        if (!token) return false;
-        try {
-          const userData = await getUser(token);
-          set({ user: userData, _lastRefresh: Date.now() });
-          return true;
-        } catch (err: unknown) {
-          console.error('Token yenileme hatası:', err);
-          return false;
-        }
-      },
+      refreshToken: async () => false,
     }),
     {
       name: 'auth-storage',
@@ -217,22 +185,12 @@ export const useAuth = create<AuthState>()(
   )
 );
 
-// Token interceptor (mevcut haliyle kalabilir)
+// Backend refresh token sunmuyor. 401 durumunda aynı token ile retry yapma.
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
-      originalRequest._retry = true;
-      const { refreshToken, logout } = useAuth.getState();
-      const success = await refreshToken();
-      if (success) {
-        const newToken = useAuth.getState().token;
-        originalRequest.headers.Authorization = `Bearer ${newToken}`;
-        return api(originalRequest);
-      } else {
-        logout();
-      }
+  (error) => {
+    if (error.response?.status === 401) {
+      useAuth.getState().logout();
     }
     return Promise.reject(error);
   }

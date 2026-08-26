@@ -131,12 +131,24 @@ export const getDashboardChanges = () => {
 // 🆕 IMPORT WIZARD SERVİSLERİ
 // ============================================================
 
-export const validateExcel = (file: File) => {
+export const validateExcel = async (file: File) => {
   const formData = new FormData();
   formData.append('file', file);
-  return api.post('/api/import-wizard/validate', formData, {
+  const response = await api.post('/api/v2/dataset/pilot/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+  const payload = response.data;
+  return { data: {
+    success: payload.READY_FOR_ACCEPTANCE,
+    upload_id: payload.dataset_id,
+    can_proceed: payload.READY_FOR_ACCEPTANCE,
+    error: payload.issues?.[0]?.message,
+    canonical_issues: payload.issues || [],
+    warnings: payload.warnings || [],
+    sheet_check: { success: payload.READY_FOR_ACCEPTANCE },
+    data_quality: { issues: payload.issues || [] },
+    impact: {},
+  }};
 };
 
 export const getValidationResult = (uploadId: string) => {
@@ -147,8 +159,9 @@ export const applyNormalization = (uploadId: string) => {
   return api.post(`/api/import-wizard/normalize`, { upload_id: uploadId });
 };
 
-export const createDataset = (uploadId: string) => {
-  return api.post(`/api/import-wizard/apply-dataset`, { upload_id: uploadId });
+export const createDataset = async (uploadId: string) => {
+  const response = await api.post(`/api/v2/dataset/pilot/${uploadId}/accept`);
+  return { data: { success: response.data.status === 'READY_FOR_WORKFLOW', dataset_id: response.data.dataset_id, ...response.data } };
 };
 
 // ✅ reValidate fonksiyonu eklendi

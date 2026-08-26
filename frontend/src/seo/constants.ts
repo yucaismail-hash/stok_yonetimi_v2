@@ -1,4 +1,4 @@
-export const SEO_SITE_URL = 'https://stokonomi.com';
+export const SEO_SITE_URL = 'https://www.stokonomi.com';
 export const DEFAULT_OG_IMAGE = `${SEO_SITE_URL}/og/stokonomi-og.png`;
 
 export function canonicalUrl(path = '/') {

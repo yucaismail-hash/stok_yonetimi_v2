@@ -565,6 +565,35 @@ Each authoritative architecture specification document now contains its bounded 
 | Feedback | Immutable user-opinion audit evidence, not correctness truth and not approval. |
 | Learning from feedback | Deferred to a future explicitly versioned policy. Execution/ERP actions remain inactive. |
 
+## FU-F6A-R1 Post-analytics Decision finalization
+
+| Boundary | Contract |
+|---|---|
+| Analytical completion | `RuntimeExecution.completed` and its validated `business_workflow` aggregate remain the analytical authority. |
+| Decision finalization | `BusinessWorkflowDecisionFinalization` is mutable, leased advisory lifecycle state created only after the analytical commit. |
+| Failure/retry | A Decision failure cannot invalidate analytics; pending, failed, partial, and expired work is recoverable from PostgreSQL without rerunning analytical tasks. |
+| Task graph | Decision finalization is not a RuntimeTask. |
+| Historical provenance | `DecisionSnapshot` remains immutable authority; execution-to-Snapshot association is explicitly deferred to FU-F6A-R2. |
+
+## Phase 3D7 Production Authority Hardening
+
+| Boundary | Contract |
+|---|---|
+| Canonical Decision authority | Exclusive: Resolver → Policy → immutable Snapshot. |
+| Legacy v2 Decision route | Retired from mounted API routing; dormant legacy code is not canonical authority. |
+| Feedback retries | PostgreSQL-enforced per-company non-null semantic key; concurrent retries converge. |
+| Feedback changes | Immutable superseding events; feedback remains non-authoritative and cannot trigger Learning or actions. |
+
+## Phase 3D Decision Intelligence Closeout
+
+| Boundary | Final contract |
+|---|---|
+| Authority chain | Analytical results and mutable learned projections feed the cutoff-safe Resolver, deterministic Policy, immutable Snapshot, derived Plan, and Snapshot-only Explanation. |
+| Historical boundary | Mutable Pattern/Company/Supplier/Event projections are not historical authority; admitted provenance is frozen in DecisionSnapshot. |
+| Feedback | Immutable user opinion/audit evidence; it is database-idempotent, does not express correctness/approval, and does not feed Learning automatically. |
+| Operations | LLM has no Decision authority. ERP/action execution is inactive. Decision-stage failures are isolated after analytics completion. |
+| Scale | 1-SKU functional proof is verified. 10/50/100/250-SKU benchmarks and any 22,000-SKU claim remain deferred. |
+
 | Phase 2E Capability Dataflow | BINDING â€” validated same-tenant upstream evidence, Simulation no-recompute, and Backtest no-reselection |
 | Standalone Simulation Durable Execution | DEVELOPMENT VERIFIED â€” real Monte Carlo, one task, fresh-process retrieval |
 

@@ -62,9 +62,9 @@ def test_sitemap_contains_static_and_published_urls_only(monkeypatch):
     assert response.status_code == 200
     assert response.headers["cache-control"] == SITEMAP_CACHE_CONTROL
     assert response.headers["content-type"].startswith("application/xml")
-    assert "https://stokonomi.com/</loc>" in response.text
-    assert "https://stokonomi.com/akademi</loc>" in response.text
-    assert "https://stokonomi.com/akademi/published-article</loc>" in response.text
+    assert "https://www.stokonomi.com/</loc>" in response.text
+    assert "https://www.stokonomi.com/akademi</loc>" in response.text
+    assert "https://www.stokonomi.com/akademi/published-article</loc>" in response.text
     assert "draft" not in response.text
 
 

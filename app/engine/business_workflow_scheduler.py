@@ -21,6 +21,13 @@ class BusinessWorkflowScheduler:
    out.append({'task_id':task.task_id,'capability':task.capability,'state':task.state,'ready':ready,'blocking_dependencies':blocked,'required_upstream_results':[x for x in task.dependencies],'task_order':task.task_order})
   return out
  async def run_next_ready(self,execution_id,company_id):
+  execution=self.store.get_execution(execution_id,company_id)
+  if execution and execution.state=='completed' and execution.analysis_type=='business_workflow':
+   # Terminal workflows have no analytical task to claim; this is the bounded
+   # recovery entry point for advisory Decision finalization only.
+   from app.application.business_workflow_decision_finalization import BusinessWorkflowDecisionFinalizationService
+   BusinessWorkflowDecisionFinalizationService().finalize(company_id,execution_id)
+   return None
   ready=[row for row in self.readiness(execution_id,company_id) if row['ready']]
   if not ready:return None
   row=ready[0]

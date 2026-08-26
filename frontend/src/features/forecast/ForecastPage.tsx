@@ -1723,7 +1723,7 @@ export default function ForecastPage() {
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <AccountBalanceWallet sx={{ fontSize: 20, color: '#f57c00' }} />
                     <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                      Kredi Bakiyesi: <strong>{user?.token_balance || 0}</strong>
+                      Kredi bilgisi bu sürümde kullanılamıyor
                     </Typography>
                   </Box>
                 </Grid>
