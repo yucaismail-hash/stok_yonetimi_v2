@@ -22,11 +22,13 @@ import {
   Loop as LoopIcon,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../../shared/analytics/ga';
 
 export function Hero() {
   const navigate = useNavigate();
 
-  const handleCtaClick = (href: string) => {
+  const handleCtaClick = (href: string, placement: string) => {
+    trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_PRIMARY_CTA_CLICK, { placement, destination: href });
     const element = document.querySelector(href);
     if (element) {
       element.scrollIntoView({ behavior: 'smooth' });
@@ -34,6 +36,7 @@ export function Hero() {
   };
 
   const handleAcademyClick = () => {
+    trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_ACADEMY_CTA_CLICK, { placement: 'hero', destination: '/akademi' });
     navigate('/akademi');
   };
 
@@ -125,9 +128,9 @@ export function Hero() {
                   lineHeight: 1.7,
                 }}
               >
-                Stokonomi; yapay zekâ destekli stok optimizasyonu,
-                talep tahmini ve karar desteği için geliştirilen
-                bir karar destek platformudur.
+                Stokonomi; tahminden simülasyona, doğrulamadan karar
+                desteğine uzanan stok kararlarını birlikte değerlendirmek
+                için geliştirilen bir karar sistemi yaklaşımıdır.
               </Typography>
 
               <Typography
@@ -143,9 +146,9 @@ export function Hero() {
                   pl: 2,
                 }}
               >
-                Veriyi analiz eder, tahminleri sınar ve belirsizliği
-                daha görünür hale getirir. Karar vericinin yerini almaz;
-                daha güçlü kararlar almasına yardımcı olur.
+                Veriyi analiz etmeye, tahminleri sınamaya ve belirsizliği
+                daha görünür hale getirmeye odaklanır. Karar vericinin
+                yerini almaz; değerlendirmeyi daha güçlü kanıtlarla destekler.
               </Typography>
 
               <Stack
@@ -157,7 +160,7 @@ export function Hero() {
                   variant="contained"
                   size="large"
                   endIcon={<ArrowForwardIcon />}
-                  onClick={() => handleCtaClick('#gelismeler')}
+                  onClick={() => handleCtaClick('#gelismeler', 'hero')}
                   sx={{
                     px: 4,
                     py: 1.5,
@@ -189,7 +192,7 @@ export function Hero() {
                     },
                   }}
                 >
-                  Stokonomi Akademi
+                  Akademiyi Keşfet
                 </Button>
               </Stack>
             </Stack>

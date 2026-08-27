@@ -1,0 +1,61 @@
+{
+  "aggregate_result_id": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+  "association_table": "public.business_workflow_decision_snapshot_references",
+  "baseline_association_count": 2,
+  "baseline_candidate_count": 2,
+  "baseline_snapshot_count": 2,
+  "behavioral_proof": "passed",
+  "candidate_immutability_level": "DB-enforced immutable",
+  "catalog_immutability_audit": "passed",
+  "company_id": "06a90a45-458d-7648-8001-fe3c3589210e",
+  "database_writes": 0,
+  "disturbance_strategy": "instrumentation_only",
+  "execution_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+  "final_read_verified": true,
+  "finalization_attempt_count": 3,
+  "finalization_id": "06a90a5b-c345-7b04-8000-adb9b516f9da",
+  "finalization_status": "succeeded",
+  "historical_read_service": "BusinessWorkflowDecisionSnapshotReferenceService.list_for_execution",
+  "historical_read_zero_write": true,
+  "materialize_called": false,
+  "ownership_constraint_names": [
+    "business_workflow_decision_sn_decision_finalization_id_not_null",
+    "business_workflow_decision_snap_decision_cutoff_period_not_null",
+    "business_workflow_decision_snapsh_decision_snapshot_id_not_null",
+    "business_workflow_decision_snapshot_r_decision_context_not_null",
+    "business_workflow_decision_snapshot_refe_material_code_not_null",
+    "business_workflow_decision_snapshot_refer_execution_id_not_null",
+    "business_workflow_decision_snapshot_refere_demand_type_not_null",
+    "business_workflow_decision_snapshot_referen_company_id_not_null",
+    "business_workflow_decision_snapshot_references_company_id_fkey",
+    "business_workflow_decision_snapshot_references_id_not_null",
+    "business_workflow_decision_snapshot_references_pkey",
+    "fk_bw_dsref_execution_company",
+    "fk_bw_dsref_finalization_execution_company",
+    "fk_bw_dsref_snapshot_company",
+    "uq_business_decision_snapshot_reference_execution_scope"
+  ],
+  "policy_called": false,
+  "resolver_called": false,
+  "sku_a": {
+    "association_id": "06a90a5d-b99d-7c52-8000-f804d364ff91",
+    "candidate_ids": [
+      "06a90a5c-f336-72c4-8000-da407707bdf0"
+    ],
+    "material_code": "SKU-A",
+    "snapshot_id": "06a90a5c-ec8b-74ad-8000-5cab50d1d93b"
+  },
+  "sku_b": {
+    "association_id": "06a90a76-a86a-708e-8000-19bc6287a175",
+    "candidate_ids": [
+      "06a90a76-71ed-7f01-8000-cab18741310a"
+    ],
+    "material_code": "SKU-B",
+    "snapshot_id": "06a90a76-6eaa-767b-8000-9d90b584eaae"
+  },
+  "snapshot_immutability_level": "DB-enforced immutable",
+  "trigger_definition": "CREATE TRIGGER trg_business_workflow_decision_snapshot_reference_immutable BEFORE UPDATE ON business_workflow_decision_snapshot_references FOR EACH ROW EXECUTE FUNCTION business_workflow_decision_snapshot_reference_reject_update()",
+  "trigger_enabled": "O",
+  "trigger_function": "public.business_workflow_decision_snapshot_reference_reject_update",
+  "trigger_name": "trg_business_workflow_decision_snapshot_reference_immutable"
+}

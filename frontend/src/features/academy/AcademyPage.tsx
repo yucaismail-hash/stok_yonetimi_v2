@@ -7,11 +7,13 @@ import { alpha } from '@mui/material/styles';
 import { Link } from 'react-router-dom';
 import {
   ArrowBack as ArrowBackIcon,
+  ArrowForward as ArrowForwardIcon,
 } from '@mui/icons-material';
 import { Logo } from '../../shared/ui';
 import { canonicalUrl, Seo } from '../../seo';
 import { useAcademyArticles } from './api';
 import { getAcademyCategoryIcon } from './components/categoryIcons';
+import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../shared/analytics/ga';
 
 function AcademyLoadingCards() {
   return (
@@ -87,13 +89,19 @@ export default function AcademyPage() {
 
         {!articlesQuery.isLoading && !articlesQuery.isError && articles.length > 0 && (
           <Grid container spacing={3}>
-            {articles.map((article) => {
+            {articles.map((article, index) => {
               const CategoryIcon = getAcademyCategoryIcon(article.category);
               return (
                 <Grid size={{ xs: 12, sm: 6, md: 3 }} key={article.id}>
                   <Paper
                     component={Link}
                     to={`/akademi/${article.slug}`}
+                    onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.ACADEMY_CARD_CLICK, {
+                      article_slug: article.slug,
+                      category: article.category,
+                      position: index + 1,
+                      surface: 'academy',
+                    })}
                     elevation={0}
                     sx={{
                       p: { xs: 2.5, md: 3.5 }, height: '100%', minHeight: 220, display: 'flex', flexDirection: 'column',
@@ -117,6 +125,37 @@ export default function AcademyPage() {
             })}
           </Grid>
         )}
+
+        <Paper
+          component="aside"
+          elevation={0}
+          sx={{
+            mt: { xs: 6, md: 8 },
+            maxWidth: 780,
+            mx: 'auto',
+            p: { xs: 3, md: 4 },
+            textAlign: 'center',
+            border: 1,
+            borderColor: 'divider',
+            bgcolor: (theme) => alpha(theme.palette.primary.main, 0.03),
+          }}
+        >
+          <Typography variant="h2" sx={{ fontWeight: 700, fontSize: { xs: '1.35rem', md: '1.6rem' }, mb: 1 }}>
+            Kavramları karar akışına bağlayın.
+          </Typography>
+          <Typography color="text.secondary" sx={{ maxWidth: 620, mx: 'auto', lineHeight: 1.75, mb: 2.5 }}>
+            Stokonomi, tahminden doğrulamaya uzanan stok kararlarını birlikte değerlendirmek için geliştirilen bir yaklaşım sunuyor.
+          </Typography>
+          <Button
+            component="a"
+            href="/#karar-sistemi"
+            variant="outlined"
+            endIcon={<ArrowForwardIcon />}
+            onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.ACADEMY_LISTING_TO_LANDING_CLICK, { placement: 'academy_listing', destination: '/#karar-sistemi' })}
+          >
+            Stokonomi yaklaşımını keşfet
+          </Button>
+        </Paper>
       </Container>
       </Box>
     </>

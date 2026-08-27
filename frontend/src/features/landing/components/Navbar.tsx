@@ -17,6 +17,7 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import { useNavigate } from 'react-router-dom';
 import { Logo } from '../../../shared/ui';
+import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../../shared/analytics/ga';
 
 const navItems = [
   { label: 'Yaklaşım', href: '#yaklasim', isRoute: false },
@@ -40,8 +41,11 @@ export function Navbar() {
     setMobileOpen(!mobileOpen);
   };
 
-  const handleNavClick = (item: { label: string; href: string; isRoute: boolean }) => {
+  const handleNavClick = (item: { label: string; href: string; isRoute: boolean }, placement: string) => {
     if (item.isRoute) {
+      if (item.href === '/akademi') {
+        trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.NAVBAR_ACADEMY_CLICK, { placement, destination: item.href });
+      }
       navigate(item.href);
       setMobileOpen(false);
     } else {
@@ -72,7 +76,7 @@ export function Navbar() {
         }}
       >
         <Logo size="small" />
-        <IconButton onClick={handleDrawerToggle}>
+        <IconButton aria-label="Menüyü kapat" onClick={handleDrawerToggle}>
           <CloseIcon />
         </IconButton>
       </Box>
@@ -80,7 +84,7 @@ export function Navbar() {
         {navItems.map((item) => (
           <ListItemButton
             key={item.label}
-            onClick={() => handleNavClick(item)}
+            onClick={() => handleNavClick(item, 'navbar_mobile')}
             sx={{
               borderRadius: (theme) => theme.shape.borderRadius,
               '&:hover': {
@@ -154,7 +158,7 @@ export function Navbar() {
                     bgcolor: (theme) => alpha(theme.palette.primary.main, 0.04),
                   },
                 }}
-                onClick={() => handleNavClick(item)}
+                onClick={() => handleNavClick(item, 'navbar_desktop')}
               >
                 {item.label}
               </Button>

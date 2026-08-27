@@ -28,6 +28,8 @@ from uuid_extensions import uuid7
 
 MANIFEST = Path(__file__).with_name(".fu_f6a_r2_correlation.json")
 R2C_MANIFEST = Path(__file__).with_name(".fu_f6a_r2_c_pre_assoc.json")
+R2D_MANIFEST = Path(__file__).with_name(".fu_f6a_r2_d_post_assoc.json")
+R2E_MANIFEST = Path(__file__).with_name(".fu_f6a_r2_e_partial.json")
 
 
 def save(value): MANIFEST.write_text(json.dumps(value, sort_keys=True, indent=2), encoding="utf-8")
@@ -102,17 +104,17 @@ def retry():
     finally: session.close()
 
 
-def r2c_setup():
+def r2c_setup(manifest_path=R2C_MANIFEST, marker="FU_F6A_R2_C_FIXTURE_COMPLETE"):
     """Canonical RuntimeStore fixture using persisted base result payloads only."""
     from app.engine.runtime_store import RuntimeStore
-    assert not R2C_MANIFEST.exists(), "R2-C manifest already exists"
+    assert not manifest_path.exists(), "fixture manifest already exists"
     base = load(); cid = UUID(base["company_id"]); base_eid = UUID(base["execution_id"])
     session = SessionLocal()
     try:
         source = session.query(RuntimeExecution).filter_by(execution_id=base_eid, company_id=cid).one()
         source_tasks = session.query(RuntimeTask).filter_by(execution_id=base_eid).order_by(RuntimeTask.task_order).all()
         source_refs = {r.result_type: r for r in session.query(RuntimeResultReference).filter_by(execution_id=base_eid).filter(RuntimeResultReference.runtime_task_id.isnot(None)).all()}
-        execution = RuntimeExecution(id=uuid7(), company_id=cid, user_id=source.user_id, dataset_id=source.dataset_id,
+        execution = RuntimeExecution(execution_id=uuid7(), company_id=cid, user_id=source.user_id, dataset_id=source.dataset_id,
             workflow_id=source.workflow_id, analysis_type="business_workflow", state="created", metadata_=source.metadata_)
         task_rows = [{"workflow_id": execution.workflow_id, "task_id": t.task_id, "capability": t.capability, "task_order": t.task_order,
             "required": t.required, "skippable": t.skippable, "dependencies": t.dependencies, "max_attempts": t.max_attempts, "retryable": t.retryable, "timeout_seconds": t.timeout_seconds} for t in source_tasks]
@@ -125,9 +127,9 @@ def r2c_setup():
             store.complete_task_attempt(execution.execution_id, task.task_id, cid, claimed.lease_token, result_type, source_refs[result_type].inline_result, source_refs[result_type].result_version, source_refs[result_type].contract_version)
         session.flush(); execution = store.get_execution(execution.execution_id, cid); store.complete_execution(execution.execution_id, cid, execution.row_version); aggregate = store.aggregate_business_workflow(execution.execution_id, cid); session.commit()
         finalization_id = BusinessWorkflowDecisionFinalizationService().ensure(cid, execution.execution_id)
-        R2C_MANIFEST.write_text(json.dumps({"company_id":str(cid),"execution_id":str(execution.execution_id),"aggregate_id":str(aggregate.id),"finalization_id":str(finalization_id),"base_execution_id":str(base_eid)},indent=2),encoding="utf-8")
+        manifest_path.write_text(json.dumps({"company_id":str(cid),"execution_id":str(execution.execution_id),"aggregate_id":str(aggregate.id),"finalization_id":str(finalization_id),"base_execution_id":str(base_eid)},indent=2),encoding="utf-8")
         session.close(); session=SessionLocal(); assert session.query(BusinessWorkflowDecisionFinalization).filter_by(id=finalization_id,status="pending").count()==1 and session.query(BusinessWorkflowDecisionSnapshotReference).filter_by(execution_id=execution.execution_id).count()==0
-        print("FU_F6A_R2_C_FIXTURE_COMPLETE", {"execution_id":str(execution.execution_id),"aggregate_id":str(aggregate.id),"finalization_id":str(finalization_id)}, flush=True)
+        print(marker, {"execution_id":str(execution.execution_id),"aggregate_id":str(aggregate.id),"finalization_id":str(finalization_id)}, flush=True)
     finally: session.close()
 
 
@@ -151,17 +153,59 @@ def r2c_recover():
         refs=BusinessWorkflowDecisionSnapshotReferenceService().list_for_execution(cid,eid);assert result.status=="succeeded" and len(refs)==1 and str(refs[0].decision_snapshot_id)==m["snapshot_id"]
         print("FU_F6A_R2_C_PRE_ASSOC_RECOVERY_COMPLETE", {"snapshot_id":m["snapshot_id"],"association_id":str(refs[0].id)},flush=True)
     finally:s.close()
-    started = perf_counter(); result = BusinessWorkflowDecisionFinalizationService().finalize(cid, eid); retry_ms = (perf_counter() - started) * 1000
-    session = SessionLocal()
+
+def r2d_setup(): r2c_setup(R2D_MANIFEST, "FU_F6A_R2_D_FIXTURE_COMPLETE")
+
+def r2d_failure():
+    m=json.loads(R2D_MANIFEST.read_text());cid,eid=UUID(m["company_id"]),UUID(m["execution_id"])
+    class CrashBeforeSuccess(BusinessWorkflowDecisionFinalizationService):
+        def _finish(self, claim, plan=None, error=None): raise RuntimeError("InjectedPostAssociationPreSuccessCrash")
+    try: CrashBeforeSuccess(lease_seconds=-1).finalize(cid,eid)
+    except RuntimeError as exc:
+        assert str(exc)=="InjectedPostAssociationPreSuccessCrash"
+    s=SessionLocal()
     try:
-        finalization = session.query(BusinessWorkflowDecisionFinalization).filter_by(id=UUID(manifest["decision_finalization_id"])).one()
-        refs = BusinessWorkflowDecisionSnapshotReferenceService().list_for_execution(cid, eid)
-        after_counts, after_state = counts(session, cid, eid), state(session, cid, eid)
-        assert result.status == "succeeded" and finalization.status == "succeeded" and len(refs) == 1
-        assert refs[0].id == original_association and refs[0].decision_snapshot_id == original_snapshot
-        assert before_counts == after_counts and before_state == after_state
-        print("FU_F6A_R2_B_RETRY_COMPLETE", {"association_id": str(original_association), "snapshot_id": str(original_snapshot), "before_counts": before_counts, "after_counts": after_counts, "retry_ms": round(retry_ms, 3)}, flush=True)
-    finally: session.close()
+        f=s.query(BusinessWorkflowDecisionFinalization).filter_by(id=UUID(m["finalization_id"])).one();r=s.query(BusinessWorkflowDecisionSnapshotReference).filter_by(execution_id=eid).one();m.update({"snapshot_id":str(r.decision_snapshot_id),"association_id":str(r.id),"attempt_count":f.attempt_count});R2D_MANIFEST.write_text(json.dumps(m,indent=2),encoding="utf-8");assert f.status=="running" and r.id
+        print("FU_F6A_R2_D_FAILURE_STATE_VERIFIED",{"status":f.status,"attempt_count":f.attempt_count,"association_id":str(r.id),"snapshot_id":str(r.decision_snapshot_id)},flush=True)
+    finally:s.close()
+
+def r2d_recover():
+    m=json.loads(R2D_MANIFEST.read_text());cid,eid=UUID(m["company_id"]),UUID(m["execution_id"]);out=BusinessWorkflowDecisionFinalizationService().recover_due(cid);s=SessionLocal()
+    try:
+        f=s.query(BusinessWorkflowDecisionFinalization).filter_by(id=UUID(m["finalization_id"])).one();r=s.query(BusinessWorkflowDecisionSnapshotReference).filter_by(id=UUID(m["association_id"])).one();assert f.status=="succeeded" and str(r.decision_snapshot_id)==m["snapshot_id"];print("FU_F6A_R2_D_POST_ASSOC_RECOVERY_COMPLETE",{"status":f.status,"attempt_count":f.attempt_count,"association_id":str(r.id)},flush=True)
+    finally:s.close()
+
+async def r2e_setup():
+    """The one authorized real two-SKU analytics fixture; Decision-only failure is patched."""
+    from unittest.mock import patch
+    import app.application.business_decision_plan as plan_module
+    from scripts.verify_fu_f6a_r1_decision_finalization import create_dataset, completed_workflow, selective_policy_factory
+    assert not R2E_MANIFEST.exists(), "R2-E manifest already exists"
+    s=SessionLocal(); tag="fu_f6a_r2e_"+str(uuid7()).replace("-","")
+    try:
+        company=Company(id=uuid7(),name=tag,tax_id=tag);user=User(id=uuid7(),company_id=company.id,email=tag+"@x.invalid",hashed_password="x");s.add_all((company,user));s.commit()
+        dataset_id=await create_dataset(company,user,["SKU-A","SKU-B"],tag)
+        started=perf_counter();eid=await completed_workflow(company,user,dataset_id,["SKU-A","SKU-B"],patch.object(plan_module,"DecisionPolicy",selective_policy_factory()));elapsed=(perf_counter()-started)*1000
+        s.expire_all();f=s.query(BusinessWorkflowDecisionFinalization).filter_by(company_id=company.id,execution_id=eid).one();refs=s.query(BusinessWorkflowDecisionSnapshotReference).filter_by(execution_id=eid).order_by(BusinessWorkflowDecisionSnapshotReference.material_code).all();agg=s.query(RuntimeResultReference).filter_by(execution_id=eid,result_type="business_workflow",runtime_task_id=None).one();assert f.status=="partially_succeeded" and [r.material_code for r in refs]==["SKU-A"]
+        R2E_MANIFEST.write_text(json.dumps({"company_id":str(company.id),"user_id":str(user.id),"dataset_id":str(dataset_id),"execution_id":str(eid),"aggregate_id":str(agg.id),"finalization_id":str(f.id),"sku_a_snapshot_id":str(refs[0].decision_snapshot_id),"sku_a_association_id":str(refs[0].id),"analytics_ms":elapsed},indent=2),encoding="utf-8")
+        print("FU_F6A_R2_E_PARTIAL_STATE_VERIFIED",{"execution_id":str(eid),"status":f.status,"completed":f.completed_material_codes,"limitations":f.limitations,"sku_a_association":str(refs[0].id),"analytics_ms":round(elapsed,3)},flush=True)
+    finally:s.close()
+
+def r2e_recover():
+    """Recover the interrupted partial checkpoint, then retry Decision work only."""
+    eid=UUID("06a90a48-6d84-762e-8000-eb1568f56b7a");s=SessionLocal()
+    try:
+        e=s.query(RuntimeExecution).filter_by(execution_id=eid).one();f=s.query(BusinessWorkflowDecisionFinalization).filter_by(execution_id=eid).one();refs=s.query(BusinessWorkflowDecisionSnapshotReference).filter_by(execution_id=eid).all();a=next(x for x in refs if x.material_code=="SKU-A");cand=s.query(DecisionSnapshotCandidate).filter_by(decision_snapshot_id=a.decision_snapshot_id).order_by(DecisionSnapshotCandidate.ordinal).all();results=s.query(RuntimeResultReference).filter_by(execution_id=eid).all()
+        manifest={"company_id":str(e.company_id),"dataset_id":str(e.dataset_id),"execution_id":str(eid),"task_ids":[str(x.id) for x in s.query(RuntimeTask).filter_by(execution_id=eid).order_by(RuntimeTask.task_order)],"result_reference_ids":{x.result_type:str(x.id) for x in results},"aggregate_id":str(next(x.id for x in results if x.result_type=="business_workflow"),),"finalization_id":str(f.id),"partial_status":f.status,"partial_attempt_count":f.attempt_count,"completed_material_codes":f.completed_material_codes,"sku_a_snapshot_id":str(a.decision_snapshot_id),"sku_a_candidate_ids":[str(x.id) for x in cand],"sku_a_association_id":str(a.id),"sku_b_snapshot_id":None,"sku_b_association_id":None}
+        R2E_MANIFEST.write_text(json.dumps(manifest,indent=2),encoding="utf-8")
+        assert f.status=="partially_succeeded" and len(refs)==1
+    finally:s.close()
+    result=BusinessWorkflowDecisionFinalizationService().finalize(UUID(manifest["company_id"]),eid);s=SessionLocal()
+    try:
+        f=s.query(BusinessWorkflowDecisionFinalization).filter_by(id=UUID(manifest["finalization_id"])).one();refs=s.query(BusinessWorkflowDecisionSnapshotReference).filter_by(execution_id=eid).order_by(BusinessWorkflowDecisionSnapshotReference.material_code).all();by={x.material_code:x for x in refs};assert f.status=="succeeded" and len(refs)==2 and str(by["SKU-A"].id)==manifest["sku_a_association_id"] and str(by["SKU-A"].decision_snapshot_id)==manifest["sku_a_snapshot_id"]
+        manifest.update({"final_status":f.status,"final_attempt_count":f.attempt_count,"sku_b_snapshot_id":str(by["SKU-B"].decision_snapshot_id),"sku_b_association_id":str(by["SKU-B"].id),"recovery":"complete"});R2E_MANIFEST.write_text(json.dumps(manifest,indent=2),encoding="utf-8")
+        print("FU_F6A_R2_E_PARTIAL_COMPLETE",{"finalization":f.status,"attempt_count":f.attempt_count,"sku_a_association":manifest["sku_a_association_id"],"sku_b_association":manifest["sku_b_association_id"]},flush=True)
+    finally:s.close()
 
 
 if __name__ == "__main__":
@@ -171,4 +215,9 @@ if __name__ == "__main__":
     elif mode == "r2c-setup": r2c_setup()
     elif mode == "r2c-failure": r2c_failure()
     elif mode == "r2c-recover": r2c_recover()
+    elif mode == "r2d-setup": r2d_setup()
+    elif mode == "r2d-failure": r2d_failure()
+    elif mode == "r2d-recover": r2d_recover()
+    elif mode == "r2e-setup": asyncio.run(r2e_setup())
+    elif mode == "r2e-recover": r2e_recover()
     else: raise ValueError("use setup or retry")

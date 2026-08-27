@@ -1,0 +1,35 @@
+{
+  "company_id": "06a90a45-458d-7648-8001-fe3c3589210e",
+  "dataset_id": "06a90a45-8931-7f28-8000-1bc6758368b5",
+  "execution_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+  "task_ids": [
+    "06a90a48-7669-78f6-8000-8922acce8581",
+    "06a90a48-795f-7548-8000-6bf69f609360",
+    "06a90a48-7c6d-7a67-8000-56b069d59afa",
+    "06a90a48-7f67-783b-8000-93195e09f0a6"
+  ],
+  "result_reference_ids": {
+    "backtest": "06a90a5a-c63a-7b89-8000-5261ceb670b2",
+    "business_workflow": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+    "forecast": "06a90a56-5ef9-778f-8000-f87e44f68e6f",
+    "safety_stock": "06a90a57-bc0b-7fcf-8000-474f306b4d62",
+    "simulation": "06a90a59-4d76-72c7-8000-44156c30ec9d"
+  },
+  "aggregate_id": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+  "finalization_id": "06a90a5b-c345-7b04-8000-adb9b516f9da",
+  "partial_status": "partially_succeeded",
+  "partial_attempt_count": 2,
+  "completed_material_codes": [
+    "SKU-A"
+  ],
+  "sku_a_snapshot_id": "06a90a5c-ec8b-74ad-8000-5cab50d1d93b",
+  "sku_a_candidate_ids": [
+    "06a90a5c-f336-72c4-8000-da407707bdf0"
+  ],
+  "sku_a_association_id": "06a90a5d-b99d-7c52-8000-f804d364ff91",
+  "sku_b_snapshot_id": "06a90a76-6eaa-767b-8000-9d90b584eaae",
+  "sku_b_association_id": "06a90a76-a86a-708e-8000-19bc6287a175",
+  "final_status": "succeeded",
+  "final_attempt_count": 3,
+  "recovery": "complete"
+}

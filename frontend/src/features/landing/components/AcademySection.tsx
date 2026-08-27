@@ -14,6 +14,7 @@ import { alpha } from '@mui/material/styles';
 import { Link } from 'react-router-dom';
 import { useAcademyArticles } from '../../academy/api';
 import { getAcademyCategoryIcon } from '../../academy/components/categoryIcons';
+import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../../shared/analytics/ga';
 
 export function AcademySection() {
   const articlesQuery = useAcademyArticles();
@@ -83,9 +84,9 @@ export function AcademySection() {
               fontSize: { xs: '0.95rem', md: '1.05rem' },
             }}
           >
-            Stokonomi Akademi; stok yönetimi, talep tahmini,
-            emniyet stoku ve karar destek süreçlerini
-            açık, uygulanabilir ve örneklerle anlatan bilgi merkezidir.
+            Stok kararlarının arkasındaki kavramları açık ve uygulanabilir
+            şekilde anlatıyoruz. Akademi, alan bilgisini karar süreçlerine
+            daha sağlam bir başlangıç noktası yapmak için var.
           </Typography>
 
           <Box
@@ -154,13 +155,19 @@ export function AcademySection() {
 
         {!articlesQuery.isLoading && !articlesQuery.isError && articles.length > 0 && (
           <Grid container spacing={3}>
-            {articles.map((article) => {
+            {articles.map((article, index) => {
               const CategoryIcon = getAcademyCategoryIcon(article.category);
               return (
                 <Grid size={{ xs: 12, sm: 6, md: 6, lg: 3 }} key={article.id}>
                   <Paper
                     component={Link}
                     to={`/akademi/${article.slug}`}
+                    onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.ACADEMY_CARD_CLICK, {
+                      article_slug: article.slug,
+                      category: article.category,
+                      position: index + 1,
+                      surface: 'landing',
+                    })}
                     elevation={0}
                     sx={{
                       p: { xs: 2.5, md: 3.5 }, height: '100%', minHeight: 210, display: 'flex', flexDirection: 'column',

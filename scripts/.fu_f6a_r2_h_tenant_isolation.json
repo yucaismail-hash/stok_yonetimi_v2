@@ -1,0 +1,28 @@
+{
+  "a_reads_a": true,
+  "a_reads_b_foreign_count": 0,
+  "association_a_ids": [
+    "06a90a5d-b99d-7c52-8000-f804d364ff91",
+    "06a90a76-a86a-708e-8000-19bc6287a175"
+  ],
+  "association_b_ids": [
+    "06a8f456-963b-7383-8000-e28379efdb0c"
+  ],
+  "b_reads_a_foreign_count": 0,
+  "b_reads_b": true,
+  "company_a_id": "06a90a45-458d-7648-8001-fe3c3589210e",
+  "company_b_id": "06a8f44a-18e1-7a2e-8001-12f83fc644df",
+  "database_writes": 0,
+  "db_composite_ownership_verified": true,
+  "execution_a_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+  "execution_b_id": "06a8f44b-eefc-7229-8000-e409b55b503a",
+  "finalization_ownership_verified": true,
+  "snapshot_a_ids": [
+    "06a90a5c-ec8b-74ad-8000-5cab50d1d93b",
+    "06a90a76-6eaa-767b-8000-9d90b584eaae"
+  ],
+  "snapshot_b_ids": [
+    "06a8f456-72a2-7696-8000-1f129c2ea4ce"
+  ],
+  "snapshot_cross_tenant_lookup_blocked": true
+}

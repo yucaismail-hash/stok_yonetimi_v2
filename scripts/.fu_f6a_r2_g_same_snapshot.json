@@ -1,0 +1,20 @@
+{
+  "status": "conditional_contract_verified",
+  "runtime_fixture_required": false,
+  "production_defect": false,
+  "analytics_run": false,
+  "manual_association_insert": false,
+  "snapshot_identity_provenance_sensitive": true,
+  "execution_id_excluded_from_snapshot_identity": true,
+  "schema_allows_cross_execution_snapshot_reference": true,
+  "association_service_supports_existing_snapshot": true,
+  "full_lifecycle_same_provenance_reachable": false,
+  "association_service": "BusinessWorkflowDecisionSnapshotReferenceService.ensure_for_plan",
+  "association_scope_constraint": "uq_business_decision_snapshot_reference_execution_scope",
+  "execution_ownership_constraint": "fk_bw_dsref_execution_company",
+  "finalization_ownership_constraint": "fk_bw_dsref_finalization_execution_company",
+  "snapshot_ownership_constraint": "fk_bw_dsref_snapshot_company",
+  "retained_source_company_id": "06a90a45-458d-7648-8001-fe3c3589210e",
+  "retained_source_execution_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+  "retained_source_snapshot_id": "06a90a5c-ec8b-74ad-8000-5cab50d1d93b"
+}

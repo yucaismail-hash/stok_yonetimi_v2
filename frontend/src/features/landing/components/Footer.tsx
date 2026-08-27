@@ -9,14 +9,25 @@ import {
   Divider,
   Link,
 } from '@mui/material';
-import { alpha } from '@mui/material/styles';
+import { alpha, type Theme } from '@mui/material/styles';
+import { Link as RouterLink } from 'react-router-dom';
 import { Logo } from '../../../shared/ui';
 
-const footerLinks = [
+type FooterLink = { label: string; href?: string; to?: string };
+
+const footerLinks: FooterLink[] = [
   { label: 'Yaklaşım', href: '#yaklasim' },
-  { label: 'Akademi', href: '#akademi' },
+  { label: 'Akademi', to: '/akademi' },
   { label: 'Gelişmeleri Takip Et', href: '#gelismeler' },
 ];
+
+const footerLinkSx = {
+  color: (theme: Theme) => alpha(theme.palette.common.white, 0.7),
+  fontSize: '0.875rem',
+  fontWeight: 500,
+  transition: 'color 0.2s',
+  '&:hover': { color: (theme: Theme) => theme.palette.common.white },
+};
 
 export function Footer() {
   return (
@@ -51,31 +62,20 @@ export function Footer() {
                 lineHeight: 1.7,
               }}
             >
-              Yapay zekâ destekli stok optimizasyonu, talep tahmini
-              ve karar desteği platformu.
+              Tahmin, doğrulama ve karar desteğini birlikte değerlendirmek
+              için geliştirilen stok karar sistemi yaklaşımı.
             </Typography>
           </Grid>
 
           <Grid size={{ xs: 12, md: 4 }}>
             <Stack spacing={1.5}>
-              {footerLinks.map((item) => (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  underline="none"
-                  sx={{
-                    color: (theme) => alpha(theme.palette.common.white, 0.7),
-                    fontSize: '0.875rem',
-                    fontWeight: 500,
-                    transition: 'color 0.2s',
-                    '&:hover': {
-                      color: (theme) => theme.palette.common.white,
-                    },
-                  }}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {footerLinks.map((item) => {
+                return item.to ? (
+                  <Link key={item.label} component={RouterLink} to={item.to} underline="none" sx={footerLinkSx}>{item.label}</Link>
+                ) : (
+                  <Link key={item.label} href={item.href} underline="none" sx={footerLinkSx}>{item.label}</Link>
+                );
+              })}
             </Stack>
           </Grid>
 
@@ -93,22 +93,15 @@ export function Footer() {
             >
               Bizi Takip Edin
             </Typography>
-            <Link
-              href="#"
-              underline="none"
+            <Typography
               sx={{
                 color: (theme) => alpha(theme.palette.common.white, 0.6),
                 fontSize: '0.875rem',
-                transition: 'color 0.2s',
-                pointerEvents: 'none',
                 opacity: 0.5,
-                '&:hover': {
-                  color: (theme) => theme.palette.common.white,
-                },
               }}
             >
               LinkedIn
-            </Link>
+            </Typography>
             <Typography
               variant="caption"
               sx={{

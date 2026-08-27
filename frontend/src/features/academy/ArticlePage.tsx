@@ -1,5 +1,5 @@
 // src/features/academy/ArticlePage.tsx
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   Box,
   Container,
@@ -12,12 +12,18 @@ import {
 } from '@mui/material';
 import { alpha } from '@mui/material/styles';
 import { useParams, Link as RouterLink } from 'react-router-dom';
-import { ArrowBack as ArrowBackIcon, Home as HomeIcon } from '@mui/icons-material';
+import {
+  ArrowBack as ArrowBackIcon,
+  ArrowForward as ArrowForwardIcon,
+  Home as HomeIcon,
+  School as SchoolIcon,
+} from '@mui/icons-material';
 import { Logo } from '../../shared/ui';
 import { canonicalUrl, httpImageOrDefault, Seo, SEO_SITE_URL } from '../../seo';
 import type { Article } from './content/types';
 import { AcademyApiError, useAcademyArticle } from './api';
 import ArticleContent from './components/ArticleContent';
+import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../shared/analytics/ga';
 
 interface ArticleStateProps {
   kind: 'loading' | 'notFound' | 'error';
@@ -104,6 +110,18 @@ function ArticleState({ kind, onRetry }: ArticleStateProps) {
 export default function ArticlePage() {
   const { slug } = useParams<{ slug: string }>();
   const articleQuery = useAcademyArticle(slug);
+  const viewedArticleSlug = useRef<string | null>(null);
+  const articleData = articleQuery.data;
+
+  useEffect(() => {
+    if (!articleData || viewedArticleSlug.current === articleData.slug) return;
+
+    trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.ACADEMY_ARTICLE_VIEW, {
+      article_slug: articleData.slug,
+      category: articleData.category,
+    });
+    viewedArticleSlug.current = articleData.slug;
+  }, [articleData]);
 
   if (!slug) return <ArticleState kind="notFound" />;
   if (articleQuery.isLoading) return <ArticleState kind="loading" />;
@@ -118,11 +136,11 @@ export default function ArticlePage() {
       />
     );
   }
-  if (!articleQuery.data) {
+  if (!articleData) {
     return <ArticleState kind="error" onRetry={() => void articleQuery.refetch()} />;
   }
 
-  const article: Article = articleQuery.data;
+  const article: Article = articleData;
 
   // Article found - render it with SEO
   const canonical = canonicalUrl(`/akademi/${article.slug}`);
@@ -298,6 +316,49 @@ export default function ArticlePage() {
 
             {/* Article Body */}
             <ArticleContent sections={article.sections} />
+
+            <Box
+              component="aside"
+              aria-labelledby="academy-next-step-title"
+              sx={{
+                mt: { xs: 6, md: 8 },
+                p: { xs: 3, md: 4 },
+                borderRadius: (theme) => theme.shape.borderRadius,
+                border: (theme) => `1px solid ${theme.palette.divider}`,
+                bgcolor: (theme) => alpha(theme.palette.primary.main, 0.035),
+              }}
+            >
+              <Typography
+                id="academy-next-step-title"
+                variant="h2"
+                sx={{ fontWeight: 700, fontSize: { xs: '1.35rem', md: '1.6rem' }, mb: 1.5 }}
+              >
+                Stok yönetimi yalnızca formüllerden ibaret değildir.
+              </Typography>
+              <Typography color="text.secondary" sx={{ lineHeight: 1.8, maxWidth: 680, mb: 3 }}>
+                Stokonomi, tahmin, simülasyon ve doğrulama adımlarını birlikte değerlendiren bir karar destek yaklaşımı geliştiriyor.
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1.5 }}>
+                <Button
+                  component="a"
+                  href="/#karar-sistemi"
+                  variant="contained"
+                  endIcon={<ArrowForwardIcon />}
+                  onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.ACADEMY_TO_LANDING_CLICK, { article_slug: article.slug, placement: 'article_conversion', destination: '/#karar-sistemi' })}
+                >
+                  Stokonomi yaklaşımını keşfet
+                </Button>
+                <Button
+                  component={RouterLink}
+                  to="/akademi"
+                  variant="outlined"
+                  startIcon={<SchoolIcon />}
+                  onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.ACADEMY_CONTINUE_CLICK, { article_slug: article.slug, placement: 'article_conversion', destination: '/akademi' })}
+                >
+                  Akademide devam et
+                </Button>
+              </Box>
+            </Box>
           </Box>
         </Container>
       </Box>

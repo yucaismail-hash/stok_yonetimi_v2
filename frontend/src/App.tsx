@@ -1,5 +1,6 @@
 // src/App.tsx
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { useEffect, useRef } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -30,6 +31,7 @@ import { AcademyPage, ArticlePage } from './features/academy';
 
 import { useAuth } from './hooks/useAuth';
 import { useCurrentPilotDataset } from './features/dataset/api/pilotDatasetQueries';
+import { trackPageView } from './shared/analytics/ga';
 
 const queryClient = new QueryClient();
 
@@ -67,6 +69,26 @@ function DatasetRequiredRoute() {
   }
   if (!currentDataset.data) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
+}
+
+function AnalyticsRouteTracker() {
+  const location = useLocation();
+  const lastTrackedPath = useRef<string>();
+
+  useEffect(() => {
+    const pagePath = `${location.pathname}${location.search}`;
+
+    if (lastTrackedPath.current === pagePath) return;
+    lastTrackedPath.current = pagePath;
+
+    const timeoutId = window.setTimeout(() => {
+      trackPageView(pagePath);
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [location.pathname, location.search]);
+
+  return null;
 }
 
 // 🚀 App Routes
@@ -108,6 +130,7 @@ function App() {
       <CssBaseline />
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
+          <AnalyticsRouteTracker />
           <AppRoutes />
         </BrowserRouter>
       </QueryClientProvider>

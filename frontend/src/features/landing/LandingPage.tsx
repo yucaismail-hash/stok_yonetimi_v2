@@ -6,6 +6,8 @@ import Navbar from './components/Navbar';
 import Hero from './components/Hero';
 import ProblemSection from './components/ProblemSection';
 import ApproachSection from './components/ApproachSection';
+import DecisionSystemSection from './components/DecisionSystemSection';
+import IntelligenceLevelsSection from './components/IntelligenceLevelsSection';
 import HumanAiSection from './components/HumanAiSection';
 import AcademySection from './components/AcademySection';
 import DevelopmentStatusSection from './components/DevelopmentStatusSection';
@@ -19,6 +21,8 @@ export default function LandingPage() {
       <Hero />
       <ProblemSection />
       <ApproachSection />
+      <DecisionSystemSection />
+      <IntelligenceLevelsSection />
       <HumanAiSection />
       <AcademySection />
       <DevelopmentStatusSection />

@@ -20,11 +20,11 @@ import {
 } from '@mui/icons-material';
 
 const aiCapabilities = [
-  { icon: AnalyticsIcon, label: 'Veriyi işler' },
-  { icon: TimelineIcon, label: 'Örüntüleri analiz eder' },
+  { icon: AnalyticsIcon, label: 'Veriyi analiz eder' },
+  { icon: TimelineIcon, label: 'Yaklaşımları karşılaştırır' },
   { icon: PsychologyIcon, label: 'Tahminleri ve senaryoları sınar' },
-  { icon: VisibilityIcon, label: 'Riskleri görünür hale getirir' },
-  { icon: AssessmentIcon, label: 'Bulguları açıklanabilir hale getirir' },
+  { icon: VisibilityIcon, label: 'Riskleri görünür hale getirmeyi amaçlar' },
+  { icon: AssessmentIcon, label: 'Bulguları açıklamaya yardımcı olur' },
 ];
 
 const humanCapabilities = [
@@ -416,7 +416,7 @@ export function HumanAiSection() {
               fontSize: { xs: '1.25rem', md: '1.5rem' },
             }}
           >
-            AI önerir. İnsan değerlendirir.
+            AI analiz eder. İnsan değerlendirir.
             <br />
             Karar birlikte güçlenir.
           </Typography>
@@ -428,9 +428,9 @@ export function HumanAiSection() {
               fontSize: { xs: '0.95rem', md: '1.05rem' },
             }}
           >
-            Stokonomi kara kutu bir otomasyon sistemi değil,
-            kararın nedenlerini görünür kılmayı hedefleyen
-            bir karar destek platformudur.
+            Stokonomi kara kutu bir otomasyon sistemi değil; analizi,
+            karşılaştırmayı, sınamayı ve açıklamayı karar vericinin
+            değerlendirmesine sunmayı hedefleyen bir karar destek platformudur.
           </Typography>
         </Box>
 
