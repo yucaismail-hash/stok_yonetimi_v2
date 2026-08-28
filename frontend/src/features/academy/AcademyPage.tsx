@@ -104,21 +104,21 @@ export default function AcademyPage() {
                     })}
                     elevation={0}
                     sx={{
-                      p: { xs: 2.5, md: 3.5 }, height: '100%', minHeight: 220, display: 'flex', flexDirection: 'column',
-                      borderRadius: (theme) => theme.shape.borderRadius, border: (theme) => `1px solid ${theme.palette.divider}`,
-                      bgcolor: 'background.paper', color: 'inherit', textDecoration: 'none', transition: 'all 0.25s ease-in-out',
+                      p: { xs: 2.25, sm: 2.5, md: 2.75 }, height: '100%', minHeight: { xs: 238, sm: 248, md: 254 }, display: 'flex', flexDirection: 'column',
+                      borderRadius: 1, border: (theme) => `1px solid ${theme.palette.divider}`,
+                      bgcolor: 'background.paper', color: 'inherit', textDecoration: 'none', overflow: 'hidden', transition: 'all 0.25s ease-in-out',
                       '&:hover': { borderColor: 'primary.main', boxShadow: (theme) => `0 8px 32px ${alpha(theme.palette.primary.main, 0.06)}`, transform: 'translateY(-2px)' },
                     }}
                   >
-                    <Chip label={article.category} size="small" sx={{ alignSelf: 'flex-start', mb: 2, bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06), color: 'primary.main' }} />
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                    <Chip label={article.category} size="small" sx={{ alignSelf: 'flex-start', maxWidth: '100%', mb: 1.5, bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06), color: 'primary.main' }} />
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25, mb: 1.5, minWidth: 0 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 36, height: 36, borderRadius: 2, bgcolor: (theme) => alpha(theme.palette.primary.main, 0.06), color: 'primary.main', flexShrink: 0 }}>
                         <CategoryIcon sx={{ fontSize: 20 }} />
                       </Box>
-                      <Typography variant="h6" sx={{ fontWeight: 600, fontSize: '0.95rem', lineHeight: 1.3 }}>{article.title}</Typography>
+                      <Typography variant="h6" sx={{ minWidth: 0, minHeight: '2.6em', fontWeight: 600, fontSize: '0.95rem', lineHeight: 1.3, overflow: 'hidden', overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2 }}>{article.title}</Typography>
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.7, flex: 1, mb: 2 }}>{article.description}</Typography>
-                    <Chip label={`Yayında · ${article.readingTime} dk`} size="small" sx={{ alignSelf: 'flex-start', bgcolor: (theme) => alpha(theme.palette.success.main, 0.08), color: 'success.main' }} />
+                    <Typography variant="body2" color="text.secondary" sx={{ minHeight: '4.95em', lineHeight: 1.65, flex: 1, overflow: 'hidden', overflowWrap: 'anywhere', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3 }}>{article.description}</Typography>
+                    <Chip label={`Yayında · ${article.readingTime} dk`} size="small" sx={{ alignSelf: 'flex-start', maxWidth: '100%', mt: 'auto', pt: 0, flexShrink: 0, bgcolor: (theme) => alpha(theme.palette.success.main, 0.08), color: 'success.main' }} />
                   </Paper>
                 </Grid>
               );
