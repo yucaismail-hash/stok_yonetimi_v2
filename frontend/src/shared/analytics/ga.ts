@@ -41,28 +41,33 @@ export function initGoogleAnalytics() {
   if (!enabled || !measurementId || typeof window === 'undefined' || typeof document === 'undefined') return false;
   if (initialized) return true;
 
-  window.dataLayer = window.dataLayer ?? [];
-  window.gtag =
-    window.gtag ??
-    ((...args: GtagArgs) => {
-      window.dataLayer?.push(args);
+  try {
+    window.dataLayer = window.dataLayer ?? [];
+    window.gtag =
+      window.gtag ??
+      ((...args: GtagArgs) => {
+        window.dataLayer?.push(args);
+      });
+
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement('script');
+      script.id = scriptId;
+      script.async = true;
+      script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
+      document.head.appendChild(script);
+    }
+
+    window.gtag('js', new Date());
+    window.gtag('config', measurementId, {
+      send_page_view: false,
     });
 
-  if (!document.getElementById(scriptId)) {
-    const script = document.createElement('script');
-    script.id = scriptId;
-    script.async = true;
-    script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(measurementId)}`;
-    document.head.appendChild(script);
+    initialized = true;
+    return true;
+  } catch {
+    // Analytics is optional and must never interrupt public page rendering or navigation.
+    return false;
   }
-
-  window.gtag('js', new Date());
-  window.gtag('config', measurementId, {
-    send_page_view: false,
-  });
-
-  initialized = true;
-  return true;
 }
 
 export function trackPageView(pagePath: string) {
