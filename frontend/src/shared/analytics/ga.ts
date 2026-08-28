@@ -26,7 +26,7 @@ export type PublicAnalyticsEventName = keyof PublicAnalyticsEventParams;
 
 declare global {
   interface Window {
-    dataLayer?: GtagArgs[];
+    dataLayer?: IArguments[];
     gtag?: (...args: GtagArgs) => void;
   }
 }
@@ -45,9 +45,10 @@ export function initGoogleAnalytics() {
     window.dataLayer = window.dataLayer ?? [];
     window.gtag =
       window.gtag ??
-      ((...args: GtagArgs) => {
-        window.dataLayer?.push(args);
-      });
+      function gtag(..._args: GtagArgs) {
+        // Match Google's bootstrap snippet: gtag.js consumes Arguments entries, not Arrays.
+        window.dataLayer?.push(arguments);
+      };
 
     if (!document.getElementById(scriptId)) {
       const script = document.createElement('script');
