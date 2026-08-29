@@ -1,0 +1,42 @@
+{
+  "after_counts": {
+    "associations": 2,
+    "candidates": 2,
+    "decision_finalizations": 1,
+    "feedback": 0,
+    "runtime_executions": 1,
+    "runtime_result_references": 5,
+    "snapshots": 2
+  },
+  "aggregate_result_reference_id": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+  "association_ids": [
+    "06a90a5d-b99d-7c52-8000-f804d364ff91",
+    "06a90a76-a86a-708e-8000-19bc6287a175"
+  ],
+  "before_counts": {
+    "associations": 2,
+    "candidates": 2,
+    "decision_finalizations": 1,
+    "feedback": 0,
+    "runtime_executions": 1,
+    "runtime_result_references": 5,
+    "snapshots": 2
+  },
+  "company_id": "06a90a45-458d-7648-8001-fe3c3589210e",
+  "database_writes": 0,
+  "decision_count": 2,
+  "deterministic_ordering": true,
+  "dto_module": "app.schemas.business_workflow_presentation",
+  "execution_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+  "full_aggregate_embedded": false,
+  "no_analytics": true,
+  "no_current_learning": true,
+  "no_materialize": true,
+  "no_policy": true,
+  "no_resolver": true,
+  "service_module": "app.application.business_workflow_presentation",
+  "snapshot_ids": [
+    "06a90a5c-ec8b-74ad-8000-5cab50d1d93b",
+    "06a90a76-6eaa-767b-8000-9d90b584eaae"
+  ]
+}

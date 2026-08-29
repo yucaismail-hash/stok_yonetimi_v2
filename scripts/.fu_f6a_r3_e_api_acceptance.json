@@ -1,0 +1,143 @@
+{
+  "aggregate_result_reference_id": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+  "alembic_head": "pending_external_validation",
+  "association_ids": [
+    "06a90a5d-b99d-7c52-8000-f804d364ff91",
+    "06a90a76-a86a-708e-8000-19bc6287a175"
+  ],
+  "candidate_ordering": true,
+  "company_a_id": "06a90a45-458d-7648-8001-fe3c3589210e",
+  "company_b_id": "06a8f44a-18e1-7a2e-8001-12f83fc644df",
+  "cross_execution_snapshot_authorization": "contract_verified_no_natural_fixture",
+  "evidence_manifests": [
+    ".fu_f6a_r2_correlation.json",
+    ".fu_f6a_r2_i_fresh_process_compatibility.json",
+    ".fu_f6a_r3_b_presentation_service.json",
+    ".fu_f6a_r3_c_decision_endpoint.json",
+    ".fu_f6a_r3_d_feedback_endpoint.json"
+  ],
+  "execution_a_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+  "execution_b_id": "06a8f44b-eefc-7229-8000-e409b55b503a",
+  "feedback_created": true,
+  "feedback_duplicate_idempotent": true,
+  "feedback_final_residue": 0,
+  "feedback_learning_activation": false,
+  "feedback_rows_cleaned": true,
+  "final_counts": {
+    "company_a": {
+      "associations": 2,
+      "candidates": 2,
+      "champion_current": 0,
+      "champion_entries": 0,
+      "champion_transitions": 0,
+      "company_learning": 0,
+      "decision_finalizations": 1,
+      "feedback": 0,
+      "learning_evidence": 0,
+      "pattern_memory": 0,
+      "retraining_jobs": 0,
+      "runtime_attempts": 4,
+      "runtime_executions": 1,
+      "runtime_result_references": 5,
+      "runtime_tasks": 4,
+      "snapshots": 2
+    },
+    "company_b": {
+      "associations": 3,
+      "candidates": 3,
+      "champion_current": 0,
+      "champion_entries": 0,
+      "champion_transitions": 0,
+      "company_learning": 0,
+      "decision_finalizations": 3,
+      "feedback": 0,
+      "learning_evidence": 0,
+      "pattern_memory": 0,
+      "retraining_jobs": 0,
+      "runtime_attempts": 12,
+      "runtime_executions": 3,
+      "runtime_result_references": 15,
+      "runtime_tasks": 12,
+      "snapshots": 3
+    }
+  },
+  "final_database_delta": 0,
+  "finalization_status": "succeeded",
+  "foreign_feedback_status": 404,
+  "foreign_get_status": 404,
+  "fresh_process_get_run_1": "passed",
+  "fresh_process_get_run_2": "passed",
+  "historical_identity_equal": true,
+  "identity_run_1": {
+    "aggregate_id": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+    "association_ids": [
+      "06a90a5d-b99d-7c52-8000-f804d364ff91",
+      "06a90a76-a86a-708e-8000-19bc6287a175"
+    ],
+    "candidate_ordinals": [
+      [
+        1
+      ],
+      [
+        1
+      ]
+    ],
+    "execution_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+    "explanation_fingerprints": [
+      "4cd4472b599f978b59640062aef96f7edbd8d220060dc5a6a505c51e1c606115",
+      "f9719f8e090b7337d399fe5e406ef413d7496c696cad740d6d44e7ff8c4a0741"
+    ],
+    "materials": [
+      "SKU-A",
+      "SKU-B"
+    ],
+    "snapshot_ids": [
+      "06a90a5c-ec8b-74ad-8000-5cab50d1d93b",
+      "06a90a76-6eaa-767b-8000-9d90b584eaae"
+    ]
+  },
+  "identity_run_2": {
+    "aggregate_id": "06a90a5b-6de1-751b-8000-1fe6b12d4b9c",
+    "association_ids": [
+      "06a90a5d-b99d-7c52-8000-f804d364ff91",
+      "06a90a76-a86a-708e-8000-19bc6287a175"
+    ],
+    "candidate_ordinals": [
+      [
+        1
+      ],
+      [
+        1
+      ]
+    ],
+    "execution_id": "06a90a48-6d84-762e-8000-eb1568f56b7a",
+    "explanation_fingerprints": [
+      "4cd4472b599f978b59640062aef96f7edbd8d220060dc5a6a505c51e1c606115",
+      "f9719f8e090b7337d399fe5e406ef413d7496c696cad740d6d44e7ff8c4a0741"
+    ],
+    "materials": [
+      "SKU-A",
+      "SKU-B"
+    ],
+    "snapshot_ids": [
+      "06a90a5c-ec8b-74ad-8000-5cab50d1d93b",
+      "06a90a76-6eaa-767b-8000-9d90b584eaae"
+    ]
+  },
+  "multi_material_ordering": true,
+  "no_analytics": true,
+  "no_current_learning_for_get": true,
+  "no_materialize": true,
+  "no_policy": true,
+  "no_resolver": true,
+  "nonassociated_snapshot_status": 404,
+  "nonexistent_execution_status": 404,
+  "openapi_verified": true,
+  "presentation_api_ready_for_frontend": true,
+  "recovered_after_execution_window_interruption": true,
+  "result_decision_separation": true,
+  "snapshot_ids": [
+    "06a90a5c-ec8b-74ad-8000-5cab50d1d93b",
+    "06a90a76-6eaa-767b-8000-9d90b584eaae"
+  ]
+}
