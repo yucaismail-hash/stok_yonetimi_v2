@@ -27,12 +27,9 @@ import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../../shared/analy
 export function Hero() {
   const navigate = useNavigate();
 
-  const handleCtaClick = (href: string, placement: string) => {
-    trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_PRIMARY_CTA_CLICK, { placement, destination: href });
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
+  const handleFreeStart = () => {
+    trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_FREE_START_CLICK, { placement: 'hero', destination: '/register' });
+    navigate('/register');
   };
 
   const handleAcademyClick = () => {
@@ -160,7 +157,7 @@ export function Hero() {
                   variant="contained"
                   size="large"
                   endIcon={<ArrowForwardIcon />}
-                  onClick={() => handleCtaClick('#gelismeler', 'hero')}
+                  onClick={handleFreeStart}
                   sx={{
                     px: 4,
                     py: 1.5,
@@ -170,7 +167,7 @@ export function Hero() {
                     textTransform: 'none',
                   }}
                 >
-                  Gelişmeleri Takip Et
+                  Ücretsiz Başla
                 </Button>
                 <Button
                   variant="outlined"

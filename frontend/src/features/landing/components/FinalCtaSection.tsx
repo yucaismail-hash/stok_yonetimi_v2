@@ -10,20 +10,11 @@ import {
 import { alpha } from '@mui/material/styles';
 import {
   ArrowForward as ArrowForwardIcon,
-  School as SchoolIcon,
 } from '@mui/icons-material';
 import { Link } from 'react-router-dom';
 import { PUBLIC_ANALYTICS_EVENTS, trackPublicEvent } from '../../../shared/analytics/ga';
 
 export function FinalCtaSection() {
-  const handleScroll = (href: string) => {
-    trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_PRIMARY_CTA_CLICK, { placement: 'final_cta', destination: href });
-    const element = document.querySelector(href);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
-  };
-
   return (
     <Box
       id="final-cta"
@@ -110,9 +101,8 @@ export function FinalCtaSection() {
               mb: 3,
             }}
           >
-            Stokonomi; stok yönetimi, talep tahmini,
-            simülasyon ve doğrulama süreçlerini
-            tek bir karar destek yaklaşımında birleştirmeyi hedefliyor.
+            Bireysel analizlerle ücretsiz başlayın; Business Workflow'un ilk
+            5 başarılı çalıştırmasında tam karar çıktılarını deneyin.
           </Typography>
 
           <Box
@@ -165,7 +155,9 @@ export function FinalCtaSection() {
               variant="contained"
               size="large"
               endIcon={<ArrowForwardIcon />}
-              onClick={() => handleScroll('#gelismeler')}
+              component={Link}
+              to="/register"
+              onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_FREE_START_CLICK, { placement: 'final_cta', destination: '/register' })}
               sx={{
                 px: 4,
                 py: 1.5,
@@ -175,15 +167,14 @@ export function FinalCtaSection() {
                 textTransform: 'none',
               }}
             >
-              Gelişmeleri Takip Et
+              Ücretsiz Başla
             </Button>
             <Button
               variant="outlined"
               size="large"
-              startIcon={<SchoolIcon />}
+              startIcon={<ArrowForwardIcon />}
               component={Link}
-              to="/akademi"
-              onClick={() => trackPublicEvent(PUBLIC_ANALYTICS_EVENTS.LANDING_ACADEMY_CTA_CLICK, { placement: 'final_cta', destination: '/akademi' })}
+              to="/login"
               sx={{
                 px: 4,
                 py: 1.5,
@@ -199,7 +190,7 @@ export function FinalCtaSection() {
                 },
               }}
             >
-              Akademiyi Keşfet
+              Giriş Yap
             </Button>
           </Stack>
 

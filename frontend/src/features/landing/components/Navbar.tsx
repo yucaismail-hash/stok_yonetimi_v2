@@ -57,11 +57,14 @@ export function Navbar() {
     }
   };
 
-  const handleCtaClick = () => {
-    const element = document.querySelector('#gelismeler');
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
-    }
+  const handleAuthClick = (destination: '/login' | '/register', placement: string) => {
+    trackPublicEvent(
+      destination === '/register'
+        ? PUBLIC_ANALYTICS_EVENTS.NAVBAR_REGISTER_CLICK
+        : PUBLIC_ANALYTICS_EVENTS.NAVBAR_LOGIN_CLICK,
+      { placement, destination },
+    );
+    navigate(destination);
     setMobileOpen(false);
   };
 
@@ -105,12 +108,11 @@ export function Navbar() {
           </ListItemButton>
         ))}
         <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-          <Button
-            fullWidth
-            variant="contained"
-            onClick={handleCtaClick}
-          >
-            Gelişmeleri Takip Et
+          <Button fullWidth variant="outlined" onClick={() => handleAuthClick('/login', 'navbar_mobile')}>
+            Giriş Yap
+          </Button>
+          <Button fullWidth variant="contained" onClick={() => handleAuthClick('/register', 'navbar_mobile')}>
+            Ücretsiz Başla
           </Button>
         </Box>
       </List>
@@ -172,11 +174,11 @@ export function Navbar() {
               gap: 2,
             }}
           >
-            <Button
-              variant="contained"
-              onClick={handleCtaClick}
-            >
-              Gelişmeleri Takip Et
+            <Button color="inherit" onClick={() => handleAuthClick('/login', 'navbar_desktop')}>
+              Giriş Yap
+            </Button>
+            <Button variant="contained" onClick={() => handleAuthClick('/register', 'navbar_desktop')}>
+              Ücretsiz Başla
             </Button>
           </Box>
 

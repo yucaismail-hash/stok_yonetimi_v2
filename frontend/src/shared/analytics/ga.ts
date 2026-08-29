@@ -2,7 +2,10 @@ type GtagArgs = [command: 'js', date: Date] | [command: 'config', targetId: stri
 
 export const PUBLIC_ANALYTICS_EVENTS = {
   LANDING_PRIMARY_CTA_CLICK: 'landing_primary_cta_click',
+  LANDING_FREE_START_CLICK: 'landing_free_start_click',
   LANDING_ACADEMY_CTA_CLICK: 'landing_academy_cta_click',
+  NAVBAR_REGISTER_CLICK: 'navbar_register_click',
+  NAVBAR_LOGIN_CLICK: 'navbar_login_click',
   ACADEMY_CARD_CLICK: 'academy_card_click',
   ACADEMY_ARTICLE_VIEW: 'academy_article_view',
   ACADEMY_TO_LANDING_CLICK: 'academy_to_landing_click',
@@ -13,7 +16,10 @@ export const PUBLIC_ANALYTICS_EVENTS = {
 
 type PublicAnalyticsEventParams = {
   [PUBLIC_ANALYTICS_EVENTS.LANDING_PRIMARY_CTA_CLICK]: { placement: string; destination: string };
+  [PUBLIC_ANALYTICS_EVENTS.LANDING_FREE_START_CLICK]: { placement: string; destination: string };
   [PUBLIC_ANALYTICS_EVENTS.LANDING_ACADEMY_CTA_CLICK]: { placement: string; destination: string };
+  [PUBLIC_ANALYTICS_EVENTS.NAVBAR_REGISTER_CLICK]: { placement: string; destination: string };
+  [PUBLIC_ANALYTICS_EVENTS.NAVBAR_LOGIN_CLICK]: { placement: string; destination: string };
   [PUBLIC_ANALYTICS_EVENTS.ACADEMY_CARD_CLICK]: { article_slug: string; category: string; position: number; surface: 'landing' | 'academy' };
   [PUBLIC_ANALYTICS_EVENTS.ACADEMY_ARTICLE_VIEW]: { article_slug: string; category: string };
   [PUBLIC_ANALYTICS_EVENTS.ACADEMY_TO_LANDING_CLICK]: { article_slug: string; placement: string; destination: string };

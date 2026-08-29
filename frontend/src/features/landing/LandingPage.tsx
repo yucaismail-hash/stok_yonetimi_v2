@@ -9,6 +9,7 @@ import ApproachSection from './components/ApproachSection';
 import DecisionSystemSection from './components/DecisionSystemSection';
 import IntelligenceLevelsSection from './components/IntelligenceLevelsSection';
 import HumanAiSection from './components/HumanAiSection';
+import FreeEntrySection from './components/FreeEntrySection';
 import AcademySection from './components/AcademySection';
 import DevelopmentStatusSection from './components/DevelopmentStatusSection';
 import FinalCtaSection from './components/FinalCtaSection';
@@ -24,6 +25,7 @@ export default function LandingPage() {
       <DecisionSystemSection />
       <IntelligenceLevelsSection />
       <HumanAiSection />
+      <FreeEntrySection />
       <AcademySection />
       <DevelopmentStatusSection />
       <FinalCtaSection />
