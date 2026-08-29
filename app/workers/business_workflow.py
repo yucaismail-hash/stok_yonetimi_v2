@@ -8,6 +8,7 @@ import socket
 from dataclasses import dataclass
 
 from app.database import SessionLocal
+from app.config.production_safety import validate_worker_production_configuration
 from app.engine.business_workflow_scheduler import BusinessWorkflowScheduler
 from app.engine.local_forecast_runner import LocalForecastRunner
 from app.engine.runtime_store import RuntimeStoreConcurrencyError
@@ -26,6 +27,7 @@ class WorkerSettings:
 
     @classmethod
     def from_env(cls):
+        validate_worker_production_configuration()
         poll_seconds = float(os.getenv("BUSINESS_WORKFLOW_POLL_SECONDS", "5"))
         lease_seconds = int(os.getenv("BUSINESS_WORKFLOW_LEASE_SECONDS", "900"))
         worker_id = os.getenv("BUSINESS_WORKFLOW_WORKER_ID") or f"business-workflow-{socket.gethostname()}-{os.getpid()}"

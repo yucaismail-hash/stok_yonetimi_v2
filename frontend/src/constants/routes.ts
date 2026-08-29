@@ -13,6 +13,7 @@ export const ROUTES = {
   PROFILE: '/profile',
   ADMIN: '/admin',
   TASKS: '/tasks',
+  EXECUTION_RESULTS: (executionId: string) => `/executions/${encodeURIComponent(executionId)}/results`,
   PRICING: '/pricing',
   EXECUTIVE_SUMMARY: '/executive-summary',
   AI_ANALYSIS: '/ai-analysis',

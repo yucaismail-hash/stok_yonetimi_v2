@@ -2,6 +2,15 @@
 
 Run the canonical workflow consumer as a separate Render Background Worker. Do not run it inside the FastAPI web process.
 
+## Production safety contract
+
+The backend web service must set `DATABASE_URL`, `DATABASE_ENVIRONMENT=production`,
+`SECRET_KEY`, and `STOKONOMI_MASTER_KEY` before it starts. The worker must set
+`DATABASE_URL`, `DATABASE_ENVIRONMENT=production`, and the same
+`STOKONOMI_MASTER_KEY`; it does not require the JWT secret. Missing or
+repository-known development keys are rejected in production. Render supplies
+the backend `PORT`; the backend image falls back to 8000 only outside Render.
+
 ## Start command
 
 ```text

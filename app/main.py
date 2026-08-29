@@ -33,6 +33,7 @@ from app.api.public import (
 from app.auth import auth_router
 from app.admin import router as admin_router
 from app.models import *
+from app.config.production_safety import validate_backend_production_configuration
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ app = FastAPI(
 async def startup_event():
     """Uygulama başlangıcında sadece tabloları oluştur."""
     logger.info("🚀 Starting up...")
+    validate_backend_production_configuration()
     readiness = init_db()
     logger.info("Schema readiness: %s", readiness.status)
     logger.info("✅ Database tables ready")

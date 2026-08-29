@@ -24,6 +24,7 @@ import logging
 
 from app.models.security import CompanyEncryptionKey
 from app.models.company import User
+from app.config.production_safety import is_production_environment, require_production_master_key
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,9 @@ class EncryptionService:
     def _get_master_key(self) -> bytes:
         """Master key'i environment'dan al."""
         master_key = os.getenv(self.MASTER_KEY_ENV)
+        if is_production_environment():
+            # Production never falls back to a repository-known development key.
+            return require_production_master_key().encode('utf-8')
         if not master_key:
             # Development ortamında otomatik oluştur
             logger.warning(f"{self.MASTER_KEY_ENV} environment variable not set. Using development key.")

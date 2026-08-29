@@ -2,9 +2,12 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
   BusinessWorkflowApiError,
+  getBusinessWorkflowDecision,
   getExecution,
   getExecutionResult,
+  recordDecisionFeedback,
   startBusinessWorkflow,
+  type DecisionFeedbackRequest,
   type ExecutionStatus,
 } from './businessWorkflowApi';
 
@@ -20,6 +23,8 @@ export const businessWorkflowKeys = {
   all: ['business-workflow'] as const,
   execution: (executionId: string) => ['business-workflow', 'execution', executionId] as const,
   result: (executionId: string) => ['business-workflow', 'result', executionId] as const,
+  decision: (executionId: string) => ['business-workflow', 'decision', executionId] as const,
+  feedback: (executionId: string, snapshotId: string) => ['business-workflow', 'decision-feedback', executionId, snapshotId] as const,
 };
 
 function retryNonClientError(failureCount: number, error: unknown) {
@@ -60,5 +65,24 @@ export function useExecutionResult(executionId?: string, enabled = false) {
       if (error instanceof BusinessWorkflowApiError && error.kind === 'result-not-ready') return failureCount < 1;
       return retryNonClientError(failureCount, error);
     },
+  });
+}
+
+/** Decision presentation is persisted historical evidence; it never polls after load. */
+export function useBusinessWorkflowDecision(executionId?: string, enabled = true) {
+  return useQuery({
+    queryKey: businessWorkflowKeys.decision(executionId || 'none'),
+    queryFn: () => getBusinessWorkflowDecision(executionId as string),
+    enabled: Boolean(executionId) && enabled,
+    staleTime: Infinity,
+    retry: retryNonClientError,
+    retryDelay: (attempt) => Math.min(1_000 * 2 ** attempt, 5_000),
+  });
+}
+
+export function useDecisionFeedback() {
+  return useMutation({
+    mutationFn: ({ executionId, snapshotId, payload }: { executionId: string; snapshotId: string; payload: DecisionFeedbackRequest }) =>
+      recordDecisionFeedback(executionId, snapshotId, payload),
   });
 }

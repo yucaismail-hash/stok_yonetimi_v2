@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Alert, Box, Button, Card, CardContent, Chip, LinearProgress, Stack, Typography } from '@mui/material';
+import { useNavigate } from 'react-router-dom';
 
 import {
   BusinessWorkflowApiError,
   useExecution,
-  useExecutionResult,
 } from '../api';
 import { executionStatusPresentation, presentWorkflowStage, safeFailureSummary } from '../executionPresentation';
+import { ROUTES } from '../../../constants/routes';
 
 function executionErrorMessage(error: unknown) {
   if (!(error instanceof BusinessWorkflowApiError)) return 'Analiz durumu alınamadı. Bağlantınızı kontrol edip tekrar deneyin.';
@@ -25,10 +26,8 @@ export function BusinessWorkflowTracking({
   onUnavailable: () => void;
   onStartAgain: () => void;
 }) {
+  const navigate = useNavigate();
   const execution = useExecution(executionId);
-  const status = execution.data?.status;
-  const result = useExecutionResult(executionId, status === 'completed');
-  const [resultRequested, setResultRequested] = useState(false);
 
   useEffect(() => {
     if (execution.error instanceof BusinessWorkflowApiError && execution.error.kind === 'execution-unavailable') onUnavailable();
@@ -83,18 +82,11 @@ export function BusinessWorkflowTracking({
           )}
           {detail.status === 'cancelled' && <Alert severity="info">Analiz iptal edildi.</Alert>}
 
-          {isCompleted && result.isPending && <Typography role="status" variant="body2">Sonuç hazırlanıyor…</Typography>}
-          {isCompleted && result.isSuccess && (
+          {isCompleted && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ alignItems: { sm: 'center' } }}>
               <Alert severity="success" sx={{ flex: 1 }}>Sonuç hazır.</Alert>
-              <Button variant="outlined" onClick={() => setResultRequested(true)}>Sonuçları Gör</Button>
+              <Button variant="outlined" onClick={() => navigate(ROUTES.EXECUTION_RESULTS(executionId))}>Sonuçları Gör</Button>
             </Stack>
-          )}
-          {resultRequested && result.isSuccess && <Typography variant="body2" color="text.secondary">Sonuç paketi hazır; ayrıntılı karar görünümü FU-F6 kapsamında sunulacak.</Typography>}
-          {isCompleted && result.isError && (
-            <Alert severity="warning" action={<Button color="inherit" size="small" onClick={() => result.refetch()}>Tekrar dene</Button>}>
-              Sonuç şu anda görüntülenemiyor.
-            </Alert>
           )}
           {(detail.status === 'failed' || detail.status === 'cancelled') && (
             <Button variant="outlined" onClick={onStartAgain}>Yeni Analizi Başlat</Button>
