@@ -72,7 +72,7 @@ def assemble_simulation_business_input(primary_input, upstream_results):
         policy=primary_input.get('policies',{}).get(code,{})
         supplier=upstream_results.get('supplier'); evidence=supplier_lead_time_evidence(supplier,code) if supplier else {'status':'unavailable','lead_time_source':'dataset_manual','supplier_result_reference_ids':[]}
         lead=float(evidence.get('lead_time_mean_days',ss['effective_lead_time_used']))
-        rows.append({'material_code':code,'demand_mean':demand_mean,'demand_std':demand_std,'rop':float(ss['safety_stock']) + demand_mean * lead / 7,'safety_stock':ss['safety_stock'],'lead_time_days':lead,'lead_time_std_days':evidence.get('lead_time_std_days'),'initial_stock':policy.get('initial_stock'),'eoq':policy.get('eoq'),'forecast_source':'upstream','safety_stock_source':'upstream','supplier_enrichment':evidence,'provenance':{'forecast':forecast['provenance'],'safety_stock':safety['provenance'],'supplier':supplier.get('provenance') if supplier else None}})
+        rows.append({'material_code':code,'demand_mean':demand_mean,'demand_std':demand_std,'rop':float(ss['safety_stock']) + demand_mean * lead / 7,'safety_stock':ss['safety_stock'],'lead_time_days':lead,'lead_time_std_days':evidence.get('lead_time_std_days'),'initial_stock':policy.get('initial_stock'),'eoq':policy.get('eoq'),'incoming_supply':policy.get('incoming_supply'),'forecast_source':'upstream','safety_stock_source':'upstream','supplier_enrichment':evidence,'provenance':{'forecast':forecast['provenance'],'safety_stock':safety['provenance'],'supplier':supplier.get('provenance') if supplier else None}})
     return {'items':rows,'forecast_source':'upstream','safety_stock_source':'upstream'}
 
 def assemble_simulation_standalone_input(primary_input):

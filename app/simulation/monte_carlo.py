@@ -75,7 +75,8 @@ class MonteCarloInventorySimulator:
                  use_regime=False, historical_demand=None,
                  use_copula=False, correlation=0.7,
                  use_adaptive_ss=False, target_service=0.95,
-                 review_period=4, inc_rate=0.08, dec_rate=0.03):
+                 review_period=4, inc_rate=0.08, dec_rate=0.03,
+                 incoming_supply_schedule=None):
         """
         Monte Carlo simülasyonu - Gelişmiş modüller seçimli.
         """
@@ -97,9 +98,19 @@ class MonteCarloInventorySimulator:
         order_paths = np.zeros((n_sim, weeks))
         shortage_paths = np.zeros((n_sim, weeks))
         
+        supplied_schedule = []
+        for row in incoming_supply_schedule or []:
+            if not isinstance(row, dict):
+                continue
+            quantity, arrival = row.get('quantity'), row.get('arrival_week')
+            if isinstance(quantity, (int, float)) and not isinstance(quantity, bool) and quantity > 0 and isinstance(arrival, int) and 0 <= arrival < weeks:
+                supplied_schedule.append((arrival, float(quantity)))
+
         for sim in range(n_sim):
             stock = initial_stock
             open_orders = {}
+            for arrival, quantity in supplied_schedule:
+                open_orders[arrival] = open_orders.get(arrival, 0) + quantity
             regime_state = 0
             rop_current = rop
             

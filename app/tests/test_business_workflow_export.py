@@ -38,6 +38,19 @@ class BusinessWorkflowExportTests(unittest.TestCase):
         self.assertEqual(coverage.total_scope_count, 3)
         self.assertEqual(coverage.exclusions[0]["material_code"], "SKU-C")
 
+    def test_current_incoming_supply_evidence_is_exported_from_persisted_simulation(self):
+        workbook = BusinessWorkflowExportService.build_workbook({
+            "analysis_coverage": self.coverage,
+            "simulation": {"items": [{
+                "material_code": "SKU-A", "initial_stock": 100, "incoming_supply_qty_used": 50,
+                "incoming_supply_delivery_date": "2026-01-05", "incoming_supply_status": "VALID_WITHIN_REPLENISHMENT_HORIZON",
+                "open_order_snapshot_state": "SNAPSHOT_SUPPLIED", "net_requirement_after_incoming_supply": 25,
+            }]},
+        })
+        book = load_workbook(workbook)
+        self.assertEqual(book["Gelen_Arz"]["C2"].value, 50)
+        self.assertEqual(book["Gelen_Arz"]["H2"].value, 25)
+
 
 if __name__ == "__main__":
     unittest.main()

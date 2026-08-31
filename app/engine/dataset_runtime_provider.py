@@ -8,6 +8,7 @@ from app.models.dataset import DatasetEvent, DatasetState, DatasetVersion
 from app.services.security import EncryptionService
 from app.engine.capability_dataflow import assemble_simulation_business_input, assemble_safety_stock_business_input
 from app.services.dataset.weekly_normalization import parse_weekly_period
+from app.application.current_incoming_supply import resolve_current_incoming_supply
 
 
 class DatasetRuntimeProvider:
@@ -61,7 +62,7 @@ class DatasetRuntimeProvider:
             if request.capability is Capability.SIMULATION:
                 lead_time_days=item.get('lead_time_days')
                 if isinstance(lead_time_days,bool) or not isinstance(lead_time_days,(int,float)) or lead_time_days<=0: raise CapabilityInputValidationError(f'lead_time_days is required and positive for {code}')
-                prepared.update({'lead_time_days':float(lead_time_days),'initial_stock':item.get('initial_stock'),'eoq':item.get('eoq'),'existing_rop':item.get('rop'),'existing_safety_stock':item.get('safety_stock')})
+                prepared.update({'lead_time_days':float(lead_time_days),'initial_stock':item.get('initial_stock'),'eoq':item.get('eoq'),'existing_rop':item.get('rop'),'existing_safety_stock':item.get('safety_stock'),'incoming_supply':item.get('incoming_supply')})
             if request.capability is Capability.BACKTEST:
                 lead=item.get('lead_time_days')
                 if isinstance(lead,bool) or not isinstance(lead,(int,float)) or lead<=0: raise CapabilityInputValidationError(f'lead_time_days is required and positive for {code}')
@@ -183,6 +184,19 @@ class DatasetRuntimeProvider:
                 temporal_warnings.append("CURRENT_SNAPSHOT_UNAVAILABLE")
             if master_from_prior:
                 temporal_warnings.append("EFFECTIVE_MASTER_FROM_PRIOR_UPLOAD")
+            requested_weeks = request.params.get("weeks", 26)
+            requested_weeks = requested_weeks if isinstance(requested_weeks, int) and not isinstance(requested_weeks, bool) and requested_weeks > 0 else 26
+            # A delivery cannot suppress a reorder outside either the actual
+            # replenishment lead-time window or the simulation horizon.
+            incoming_horizon_days = min(float(master["lead_time_days"]), requested_weeks * 7)
+            incoming_supply = resolve_current_incoming_supply(
+                payload.get("v3_supplier_inputs"), material_code,
+                current_material_available=is_current,
+                snapshot_as_of=accepted.created_at.date(),
+                replenishment_horizon_days=incoming_horizon_days,
+            )
+            incoming_supply["replenishment_horizon_days"] = incoming_horizon_days
+            temporal_warnings.extend(incoming_supply["warnings"])
             items.append({
                 "sku_code": product.material_code,
                 "demand_history": values,
@@ -203,6 +217,7 @@ class DatasetRuntimeProvider:
                 "scope_source": "LATEST_UPLOAD" if is_current else "ALL_ACTIVE_SKUS",
                 "current_snapshot_available": is_current,
                 "temporal_warnings": temporal_warnings,
+                "incoming_supply": incoming_supply,
             })
         return items
 
