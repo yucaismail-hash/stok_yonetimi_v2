@@ -16,9 +16,9 @@ class DatasetVersionProductInput(BaseModel):
     initial_stock = Column(Numeric(18, 4), nullable=False)
     lead_time_days = Column(Numeric(18, 4), nullable=False)
     lot_size = Column(Numeric(18, 4), nullable=False)
-    unit_cost = Column(Numeric(18, 4), nullable=False)
-    holding_rate = Column(Numeric(18, 8), nullable=False)
-    stockout_cost = Column(Numeric(18, 4), nullable=False)
+    unit_cost = Column(Numeric(18, 4), nullable=True)
+    holding_rate = Column(Numeric(18, 8), nullable=True)
+    stockout_cost = Column(Numeric(18, 4), nullable=True)
     __table_args__ = (
         UniqueConstraint("dataset_version_id", "material_code", name="uq_dataset_version_product_input"),
         CheckConstraint("product_level IN ('finished_good','semi_finished_good','raw_material')", name="ck_dataset_version_product_input_level"),

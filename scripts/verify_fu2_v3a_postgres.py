@@ -8,7 +8,7 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from openpyxl import load_workbook
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 
 from app.application.actual_weekly_ledger import ActualWeeklyLedgerService
@@ -25,12 +25,17 @@ ENGINE = create_engine(URL)
 Session = sessionmaker(bind=ENGINE, autoflush=False, autocommit=False)
 
 
-def workbook(*, week_three=None):
+def workbook(*, week_three=None, blank_economics=False, through_week=52):
     book = load_workbook(io.BytesIO(template_bytes()))
+    sheet = book["Temel_Veriler"]
+    headers = [cell.value for cell in sheet[1]]
     if week_three is not None:
-        sheet = book["Temel_Veriler"]
-        headers = [cell.value for cell in sheet[1]]
         sheet.cell(2, headers.index("2026-W03") + 1).value = week_three
+    if blank_economics:
+        for field in ("Birim Maliyet (TL)", "Stok Tutma Oranı (%)", "Stok Tükenme Maliyeti"):
+            sheet.cell(2, headers.index(field) + 1).value = None
+        for week in range(through_week + 1, 53):
+            sheet.cell(2, headers.index(f"2026-W{week:02d}") + 1).value = None
     data = io.BytesIO(); book.save(data); return data.getvalue()
 
 
@@ -68,6 +73,9 @@ def cleanup(session, company_ids):
 def main():
     session = Session(); companies = []
     try:
+        nullable = {column["name"]: column["nullable"] for column in inspect(ENGINE).get_columns("dataset_version_product_inputs")}
+        assert nullable["unit_cost"] and nullable["holding_rate"] and nullable["stockout_cost"]
+        print("OPTIONAL_ECONOMICS_SCHEMA_PASS")
         service = CanonicalExcelIngestionService(); company, user = owner(session, "sales"); companies.append(company.id)
         # Forced post-product-input failure: the shared acceptance transaction must roll back all writes.
         failed, _ = service.stage(session, company.id, user.id, "failed.xlsx", workbook(), demand_type="sales")
@@ -104,6 +112,16 @@ def main():
         assert prepared["service_level"] == {"mode":"manual", "value":0.91}
         assert service.accept(session, company.id, user.id, dataset.id)["idempotent"]
         print("ACCEPT_RUNTIME_IDEMPOTENCY_PASS")
+
+        optional, _ = service.stage(session, company.id, user.id, "optional-economics.xlsx", workbook(blank_economics=True, through_week=12), demand_type="sales")
+        validation = session.query(DatasetValidationResult).filter_by(dataset_id=optional.id).one()
+        assert validation.is_valid and len(validation.errors or []) == 0 and len(validation.warnings or []) == 3
+        optional_accept = service.accept(session, company.id, user.id, optional.id)
+        optional_input = session.query(DatasetVersionProductInput).filter_by(dataset_version_id=optional_accept["version_id"]).one()
+        assert optional_input.unit_cost is None and optional_input.holding_rate is None and optional_input.stockout_cost is None
+        internal_item = DatasetRuntimeProvider(session)._official_v3_items(optional, request(company, user, optional, "sales"), {"demand_type": "sales"})[0]
+        assert internal_item["unit_cost"] is None and internal_item["holding_rate"] is None and internal_item["stockout_cost"] is None
+        print("OPTIONAL_ECONOMICS_NULL_PERSISTENCE_PASS")
 
         # Acceptance plans the analytical graph only; it executes no capability here.
         import app.application.business_workflow_acceptance as workflow_module

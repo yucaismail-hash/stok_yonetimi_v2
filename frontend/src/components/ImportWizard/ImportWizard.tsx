@@ -6,6 +6,7 @@ import { acceptPilotDataset, downloadPilotTemplate, PilotUploadResponse, uploadP
 import { pilotDatasetKeys } from '../../features/dataset/api/pilotDatasetQueries';
 
 interface ImportWizardProps { open: boolean; onClose: () => void; onComplete: (datasetId: string) => void; }
+const issueLocation = (issue: PilotUploadResponse['issues'][number]) => [issue.sheet, issue.row && `Satır ${issue.row}`, issue.column].filter(Boolean).join(' · ');
 
 export default function ImportWizard({ open, onClose, onComplete }: ImportWizardProps) {
   const queryClient = useQueryClient();
@@ -60,11 +61,11 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
         {validation.warnings.length > 0 && <Alert severity="warning" sx={{ mb: 2 }}>
           <Typography variant="subtitle2">{validation.warnings.length} uyarı bulundu</Typography>
           <List dense>{validation.warnings.map((warning, index) =>
-            <ListItem key={`${warning.code}-${index}`} disablePadding><ListItemText primary={warning.message} /></ListItem>
+            <ListItem key={`${warning.code}-${index}`} disablePadding><ListItemText primary={warning.message} secondary={issueLocation(warning)} /></ListItem>
           )}</List>
         </Alert>}
         {validation.issues.length > 0 && <Alert severity="error" sx={{ mb: 2 }}><List dense>{validation.issues.map((issue, index) =>
-          <ListItem key={`${issue.code}-${index}`} disablePadding><ListItemText primary={issue.message} secondary={[issue.sheet, issue.row && `satır ${issue.row}`, issue.column].filter(Boolean).join(' · ')} /></ListItem>
+          <ListItem key={`${issue.code}-${index}`} disablePadding><ListItemText primary={issue.message} secondary={issueLocation(issue)} /></ListItem>
         )}</List></Alert>}
         {accepted ? <Alert severity="success">Veriler kullanıma hazır. Analiz veya iş akışı daha sonra başlatılabilir.</Alert> : validation.READY_FOR_ACCEPTANCE ? <Alert severity="success">Dosya doğrulandı. Veriyi Kabul Et ile kullanıma hazır hale getirebilirsiniz.</Alert> : <Alert severity="error">Hatalar düzeltilmeden veri kabul edilemez.</Alert>}
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}

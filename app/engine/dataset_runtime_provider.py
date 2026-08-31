@@ -132,9 +132,9 @@ class DatasetRuntimeProvider:
                 "product_level": product.product_level,
                 "product_group": product.product_group,
                 "product_class": product.product_class,
-                "unit_cost": float(product.unit_cost),
-                "holding_rate": float(product.holding_rate),
-                "stockout_cost": float(product.stockout_cost),
+                "unit_cost": float(product.unit_cost) if product.unit_cost is not None else None,
+                "holding_rate": float(product.holding_rate) if product.holding_rate is not None else None,
+                "stockout_cost": float(product.stockout_cost) if product.stockout_cost is not None else None,
                 "demand_type": demand_type,
                 "dataset_version_id": str(version.id),
             })
