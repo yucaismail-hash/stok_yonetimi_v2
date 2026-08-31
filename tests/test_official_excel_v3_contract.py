@@ -85,6 +85,30 @@ class OfficialExcelV3ContractTests(unittest.TestCase):
         self.assertIn(("Events", "Başlangıç Hafta"), locations)
         self.assertEqual(extras["v3_supplier_inputs"]["suppliers"][0]["supplier_code"], "SUP-1")
 
+    def test_cross_reference_errors_include_safe_identifier_and_correction_guidance(self):
+        def change(book):
+            mapping = book["Malzeme_Tedarikciler"]
+            mapping.append(["MISSING-SKU", "MISSING-SUPPLIER", 0.5, None, None])
+        _, errors, warnings, _ = parse_workbook_details(self.workbook(change))
+        product = next(error for error in errors if error["column"] == "Ürün Kodu")
+        supplier = next(error for error in errors if error["column"] == "Tedarikçi Kodu")
+        self.assertEqual((product["code"], product["severity"], product["sheet"], product["row"]), ("INVALID_REFERENCE", "ERROR", "Malzeme_Tedarikciler", 2))
+        self.assertIn("`MISSING-SKU`", product["message"])
+        self.assertIn("Temel_Veriler", product["message"])
+        self.assertIn("ekleyin veya ilgili satırı", product["message"])
+        self.assertIn("`MISSING-SUPPLIER`", supplier["message"])
+        self.assertIn("Tedarikciler", supplier["message"])
+        self.assertIn("ekleyin veya ilgili satırı", supplier["message"])
+        self.assertEqual(warnings, [])
+
+    def test_valid_supplier_references_remain_valid(self):
+        def change(book):
+            book["Tedarikciler"].append(["SUP-1", "Tedarikçi", 0.9, 0.1, 0.8, 0.1, 7, 1])
+            book["Malzeme_Tedarikciler"].append(["SKU-001", "SUP-1", 1, 0, "2026-12-31"])
+        _, errors, _, extras = parse_workbook_details(self.workbook(change))
+        self.assertEqual(errors, [])
+        self.assertEqual(extras["v3_supplier_inputs"]["material_suppliers"][0]["supplier_code"], "SUP-1")
+
     def test_absent_or_empty_optional_sheets_are_legal(self):
         def change(book):
             book.remove(book["Malzeme_Tedarikciler"])

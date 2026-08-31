@@ -39,6 +39,12 @@ def workbook(*, week_three=None, blank_economics=False, through_week=52):
     data = io.BytesIO(); book.save(data); return data.getvalue()
 
 
+def invalid_supplier_reference_workbook():
+    book = load_workbook(io.BytesIO(template_bytes()))
+    book["Malzeme_Tedarikciler"].append(["MISSING-SKU", "MISSING-SUPPLIER", 0.5, None, None])
+    data = io.BytesIO(); book.save(data); return data.getvalue()
+
+
 def owner(session, label):
     company = Company(name=f"FU2V3A-{label}-{uuid4().hex}", tax_id=uuid4().hex)
     session.add(company); session.flush()
@@ -122,6 +128,18 @@ def main():
         internal_item = DatasetRuntimeProvider(session)._official_v3_items(optional, request(company, user, optional, "sales"), {"demand_type": "sales"})[0]
         assert internal_item["unit_cost"] is None and internal_item["holding_rate"] is None and internal_item["stockout_cost"] is None
         print("OPTIONAL_ECONOMICS_NULL_PERSISTENCE_PASS")
+
+        invalid_reference, _ = service.stage(session, company.id, user.id, "invalid-reference.xlsx", invalid_supplier_reference_workbook(), demand_type="sales")
+        invalid_validation = session.query(DatasetValidationResult).filter_by(dataset_id=invalid_reference.id).one()
+        issue = next(row for row in invalid_validation.errors if row["column"] == "Ürün Kodu")
+        assert not invalid_validation.is_valid and issue["severity"] == "ERROR" and "MISSING-SKU" in issue["message"]
+        try:
+            service.accept(session, company.id, user.id, invalid_reference.id)
+        except Exception as exc:
+            assert str(exc) == "DATASET_NOT_READY_FOR_ACCEPTANCE"
+        else:
+            raise AssertionError("invalid cross-reference acceptance was not blocked")
+        print("CROSS_REFERENCE_BLOCKING_PASS")
 
         # Acceptance plans the analytical graph only; it executes no capability here.
         import app.application.business_workflow_acceptance as workflow_module

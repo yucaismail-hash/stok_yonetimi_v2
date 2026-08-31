@@ -280,9 +280,9 @@ def _parse_optional_supplier_sheets(book, material_codes):
             def cell(name): return values[mapping_indexes[name]] if name in mapping_indexes and mapping_indexes[name] < len(values) else None
             material = str(cell("Ürün Kodu") or "").strip(); supplier = str(cell("Tedarikçi Kodu") or "").strip()
             if not material: errors.append(_issue("REQUIRED_VALUE_MISSING", "Malzeme_Tedarikciler", row_no, "Ürün Kodu", "ERROR", "Ürün Kodu zorunludur."))
-            elif material not in material_codes: errors.append(_issue("INVALID_REFERENCE", "Malzeme_Tedarikciler", row_no, "Ürün Kodu", "ERROR", "Temel_Veriler içinde bulunmayan ürün kodu."))
+            elif material not in material_codes: errors.append(_issue("INVALID_REFERENCE", "Malzeme_Tedarikciler", row_no, "Ürün Kodu", "ERROR", f"`{material}` kodlu malzeme `Temel_Veriler` tablosunda bulunamadı. Bu malzemeyi `Temel_Veriler` tablosuna ekleyin veya ilgili satırı `Malzeme_Tedarikciler` tablosundan silin."))
             if not supplier: errors.append(_issue("REQUIRED_VALUE_MISSING", "Malzeme_Tedarikciler", row_no, "Tedarikçi Kodu", "ERROR", "Tedarikçi Kodu zorunludur."))
-            elif supplier not in suppliers: errors.append(_issue("INVALID_REFERENCE", "Malzeme_Tedarikciler", row_no, "Tedarikçi Kodu", "ERROR", "Tedarikciler içinde bulunmayan tedarikçi kodu."))
+            elif supplier not in suppliers: errors.append(_issue("INVALID_REFERENCE", "Malzeme_Tedarikciler", row_no, "Tedarikçi Kodu", "ERROR", f"`{supplier}` kodlu tedarikçi `Tedarikciler` tablosunda bulunamadı. Bu tedarikçiyi `Tedarikciler` tablosuna ekleyin veya ilgili satırı `Malzeme_Tedarikciler` tablosundan silin."))
             share = _number(cell("Tedarik Payı (%)"), sheet="Malzeme_Tedarikciler", row=row_no, column="Tedarik Payı (%)", errors=errors, required=True, minimum=0)
             if share is not None and share > 1: errors.append(_issue("VALUE_OUT_OF_RANGE", "Malzeme_Tedarikciler", row_no, "Tedarik Payı (%)", "ERROR", "Tedarik Payı (%) 0 ile 1 arasında olmalıdır."))
             open_order = _number(cell("Açık Sipariş"), sheet="Malzeme_Tedarikciler", row=row_no, column="Açık Sipariş", errors=errors, required=False, minimum=0)
@@ -320,9 +320,9 @@ def _parse_optional_events(book, groups, group_classes):
             if start > end: errors.append(_issue("VALUE_OUT_OF_RANGE", "Events", row_no, "Bitiş Hafta", "ERROR", "Bitiş Hafta, Başlangıç Hafta değerinden önce olamaz."))
         group = str(cell("Ürün Grubu") or "").strip()
         if not group: errors.append(_issue("REQUIRED_VALUE_MISSING", "Events", row_no, "Ürün Grubu", "ERROR", "Ürün Grubu zorunludur."))
-        elif group not in groups: errors.append(_issue("INVALID_REFERENCE", "Events", row_no, "Ürün Grubu", "ERROR", "Temel_Veriler içinde bulunmayan Ürün Grubu."))
+        elif group not in groups: errors.append(_issue("INVALID_REFERENCE", "Events", row_no, "Ürün Grubu", "ERROR", f"`{group}` Ürün Grubu `Temel_Veriler` tablosunda bulunamadı. Önce ilgili Ürün Grubu'nu ekleyin veya Events satırını düzeltin."))
         product_class = str(cell("Ürün Sınıfı (Opsiyonel)") or "").strip() or None
-        if product_class and (group, product_class) not in group_classes: errors.append(_issue("INVALID_REFERENCE", "Events", row_no, "Ürün Sınıfı (Opsiyonel)", "ERROR", "Ürün Sınıfı, seçilen Ürün Grubu içinde bulunmuyor."))
+        if product_class and (group, product_class) not in group_classes: errors.append(_issue("INVALID_REFERENCE", "Events", row_no, "Ürün Sınıfı (Opsiyonel)", "ERROR", f"`{product_class}` Ürün Sınıfı, `{group}` Ürün Grubu altında `Temel_Veriler` tablosunda bulunamadı. Ürün Sınıfı'nı düzeltin veya Temel_Veriler'e ekleyin."))
         event_type = str(cell("Event Tipi") or "").strip()
         if event_type not in EVENT_TYPES: errors.append(_issue("INVALID_ENUM_VALUE", "Events", row_no, "Event Tipi", "ERROR", "Geçersiz Event Tipi."))
         impact = cell("Etki Değeri (%) (Opsiyonel)")
