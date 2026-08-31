@@ -93,26 +93,16 @@ export function Footer() {
             >
               Bizi Takip Edin
             </Typography>
-            <Typography
-              sx={{
-                color: (theme) => alpha(theme.palette.common.white, 0.6),
-                fontSize: '0.875rem',
-                opacity: 0.5,
-              }}
+            <Link
+              href="https://www.linkedin.com/company/stokonomi/"
+              target="_blank"
+              rel="noopener noreferrer"
+              underline="none"
+              aria-label="Stokonomi LinkedIn şirket sayfası"
+              sx={footerLinkSx}
             >
               LinkedIn
-            </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: (theme) => alpha(theme.palette.common.white, 0.3),
-                display: 'block',
-                mt: 0.5,
-                fontSize: '0.65rem',
-              }}
-            >
-              (Bağlantı yakında eklenecek)
-            </Typography>
+            </Link>
           </Grid>
         </Grid>
 
