@@ -29,7 +29,7 @@ const stages = [
   {
     icon: FactCheckIcon,
     title: 'Geriye Dönük Doğrulama',
-    description: 'Model ve kararların geçmiş veride nasıl performans göstereceğini sınamaya yardımcı olur.',
+    description: 'Model ve kararların geçmiş veride nasıl performans göstereceğini geriye dönük doğrulama (backtest) ile sınamaya yardımcı olur.',
   },
   {
     icon: LocalShippingIcon,

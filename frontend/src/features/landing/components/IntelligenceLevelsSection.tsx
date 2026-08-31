@@ -8,13 +8,13 @@ const levels = [
     icon: FunctionsIcon,
     title: 'Matematiksel Zekâ',
     line: 'Şirketinizi henüz tanımıyor olabilir. Ama matematiği biliyor.',
-    description: 'İlk veriyle birlikte matematiksel ve istatistiksel yöntemler üzerinden çalışabilecek temel analiz katmanı.',
+    description: 'İlk veriyle birlikte istatistiksel yöntemler, model karşılaştırmaları, deterministik hesaplamalar ve örüntü analizi üzerinden çalışabilecek temel analiz katmanı.',
   },
   {
     icon: HistoryEduIcon,
     title: 'Kanıt / Ampirik Zekâ',
     line: 'Bir karar yalnızca hesaplandığı için doğru kabul edilmemeli.',
-    description: 'Simülasyon ve geriye dönük doğrulama ile yalnız hesaplanan sonucu değil, geçmiş performansı ve olası senaryoları da değerlendirmeyi amaçlar.',
+    description: 'Simülasyon ve geriye dönük doğrulama (backtest) ile yalnız hesaplanan sonucu değil, geçmiş performansı ve olası senaryoları da değerlendirmeyi amaçlar.',
   },
   {
     icon: SchoolIcon,
@@ -53,6 +53,19 @@ export function IntelligenceLevelsSection() {
             );
           })}
         </Box>
+
+        <Typography
+          variant="body2"
+          sx={{
+            mt: { xs: 4, md: 4.5 },
+            textAlign: 'center',
+            color: 'text.secondary',
+            fontWeight: 600,
+            letterSpacing: '0.02em',
+          }}
+        >
+          Matematik → Kanıt → Öğrenme → Karar desteği
+        </Typography>
       </Container>
     </Box>
   );

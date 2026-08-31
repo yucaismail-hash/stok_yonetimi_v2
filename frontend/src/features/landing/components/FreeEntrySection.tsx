@@ -15,7 +15,7 @@ const steps = [
   {
     label: '5 tam Business Workflow',
     title: 'İlk 5 çalıştırmada tamamını görün',
-    description: 'Forecast → Safety Stock → Simulation → Backtest → Supplier → Decision Intelligence zincirini ilk 5 başarılı Business Workflow’da tam kapsamıyla deneyin.',
+    description: 'Talep Tahmini → Emniyet Stoğu → Simülasyon → Backtest / Geriye Dönük Doğrulama → Tedarikçi İçgörüsü → Karar Zekâsı (Decision Intelligence) zincirini ilk 5 başarılı Business Workflow’da tam kapsamıyla deneyin.',
   },
   {
     label: '60 günlük deneme',
@@ -58,7 +58,7 @@ export function FreeEntrySection() {
         <Box sx={{ maxWidth: 760, mx: 'auto', mt: { xs: 4, md: 5 }, p: { xs: 2.5, md: 3 }, borderLeft: (theme) => `3px solid ${theme.palette.primary.main}`, bgcolor: (theme) => alpha(theme.palette.background.paper, 0.75) }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>Tam kapsam, kararları daha derine indirir.</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.75 }}>
-            Ön izleme; genel karar özeti, temel risk göstergeleri ve seçilmiş KPI’ları gösterebilir. Tam Business planı ise SKU bazlı aksiyonlar, operasyonel planlar, senaryo karşılaştırmaları ve tam Decision Intelligence çıktıları gibi daha ayrıntılı sonuçları açar.
+            Ön izleme; genel karar özeti, temel risk göstergeleri ve seçilmiş KPI’ları gösterebilir. Tam Business planı ise SKU bazlı aksiyonlar, operasyonel planlar, senaryo karşılaştırmaları ve tam Karar Zekâsı çıktıları gibi daha ayrıntılı sonuçları açar.
           </Typography>
         </Box>
 

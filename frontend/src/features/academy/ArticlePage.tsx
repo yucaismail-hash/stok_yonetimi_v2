@@ -336,7 +336,7 @@ export default function ArticlePage() {
                 Stok yönetimi yalnızca formüllerden ibaret değildir.
               </Typography>
               <Typography color="text.secondary" sx={{ lineHeight: 1.8, maxWidth: 680, mb: 3 }}>
-                Stokonomi, tahmin, simülasyon ve doğrulama adımlarını birlikte değerlendiren bir karar destek yaklaşımı geliştiriyor.
+                Stokonomi, tahmin, simülasyon ve geriye dönük doğrulama (backtest) adımlarını birlikte değerlendiren bir karar destek yaklaşımı geliştiriyor.
               </Typography>
               <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1.5 }}>
                 <Button

@@ -85,7 +85,8 @@ export function AcademySection() {
             }}
           >
             Stok kararlarının arkasındaki kavramları açık ve uygulanabilir
-            şekilde anlatıyoruz. Akademi, alan bilgisini karar süreçlerine
+            şekilde anlatıyoruz. Akademi, ürün yaklaşımında kullanılan
+            metodolojiyi şeffaflaştırır ve alan bilgisini karar süreçlerine
             daha sağlam bir başlangıç noktası yapmak için var.
           </Typography>
 
