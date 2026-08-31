@@ -18,15 +18,17 @@ export interface CurrentPilotDataset {
   material_count: number;
 }
 
-export async function uploadPilotDataset(file: File): Promise<PilotUploadResponse> {
-  const form = new FormData(); form.append('file', file);
+export interface PilotUploadOptions { demandType: 'sales' | 'consumption'; serviceLevel: { mode: 'automatic' } | { mode: 'manual'; value: number }; }
+export async function uploadPilotDataset(file: File, options: PilotUploadOptions): Promise<PilotUploadResponse> {
+  const form = new FormData(); form.append('file', file); form.append('demand_type', options.demandType); form.append('service_level_mode', options.serviceLevel.mode);
+  if (options.serviceLevel.mode === 'manual') form.append('service_level_value', String(options.serviceLevel.value));
   const response = await api.post<PilotUploadResponse>('/api/v2/dataset/pilot/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
   return response.data;
 }
 export async function downloadPilotTemplate(): Promise<void> {
   const response = await api.get('/api/v2/dataset/pilot/template', { responseType: 'blob' });
   const url = URL.createObjectURL(response.data);
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'stokonomi_pilot_sablon.xlsx'; anchor.click();
+  const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Stokonomi_Resmi_Veri_Sablonu_v3.xlsx'; anchor.click();
   URL.revokeObjectURL(url);
 }
 export async function acceptPilotDataset(datasetId: string): Promise<PilotAcceptResponse> {

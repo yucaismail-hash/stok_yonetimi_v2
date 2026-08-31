@@ -56,6 +56,7 @@ from app.models.runtime import (
     RuntimeResultReference,
 )
 from app.models.actuals import ActualWeeklyObservation, ActualWeeklyRevision
+from app.models.dataset_version_product_input import DatasetVersionProductInput
 from app.models.forecast_vintage import ForecastVintage, ForecastVintagePoint
 from app.models.forecast_evaluation import ForecastEvaluation, ForecastEvaluationPoint
 from app.models.model_artifact import ModelArtifact

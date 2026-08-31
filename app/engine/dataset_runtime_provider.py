@@ -2,8 +2,12 @@
 from app.engine.capability_registry import Capability
 from app.engine.capability_executor import CapabilityInputValidationError, DatasetInputUnavailableError
 from app.models.dataset import Dataset
+from app.models.actuals import ActualWeeklyRevision
+from app.models.dataset_version_product_input import DatasetVersionProductInput
+from app.models.dataset import DatasetEvent, DatasetState, DatasetVersion
 from app.services.security import EncryptionService
 from app.engine.capability_dataflow import assemble_simulation_business_input, assemble_safety_stock_business_input
+from app.services.dataset.weekly_normalization import parse_weekly_period
 
 
 class DatasetRuntimeProvider:
@@ -32,7 +36,7 @@ class DatasetRuntimeProvider:
             payload = self._encryption_service_factory(self._session).decrypt_dataset(request.user_id, dataset.encrypted_data)
         except Exception as exc:
             raise DatasetInputUnavailableError("dataset payload cannot be loaded") from exc
-        items = payload.get("items", []) if isinstance(payload, dict) else []
+        items, configured_service_level = self._runtime_items(dataset, request, payload)
         requested = set(request.material_codes or [])
         selected = []
         found = set()
@@ -80,7 +84,61 @@ class DatasetRuntimeProvider:
                 for item in selected
             }
             return assemble_simulation_business_input({"policies": policies}, request.upstream_results)
-        return {"items": selected, "warnings": [], "dataset_id": str(dataset.id)}
+        return {"items": selected, "warnings": [], "dataset_id": str(dataset.id), "service_level": configured_service_level}
+
+    def _runtime_items(self, dataset, request, payload):
+        """Resolve V3 only from accepted versioned state; legacy payload is isolated fallback."""
+        if isinstance(payload, dict) and payload.get("contract") == "official_v3":
+            return self._official_v3_items(dataset, request, payload), payload.get("service_level", {"mode": "automatic"})
+        # Legacy pilot datasets predate DatasetVersionProductInput. Remove this fallback only when they are retired.
+        return (payload.get("items", []) if isinstance(payload, dict) else []), {"mode": "automatic"}
+
+    def _official_v3_items(self, dataset, request, payload):
+        if dataset.state != DatasetState.APPROVED:
+            raise DatasetInputUnavailableError("official V3 dataset is not accepted")
+        version = self._session.query(DatasetVersion).filter_by(dataset_id=dataset.id, is_current=True).one_or_none()
+        accepted = self._session.query(DatasetEvent).filter_by(dataset_id=dataset.id, event_type="accepted").order_by(DatasetEvent.created_at.desc(), DatasetEvent.id.desc()).first()
+        if version is None or accepted is None:
+            raise DatasetInputUnavailableError("official V3 accepted dataset version is unavailable")
+        demand_type = payload.get("demand_type")
+        if not isinstance(demand_type, str):
+            raise DatasetInputUnavailableError("official V3 demand type is unavailable")
+        inputs = self._session.query(DatasetVersionProductInput).filter_by(company_id=request.company_id, dataset_version_id=version.id, is_deleted=False).order_by(DatasetVersionProductInput.material_code).all()
+        if not inputs:
+            raise DatasetInputUnavailableError("official V3 operational inputs are unavailable")
+        revisions = self._session.query(ActualWeeklyRevision).filter(
+            ActualWeeklyRevision.company_id == request.company_id,
+            ActualWeeklyRevision.demand_type == demand_type,
+            ActualWeeklyRevision.approval_status == "accepted",
+            # Both timestamps are database-owned, avoiding application/database clock skew.
+            ActualWeeklyRevision.created_at <= accepted.created_at,
+            ActualWeeklyRevision.is_deleted.is_(False),
+        ).order_by(ActualWeeklyRevision.material_code, ActualWeeklyRevision.period, ActualWeeklyRevision.created_at.desc(), ActualWeeklyRevision.id.desc()).all()
+        latest = {}
+        for revision in revisions:
+            latest.setdefault((revision.material_code, revision.period), revision)
+        histories = {}
+        for (material_code, period), revision in latest.items():
+            histories.setdefault(material_code, []).append((parse_weekly_period(period), float(revision.proposed_quantity)))
+        items = []
+        for product in inputs:
+            values = [quantity for _, quantity in sorted(histories.get(product.material_code, []), key=lambda row: (row[0].year, row[0].week))]
+            items.append({
+                "sku_code": product.material_code,
+                "demand_history": values,
+                "lead_time_days": float(product.lead_time_days),
+                "initial_stock": float(product.initial_stock),
+                "eoq": float(product.lot_size),
+                "product_level": product.product_level,
+                "product_group": product.product_group,
+                "product_class": product.product_class,
+                "unit_cost": float(product.unit_cost),
+                "holding_rate": float(product.holding_rate),
+                "stockout_cost": float(product.stockout_cost),
+                "demand_type": demand_type,
+                "dataset_version_id": str(version.id),
+            })
+        return items
 
     @staticmethod
     def supplier_evidence_status(payload, require_dataset_materials=False):

@@ -468,3 +468,8 @@
 
 - Added a company-scoped V2 current projection with deterministic evidence-maturity score. The 0–100 score measures durable evidence coverage, scope maturity, source diversity, and reconstructability—not Forecast accuracy or business performance.
 - Pattern, Learning Evidence, Forecast Evaluation, Retraining, and Champion summaries are read-only. Forecast integration, Supplier/Event Learning, and Decision Intelligence remain inactive.
+
+## 2026-08-30 - FU2 Official Excel V3 core ingestion
+
+- Added the Official Excel V3 template/parser contract, wide ISO-week normalization, Wizard demand-type and service-level submission, immutable DatasetVersionProductInput persistence, and the `20260814_01` migration.
+- Official V3 acceptance now has a single application transaction for versioning, canonical Actual revision evidence, operational inputs, acceptance lineage, and the READY_FOR_WORKFLOW state. Runtime inputs reconstruct from accepted canonical state; legacy payload items remain an explicitly isolated compatibility fallback.

@@ -34,7 +34,11 @@ class BusinessWorkflowAcceptanceService:
   try:
    supplier=self._supplier_status(s,company_id,user_id,dataset_id)
    graph=(('forecast','demand_forecast',[]),SUPPLIER_TASK,('safety_stock','safety_stock',['forecast','supplier']),('simulation','simulation',['forecast','safety_stock','supplier']),('backtest','backtest',['safety_stock'])) if supplier['available'] else TASK_GRAPH
-   metadata=dict(request_metadata or {});metadata['params']=ForecastScopeService().enrich(company_id,metadata.get('params',{}))
+   metadata=dict(request_metadata or {}); params=dict(metadata.get('params',{})); dataset_config=self._dataset_runtime_config(s,company_id,user_id,dataset_id)
+   if dataset_config.get('demand_type') and 'forecast_vintage' not in params:
+    params['forecast_vintage']={'demand_type':dataset_config['demand_type']}
+   if dataset_config.get('service_level') and 'service_level' not in params: params['service_level']=dataset_config['service_level']
+   metadata['params']=ForecastScopeService().enrich(company_id,params)
    execution=RuntimeExecution(execution_id=uuid7(),company_id=company_id,user_id=user_id,dataset_id=dataset_id,workflow_id='business-'+str(uuid7()),analysis_type=BUSINESS_WORKFLOW_TYPE,state='queued',progress=0,current_stage='planning',accepted_at=datetime.now(timezone.utc),queued_at=datetime.now(timezone.utc),trace_id=trace_id,correlation_id=correlation_id,contract_version='1.0.0',metadata_={'workflow_type':BUSINESS_WORKFLOW_TYPE,'workflow_version':workflow_version,'request_metadata':metadata,'supplier_enrichment':supplier})
    rows=[{'workflow_id':execution.workflow_id,'task_id':tid,'capability':cap,'task_order':i,'required':True,'skippable':False,'dependencies':deps,'state':'pending','max_attempts':3,'timeout_seconds':300} for i,(tid,cap,deps) in enumerate(graph)]
    RuntimeStore(s).create_execution(execution,rows);s.commit();return BusinessWorkflowAcceptanceResult(execution.execution_id,'CREATED',execution.state,float(execution.progress))
@@ -51,3 +55,11 @@ class BusinessWorkflowAcceptanceService:
   try: payload=EncryptionService(s).decrypt_dataset(user_id,dataset.encrypted_data)
   except Exception:return {'available':False,'status':'invalid','reason':'supplier dataset payload cannot be loaded'}
   return DatasetRuntimeProvider.supplier_evidence_status(payload,require_dataset_materials=True)
+ def _dataset_runtime_config(self,s,company_id,user_id,dataset_id):
+  dataset=s.query(Dataset).filter_by(id=dataset_id,company_id=company_id,user_id=user_id,is_active=True).one_or_none()
+  if not dataset or not dataset.encrypted_data:return {}
+  try:
+   payload=EncryptionService(s).decrypt_dataset(user_id,dataset.encrypted_data)
+  except Exception:return {}
+  if not isinstance(payload,dict) or payload.get('contract')!='official_v3':return {}
+  return {'demand_type':payload.get('demand_type'),'service_level':payload.get('service_level')}

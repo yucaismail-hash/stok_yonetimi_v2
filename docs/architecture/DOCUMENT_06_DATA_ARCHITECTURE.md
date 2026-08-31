@@ -3050,3 +3050,11 @@ Production XGBoost Champion Forecast is **DEVELOPMENT VERIFIED**. A normal Busin
 Controlled Champion Rollback is **DEVELOPMENT VERIFIED** as an explicit governance action. A caller supplies the exact expected current Champion and known destination; PostgreSQL locks the scoped current pointer, validates the destination, writes immutable `ROLLBACK` history, and advances the pointer atomically. Stale, concurrent, corrupt, incompatible, and cross-tenant/material/demand destination requests cannot mutate the pointer.
 
 Rollback affects future Forecast resolution only: historical RuntimeResultReferences and Forecast Vintages remain immutable. A post-rollback Business Workflow resolves the new Champion only in its Forecast task; Safety Stock, Simulation, Supplier, and Backtest do not resolve Champions. Runtime resolver fallback is not rollback and never mutates registry state; an explicit rollback is required for a pointer change. Automatic rollback and automatic retraining/promotion remain **NOT ACTIVE**; PHASE 3C1 PostgreSQL verification is complete.
+
+---
+
+# Revision - FU2 Official Excel V3 core ingestion
+
+The user-facing Excel contract is **Official V3**; the old pilot workbook is retired from the mounted template endpoint. `Temel_Veriler` carries product hierarchy, operational inputs, and wide ISO-week demand. Demand type is Wizard/request metadata, while service level uses the existing automatic default or an explicitly validated user override.
+
+Acceptance is one transaction: DatasetVersion, Actual Weekly Ledger revisions, DatasetVersionProductInput, acceptance event, and `READY_FOR_WORKFLOW` transition commit together or roll back together. Historical demand is reconstructed from accepted Actual revision evidence bounded by the accepted DatasetVersion event; operational inputs are immutable DatasetVersionProductInput state. Official V3 runtime preparation does not rely on staged encrypted `payload["items"]`. Supplier and Events sheets remain optional and are not ingested until FU2-V3B.

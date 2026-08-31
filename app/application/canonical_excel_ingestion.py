@@ -12,12 +12,15 @@ from sqlalchemy.orm import Session
 from app.application.actual_weekly_ledger import ActualWeeklyLedgerService
 from app.models.actuals import ActualWeeklyRevision
 from app.models.dataset import Dataset, DatasetEvent, DatasetState, DatasetValidationResult, DatasetVersion
-from app.services.dataset.ingestion_policy import validate_demand_type
+from app.models.dataset_version_product_input import DatasetVersionProductInput
+from app.services.dataset.ingestion_policy import validate_demand_type, validate_service_level
 from app.services.dataset.weekly_normalization import parse_weekly_period
 from app.services.security import EncryptionService
 
 
 SHEET = "Talep_Gecmisi"
+OFFICIAL_V3_SHEET = "Temel_Veriler"
+OFFICIAL_V3_HEADERS = ("Ürün Kodu", "Ürün Adı", "Ürün Grubu", "Ürün Sınıfı", "Ürün Seviyesi", "Dönem Başı Stok", "Tedarik Süresi (Gün)", "Sipariş Parti Büyüklüğü", "Birim Maliyet (TL)", "Stok Tutma Oranı (%)", "Stok Tükenme Maliyeti")
 REQUIRED = ("Malzeme Kodu", "Talep Tipi", "Ürün Seviyesi", "Dönem", "Miktar")
 OPTIONAL = ("Ürün Grubu", "Ürün Sınıfı")
 ALIASES = {
@@ -41,17 +44,12 @@ def _norm(value):
 
 
 def template_bytes() -> bytes:
-    book = Workbook(); sheet = book.active; sheet.title = SHEET
-    sheet.append(list(REQUIRED) + list(OPTIONAL))
-    sheet.append(["SKU-001", "sales", "finished_good", "2026-W01", 100, "Örnek Grup", "Örnek Sınıf"])
-    sheet.append(["SKU-001", "sales", "finished_good", "2026-W02", 102, "Örnek Grup", "Örnek Sınıf"])
-    note = book.create_sheet("Açıklama")
-    note.append(["FU2 Pilot Şablonu"])
-    note.append(["Zorunlu alanlar", ", ".join(REQUIRED)])
-    note.append(["Opsiyonel alanlar", ", ".join(OPTIONAL)])
-    note.append(["Talep Tipi", "sales veya consumption"])
-    note.append(["Ürün Seviyesi", "finished_good, semi_finished_good veya raw_material"])
-    note.append(["Dönem", "ISO hafta: YYYY-Www; örn. 2026-W01"])
+    book = Workbook(); sheet = book.active; sheet.title = OFFICIAL_V3_SHEET
+    weeks = [f"2026-W{week:02d}" for week in range(1, 53)]
+    sheet.append(list(OFFICIAL_V3_HEADERS) + weeks)
+    sheet.append(["SKU-001", "Örnek Ürün", "Örnek Grup", "Örnek Sınıf", "Mamul", 250, 7, 50, 125.5, 0.02, 500] + [40] * 52)
+    for name, headers in (("Malzeme_Tedarikciler", ("Ürün Kodu", "Tedarikçi Kodu", "Tedarik Payı (%)", "Açık Sipariş", "Planlanan Teslim Tarihi")), ("Tedarikciler", ("Tedarikçi Kodu", "Tedarikçi Adı", "Sipariş Karşılama Oranı (%)", "Terminden Önce Teslim (%)", "Termininde Teslim (%)", "Terminden Sonra Teslim (%)", "Ortalama Teslim Süresi (Gün)", "Teslim Süresi Std Sapma")), ("Events", ("Yıl", "Başlangıç Hafta", "Bitiş Hafta", "Ürün Grubu", "Ürün Sınıfı (Opsiyonel)", "Event Tipi", "Etki Değeri (%) (Opsiyonel)", "Referans Ürün Grubu (Opsiyonel)", "Referans Ürün Sınıfı (Opsiyonel)", "Açıklama (Opsiyonel)")), ("Data_Requirement_Matrix", ("Alan", "Durum", "Kaynak", "Not"))):
+        tab = book.create_sheet(name); tab.append(list(headers))
     output = io.BytesIO(); book.save(output); return output.getvalue()
 
 
@@ -60,6 +58,8 @@ def parse_workbook(content: bytes):
         book = load_workbook(io.BytesIO(content), read_only=True, data_only=True)
     except Exception as exc:
         raise CanonicalExcelError("WORKBOOK_UNREADABLE") from exc
+    if OFFICIAL_V3_SHEET in book.sheetnames:
+        return _parse_official_v3(book)
     if SHEET not in book.sheetnames:
         return [], [{"code":"REQUIRED_SHEET_MISSING","sheet":SHEET,"row":None,"column":None,"severity":"ERROR","message":"Talep_Gecmisi sayfası bulunamadı."}]
     sheet = book[SHEET]
@@ -108,6 +108,45 @@ def parse_workbook(content: bytes):
     return parsed, errors
 
 
+def _parse_official_v3(book):
+    sheet = book[OFFICIAL_V3_SHEET]; rows = list(sheet.iter_rows(values_only=True))
+    if not rows: return [], [{"code":"SHEET_EMPTY","sheet":OFFICIAL_V3_SHEET,"row":None,"column":None,"severity":"ERROR","message":"Temel_Veriler sayfası boş."}]
+    header = list(rows[0]); indexes = {str(value).strip(): index for index, value in enumerate(header) if value is not None}; errors=[]
+    for field in OFFICIAL_V3_HEADERS:
+        if field not in indexes: errors.append({"code":"REQUIRED_COLUMN_MISSING","sheet":OFFICIAL_V3_SHEET,"row":1,"column":field,"severity":"ERROR","message":f"Zorunlu kolon eksik: {field}."})
+    from app.services.dataset.weekly_normalization import weekly_columns
+    try: periods = weekly_columns([str(value).strip() for value in header if value is not None])
+    except ValueError: periods=[]; errors.append({"code":"PERIOD_INVALID","sheet":OFFICIAL_V3_SHEET,"row":1,"column":None,"severity":"ERROR","message":"Hafta başlıkları ISO YYYY-Www olmalıdır."})
+    if not periods: errors.append({"code":"WEEKLY_COLUMNS_MISSING","sheet":OFFICIAL_V3_SHEET,"row":1,"column":None,"severity":"ERROR","message":"ISO haftalık talep kolonları gerekli."})
+    if errors: return [], errors
+    level_map={"mamul":"finished_good","yarı mamul":"semi_finished_good","yari mamul":"semi_finished_good","hammadde":"raw_material",**{value:value for value in LEVELS}}
+    parsed=[]; identities=set()
+    numeric=("Dönem Başı Stok","Tedarik Süresi (Gün)","Sipariş Parti Büyüklüğü","Birim Maliyet (TL)","Stok Tutma Oranı (%)","Stok Tükenme Maliyeti")
+    for row_no, values in enumerate(rows[1:],2):
+        if not any(value not in (None,"") for value in values): continue
+        def cell(name): return values[indexes[name]] if indexes[name] < len(values) else None
+        try:
+            code=str(cell("Ürün Kodu") or "").strip()
+            if not code: raise CanonicalExcelError("MATERIAL_CODE_REQUIRED")
+            level=level_map.get(_norm(cell("Ürün Seviyesi")))
+            if not level: raise CanonicalExcelError("PRODUCT_LEVEL_UNSUPPORTED")
+            metadata={"material_code":code,"product_name":str(cell("Ürün Adı") or "").strip() or None,"product_group":str(cell("Ürün Grubu") or "").strip() or None,"product_class":str(cell("Ürün Sınıfı") or "").strip() or None,"product_level":level}
+            for field in numeric:
+                value=cell(field)
+                if isinstance(value,bool) or value is None or float(value)<0: raise CanonicalExcelError("OPERATIONAL_VALUE_INVALID")
+                metadata[{"Dönem Başı Stok":"initial_stock","Tedarik Süresi (Gün)":"lead_time_days","Sipariş Parti Büyüklüğü":"lot_size","Birim Maliyet (TL)":"unit_cost","Stok Tutma Oranı (%)":"holding_rate","Stok Tükenme Maliyeti":"stockout_cost"}[field]]=float(value)
+            for period in periods:
+                value=values[header.index(period.period)] if header.index(period.period)<len(values) else None
+                if value in (None,""): continue
+                if isinstance(value,bool) or float(value)<0: raise CanonicalExcelError("QUANTITY_INVALID")
+                identity=(code,period.period)
+                if identity in identities: raise CanonicalExcelError("DUPLICATE_ROW_IDENTITY")
+                identities.add(identity); parsed.append({**metadata,"period":period.period,"quantity":float(value)})
+        except (ValueError,TypeError,CanonicalExcelError) as exc:
+            errors.append({"code":str(exc),"sheet":OFFICIAL_V3_SHEET,"row":row_no,"column":None,"severity":"ERROR","message":"Geçersiz Temel_Veriler satırı."})
+    return parsed, errors
+
+
 class CanonicalExcelIngestionService:
     def get_current_accepted(self, session: Session, company_id):
         """Return the tenant's most recently accepted active dataset deterministically."""
@@ -141,19 +180,29 @@ class CanonicalExcelIngestionService:
             "material_count": dataset.sku_count,
         }
 
-    def stage(self, session: Session, company_id, user_id, filename: str, content: bytes):
+    def stage(self, session: Session, company_id, user_id, filename: str, content: bytes, demand_type=None, service_level=None):
         if not filename.lower().endswith(".xlsx"):
             raise CanonicalExcelError("FILE_TYPE_INVALID")
         rows, errors = parse_workbook(content)
-        fingerprint = hashlib.sha256(str(company_id).encode() + content).hexdigest()
+        is_v3 = OFFICIAL_V3_SHEET in load_workbook(io.BytesIO(content), read_only=True).sheetnames
+        if is_v3:
+            try: demand_type = validate_demand_type(demand_type)
+            except ValueError: demand_type = None
+            if demand_type not in {"sales", "consumption"}: errors.append({"code":"DEMAND_TYPE_REQUIRED","sheet":OFFICIAL_V3_SHEET,"row":None,"column":None,"severity":"ERROR","message":"Talep tipi Wizard/API metadata olarak zorunludur."})
+            try: service_level = validate_service_level(service_level or {"mode":"automatic"})
+            except ValueError: errors.append({"code":"SERVICE_LEVEL_INVALID","sheet":OFFICIAL_V3_SHEET,"row":None,"column":None,"severity":"ERROR","message":"Servis seviyesi otomatik veya 0-1 arası manuel olmalıdır."}); service_level = {"mode":"automatic"}
+            if demand_type: rows=[{**row,"demand_type":demand_type} for row in rows]
+        semantic = json.dumps({"contract":"official_v3","demand_type":demand_type,"service_level":service_level}, sort_keys=True, separators=(",", ":")).encode() if is_v3 else b""
+        fingerprint = hashlib.sha256(str(company_id).encode() + semantic + content).hexdigest()
         existing = session.query(Dataset).filter_by(company_id=company_id, dataset_hash=fingerprint, is_active=True).one_or_none()
         if existing:
             return existing, True
         periods = [item["period"] for item in rows]
-        dataset = Dataset(company_id=company_id, user_id=user_id, uploaded_by=user_id, dataset_hash=fingerprint, source_type="excel", source_name=filename, state=DatasetState.VALIDATED if not errors else DatasetState.FAILED, record_count=len(rows), sku_count=len({item["material_code"] for item in rows}), encrypted_data=EncryptionService(session).encrypt_dataset(user_id, {"actual_rows": rows, "contract":"fu2_weekly_v1"}), is_active=True)
+        contract = "official_v3" if is_v3 else "fu2_weekly_v1"
+        dataset = Dataset(company_id=company_id, user_id=user_id, uploaded_by=user_id, dataset_hash=fingerprint, source_type="excel", source_name=filename, state=DatasetState.VALIDATED if not errors else DatasetState.FAILED, record_count=len(rows), sku_count=len({item["material_code"] for item in rows}), encrypted_data=EncryptionService(session).encrypt_dataset(user_id, {"actual_rows": rows, "contract":contract, "demand_type":demand_type, "service_level":service_level or {"mode":"automatic"}}), is_active=True)
         session.add(dataset); session.flush()
         session.add(DatasetValidationResult(dataset_id=dataset.id, is_valid=not errors, errors=errors, warnings=[], validated_by=user_id, requires_user_approval=not errors))
-        session.add(DatasetEvent(dataset_id=dataset.id, event_type="validated" if not errors else "validation_failed", event_data={"periods": sorted(periods), "contract":"fu2_weekly_v1"}, created_by=user_id))
+        session.add(DatasetEvent(dataset_id=dataset.id, event_type="validated" if not errors else "validation_failed", event_data={"periods": sorted(periods), "contract":contract, "demand_type":demand_type, "service_level":service_level}, created_by=user_id))
         session.commit(); return dataset, False
 
     def accept(self, session: Session, company_id, user_id, dataset_id):
@@ -163,16 +212,23 @@ class CanonicalExcelIngestionService:
         validation = session.query(DatasetValidationResult).filter_by(dataset_id=dataset.id).order_by(DatasetValidationResult.validated_at.desc()).first()
         if not validation or not validation.is_valid: raise CanonicalExcelError("DATASET_NOT_READY_FOR_ACCEPTANCE")
         payload = EncryptionService(session).decrypt_dataset(user_id, dataset.encrypted_data)
-        version = DatasetVersion(dataset_id=dataset.id, version_number=1, dataset_hash=dataset.dataset_hash, record_count=dataset.record_count, sku_count=dataset.sku_count, created_by=user_id, is_current=True)
-        session.add(version); session.flush(); session.commit()
-        grouped = {}
-        for row in payload["actual_rows"]: grouped.setdefault(row["demand_type"], []).append(row)
-        ledger = ActualWeeklyLedgerService()
-        summary = {kind: ledger.ingest_dataset_actuals(company_id, user_id, dataset.id, rows, kind) for kind, rows in grouped.items()}
-        # Dataset acceptance is the explicit approval boundary for its staged corrections.
-        proposed = session.query(ActualWeeklyRevision).filter_by(company_id=company_id, source_dataset_id=dataset.id, approval_status="proposed").all()
-        for revision in proposed:
-            ledger.approve_revision(company_id, revision.id, user_id)
-        dataset = session.query(Dataset).filter_by(id=dataset.id).one(); dataset.state = DatasetState.APPROVED
-        session.add(DatasetEvent(dataset_id=dataset.id, event_type="accepted", event_data={"ledger":summary,"status":"READY_FOR_WORKFLOW"}, created_by=user_id)); session.commit()
-        return {"status":"READY_FOR_WORKFLOW","dataset_id":str(dataset.id),"version_id":str(version.id),"ledger":summary,"idempotent":False}
+        try:
+            version = DatasetVersion(dataset_id=dataset.id, version_number=1, dataset_hash=dataset.dataset_hash, record_count=dataset.record_count, sku_count=dataset.sku_count, created_by=user_id, is_current=True)
+            session.add(version); session.flush()
+            if payload.get("contract") == "official_v3":
+                inputs = {row["material_code"]: row for row in payload["actual_rows"]}
+                session.add_all([DatasetVersionProductInput(company_id=company_id, dataset_version_id=version.id, material_code=row["material_code"], product_name=row.get("product_name"), product_group=row.get("product_group"), product_class=row.get("product_class"), product_level=row["product_level"], initial_stock=row["initial_stock"], lead_time_days=row["lead_time_days"], lot_size=row["lot_size"], unit_cost=row["unit_cost"], holding_rate=row["holding_rate"], stockout_cost=row["stockout_cost"]) for row in inputs.values()])
+                session.flush()
+            grouped = {}
+            for row in payload["actual_rows"]: grouped.setdefault(row["demand_type"], []).append(row)
+            ledger = ActualWeeklyLedgerService()
+            summary = {kind: ledger.ingest_dataset_actuals_in_session(session, company_id, user_id, dataset.id, rows, kind) for kind, rows in grouped.items()}
+            proposed = session.query(ActualWeeklyRevision).filter_by(company_id=company_id, source_dataset_id=dataset.id, approval_status="proposed").all()
+            for revision in proposed: ledger.approve_revision_in_session(session, company_id, revision.id, user_id)
+            dataset.state = DatasetState.APPROVED
+            session.add(DatasetEvent(dataset_id=dataset.id, event_type="accepted", event_data={"ledger":summary,"status":"READY_FOR_WORKFLOW","contract":payload.get("contract")}, created_by=user_id))
+            session.commit()
+            return {"status":"READY_FOR_WORKFLOW","dataset_id":str(dataset.id),"version_id":str(version.id),"ledger":summary,"idempotent":False}
+        except Exception:
+            session.rollback()
+            raise

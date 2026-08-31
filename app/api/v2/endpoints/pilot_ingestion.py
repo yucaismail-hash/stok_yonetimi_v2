@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -16,12 +16,14 @@ def get_current_pilot_dataset(db: Session = Depends(get_db), current_user=Depend
 
 @router.get('/pilot/template')
 def download_template(current_user=Depends(get_current_user)):
-    return Response(template_bytes(), media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=stokonomi_pilot_sablon.xlsx'})
+    return Response(template_bytes(), media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', headers={'Content-Disposition':'attachment; filename=Stokonomi_Resmi_Veri_Sablonu_v3.xlsx'})
 
 @router.post('/pilot/upload')
-async def upload_pilot(file: UploadFile = File(...), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def upload_pilot(file: UploadFile = File(...), demand_type: Optional[str] = Form(None), service_level_mode: Optional[str] = Form(None), service_level_value: Optional[float] = Form(None), db: Session = Depends(get_db), current_user=Depends(get_current_user)):
     try:
-        dataset, retry = CanonicalExcelIngestionService().stage(db, current_user.company_id, current_user.id, file.filename or '', await file.read())
+        service_level = {"mode": service_level_mode or "automatic"}
+        if service_level["mode"] == "manual": service_level["value"] = service_level_value
+        dataset, retry = CanonicalExcelIngestionService().stage(db, current_user.company_id, current_user.id, file.filename or '', await file.read(), demand_type=demand_type, service_level=service_level)
         validation = dataset.validations[-1]
         return {'dataset_id':str(dataset.id),'status':dataset.state.value,'same_file_retry':retry,'issues':validation.errors or [],'warnings':validation.warnings or [],'summary':{'record_count':dataset.record_count,'material_count':dataset.sku_count},'READY_FOR_ACCEPTANCE':bool(validation.is_valid)}
     except CanonicalExcelError as exc: raise HTTPException(status_code=400, detail=str(exc))

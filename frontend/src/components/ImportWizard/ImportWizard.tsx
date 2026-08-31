@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, List, ListItem, ListItemText, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, InputLabel, List, ListItem, ListItemText, MenuItem, Select, TextField, Typography } from '@mui/material';
 import Step1FileUpload from './Step1FileUpload';
 import { acceptPilotDataset, downloadPilotTemplate, PilotUploadResponse, uploadPilotDataset } from '../../features/dataset/api/pilotDatasetApi';
 import { pilotDatasetKeys } from '../../features/dataset/api/pilotDatasetQueries';
@@ -15,12 +15,17 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [accepted, setAccepted] = useState(false);
+  const [demandType, setDemandType] = useState<'sales' | 'consumption'>('sales');
+  const [serviceLevelMode, setServiceLevelMode] = useState<'automatic' | 'manual'>('automatic');
+  const [serviceLevelValue, setServiceLevelValue] = useState('0.95');
   const reset = () => { setFile(null); setValidation(null); setLoading(false); setError(null); setAccepted(false); };
   const close = () => { if (!loading) { reset(); onClose(); } };
 
   const selectFile = async (selected: File) => {
     setFile(selected); setValidation(null); setError(null); setLoading(true);
-    try { setValidation(await uploadPilotDataset(selected)); }
+    const manual = Number(serviceLevelValue);
+    if (serviceLevelMode === 'manual' && (!Number.isFinite(manual) || manual <= 0 || manual >= 1)) { setLoading(false); setError('Manuel servis seviyesi 0 ile 1 arasında olmalıdır.'); return; }
+    try { setValidation(await uploadPilotDataset(selected, { demandType, serviceLevel: serviceLevelMode === 'manual' ? { mode: 'manual', value: manual } : { mode: 'automatic' } })); }
     catch (cause: any) { setError(cause.response?.data?.detail || 'Dosya doğrulanamadı. Lütfen tekrar deneyin.'); }
     finally { setLoading(false); }
   };
@@ -44,7 +49,7 @@ export default function ImportWizard({ open, onClose, onComplete }: ImportWizard
   return <Dialog open={open} onClose={close} fullWidth maxWidth="md">
     <DialogTitle>İlk veri setinizi hazırlayın</DialogTitle>
     <DialogContent dividers>
-      {!validation ? <><Alert severity="info" sx={{ mb: 2 }}>Pilot şablonu; Malzeme Kodu, Talep Tipi, Ürün Seviyesi, Dönem ve Miktar alanlarını içerir.</Alert><Button onClick={downloadTemplate} disabled={loading || downloading} sx={{ mb: 2 }}>Excel Şablonunu İndir</Button><Step1FileUpload file={file} onFileSelect={selectFile} loading={loading} error={error} /></> : <Box>
+      {!validation ? <><Alert severity="info" sx={{ mb: 2 }}>Resmi V3 şablonu; Temel_Veriler, geniş ISO haftaları ve operasyonel ürün alanlarını içerir. Tedarikçi ve olay sayfaları bu aşamada isteğe bağlıdır.</Alert><Button onClick={downloadTemplate} disabled={loading || downloading} sx={{ mb: 2 }}>Resmi Excel V3 Şablonunu İndir</Button><Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap' }}><FormControl sx={{ minWidth: 180 }}><InputLabel id="demand-type-label">Talep tipi</InputLabel><Select labelId="demand-type-label" label="Talep tipi" value={demandType} onChange={(event) => setDemandType(event.target.value as 'sales' | 'consumption')}><MenuItem value="sales">Satış talebi</MenuItem><MenuItem value="consumption">Tüketim talebi</MenuItem></Select></FormControl><FormControl sx={{ minWidth: 200 }}><InputLabel id="service-level-label">Servis seviyesi</InputLabel><Select labelId="service-level-label" label="Servis seviyesi" value={serviceLevelMode} onChange={(event) => setServiceLevelMode(event.target.value as 'automatic' | 'manual')}><MenuItem value="automatic">Otomatik (sistem varsayılanı)</MenuItem><MenuItem value="manual">Manuel geçersiz kılma</MenuItem></Select></FormControl>{serviceLevelMode === 'manual' && <TextField label="Servis seviyesi" value={serviceLevelValue} onChange={(event) => setServiceLevelValue(event.target.value)} slotProps={{ htmlInput: { inputMode: 'decimal', min: 0, max: 1, step: 0.01 } }} helperText="0 ile 1 arasında" />}</Box><Step1FileUpload file={file} onFileSelect={selectFile} loading={loading} error={error} /></> : <Box>
         <Typography variant="h6" gutterBottom>Doğrulama sonucu</Typography>
         <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
           <Chip label={`${validation.summary.record_count} kayıt`} />
