@@ -10,6 +10,7 @@ import {
   startBusinessWorkflow,
   type DecisionFeedbackRequest,
   type ExecutionStatus,
+  type BusinessWorkflowScopeMode,
 } from './businessWorkflowApi';
 
 const activeStatuses: ReadonlySet<ExecutionStatus> = new Set([
@@ -25,7 +26,7 @@ export const businessWorkflowKeys = {
   execution: (executionId: string) => ['business-workflow', 'execution', executionId] as const,
   result: (executionId: string) => ['business-workflow', 'result', executionId] as const,
   decision: (executionId: string) => ['business-workflow', 'decision', executionId] as const,
-  readiness: ['business-workflow', 'readiness'] as const,
+  readiness: (scopeMode: BusinessWorkflowScopeMode) => ['business-workflow', 'readiness', scopeMode] as const,
   feedback: (executionId: string, snapshotId: string) => ['business-workflow', 'decision-feedback', executionId, snapshotId] as const,
 };
 
@@ -43,10 +44,10 @@ export function useStartBusinessWorkflow() {
   return useMutation({ mutationFn: startBusinessWorkflow });
 }
 
-export function useBusinessWorkflowReadiness(enabled = true) {
+export function useBusinessWorkflowReadiness(scopeMode: BusinessWorkflowScopeMode = 'LATEST_UPLOAD', enabled = true) {
   return useQuery({
-    queryKey: businessWorkflowKeys.readiness,
-    queryFn: getBusinessWorkflowReadiness,
+    queryKey: businessWorkflowKeys.readiness(scopeMode),
+    queryFn: () => getBusinessWorkflowReadiness(scopeMode),
     enabled,
     staleTime: 30_000,
     retry: retryNonClientError,

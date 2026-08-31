@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import ImportWizard from '../../components/ImportWizard';
 import { useAuth } from '../../hooks/useAuth';
 import { useCurrentPilotDataset } from '../dataset/api/pilotDatasetQueries';
+import { useBusinessWorkflowReadiness } from '../business-workflow/api';
 import { ROUTES } from '../../constants/routes';
 
 const onboardingSteps = ['Excel dosyanızı yükleyin', 'Veriyi doğrulayın', 'Veri setini kabul edin'];
@@ -61,6 +62,8 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const currentDataset = useCurrentPilotDataset(user?.company_id);
+  const readiness = useBusinessWorkflowReadiness('LATEST_UPLOAD', Boolean(currentDataset.data));
+  const allActiveReadiness = useBusinessWorkflowReadiness('ALL_ACTIVE_SKUS', Boolean(currentDataset.data));
   const [wizardOpen, setWizardOpen] = useState(false);
 
   const displayName = user?.full_name?.trim() || user?.email || 'Kullanıcı';
@@ -152,6 +155,12 @@ export default function DashboardPage() {
             </Grid>
           </Box>
           <Chip label="Analize Hazır" color="success" sx={{ alignSelf: 'flex-start' }} />
+
+          {readiness.data?.coverage && <Card variant="outlined"><CardContent><Stack spacing={1}>
+            <Typography component="h2" variant="h6">Veri Durumu</Typography>
+            <Typography variant="body2" color="text.secondary">Kalıcı aktif SKU: {allActiveReadiness.data?.coverage?.total_scope_count ?? '—'} · Son yükleme SKU: {readiness.data.coverage.latest_upload_count} · Analiz edilebilir: {readiness.data.coverage.fully_analyzed_count} · Kısmi/uyarı: {readiness.data.coverage.partially_analyzed_count} · Hariç: {readiness.data.coverage.excluded_count}</Typography>
+            <Button size="small" onClick={() => navigate(ROUTES.DATA_MANAGEMENT)} sx={{ alignSelf: 'flex-start' }}>Veri Yönetimini Aç</Button>
+          </Stack></CardContent></Card>}
 
           <Card variant="outlined"><CardContent><Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
             <Typography component="h2" variant="h6">Bütünleşik işletme analizi</Typography>

@@ -10,7 +10,7 @@ from app.engine.capability_contracts import CapabilityExecutionRequest
 from app.engine.capability_registry import Capability
 from app.engine.dataset_runtime_provider import DatasetRuntimeProvider
 
-_BASE_CAPABILITIES = ("forecast", "safety_stock", "simulation")
+_BASE_CAPABILITIES = ("forecast", "safety_stock")
 
 
 @dataclass(frozen=True)
@@ -50,6 +50,8 @@ class MaterialReadiness:
     available_weeks: int
     latest_observation_period: str | None
     capabilities: tuple[CapabilityReadiness, ...]
+    scope_source: str = "LATEST_UPLOAD"
+    temporal_warnings: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +60,8 @@ class MaterialReadiness:
             "available_weeks": self.available_weeks,
             "latest_observation_period": self.latest_observation_period,
             "capabilities": [item.to_dict() for item in self.capabilities],
+            "scope_source": self.scope_source,
+            "temporal_warnings": list(self.temporal_warnings),
         }
 
 
@@ -68,6 +72,11 @@ class AnalysisCoverage:
     partially_analyzed_count: int
     excluded_count: int
     exclusions: tuple[MaterialCapabilityExclusion, ...]
+    scope_mode: str = "LATEST_UPLOAD"
+    latest_upload_count: int = 0
+    absent_from_latest_upload_count: int = 0
+    current_snapshot_warning_count: int = 0
+    stale_master_warning_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -76,6 +85,11 @@ class AnalysisCoverage:
             "partially_analyzed_count": self.partially_analyzed_count,
             "excluded_count": self.excluded_count,
             "exclusions": [item.to_dict() for item in self.exclusions],
+            "scope_mode": self.scope_mode,
+            "latest_upload_count": self.latest_upload_count,
+            "absent_from_latest_upload_count": self.absent_from_latest_upload_count,
+            "current_snapshot_warning_count": self.current_snapshot_warning_count,
+            "stale_master_warning_count": self.stale_master_warning_count,
         }
 
 
@@ -149,6 +163,7 @@ class BusinessWorkflowReadinessService:
         for item in sorted(items, key=lambda value: value["sku_code"]):
             code, name = item["sku_code"], item.get("product_name")
             available, latest = self._history(item)
+            snapshot_available = bool(item.get("current_snapshot_available", True))
             rows = []
             for capability in _BASE_CAPABILITIES:
                 if available >= base_required:
@@ -158,30 +173,39 @@ class BusinessWorkflowReadinessService:
                     exclusions.append(excluded)
                     rows.append(CapabilityReadiness(capability, "EXCLUDED", excluded.reason_code, excluded.message, base_required, available))
             if available >= backtest_required:
-                rows.extend((CapabilityReadiness("backtest", "READY"), CapabilityReadiness("decision_intelligence", "READY")))
+                rows.append(CapabilityReadiness("backtest", "READY"))
             else:
                 excluded = self._insufficient("backtest", code, name, available, backtest_required, latest)
                 exclusions.append(excluded)
-                rows.extend((
-                    CapabilityReadiness("backtest", "EXCLUDED", excluded.reason_code, excluded.message, backtest_required, available),
-                    CapabilityReadiness("decision_intelligence", "EXCLUDED", "DEPENDENCY_NOT_READY", "Karar çıktısı için Geçmiş Performans Testi kanıtı gerekli.", blocked_by="backtest"),
-                ))
-            materials.append(MaterialReadiness(code, name if isinstance(name, str) else None, available, latest, tuple(rows)))
+                rows.append(CapabilityReadiness("backtest", "EXCLUDED", excluded.reason_code, excluded.message, backtest_required, available))
+            if snapshot_available and available >= base_required:
+                rows.append(CapabilityReadiness("simulation", "READY"))
+            else:
+                reason = "CURRENT_SNAPSHOT_UNAVAILABLE" if not snapshot_available else "INSUFFICIENT_HISTORY"
+                message = "Bu ürün son yüklemede bulunmadığı için güncel dönem başı stok bilgisi yok; simülasyon yapılmayacak." if not snapshot_available else f"Bu ürün için simülasyon için en az {base_required} haftalık geçmiş veri gerekir."
+                excluded = MaterialCapabilityExclusion(code, name if isinstance(name, str) else None, "simulation", "EXCLUDED", reason, message, available, base_required, latest)
+                exclusions.append(excluded)
+                rows.append(CapabilityReadiness("simulation", "EXCLUDED", reason, message, base_required, available))
+            decision_ready = any(row.capability == "backtest" and row.status == "READY" for row in rows) and any(row.capability == "simulation" and row.status == "READY" for row in rows)
+            rows.append(CapabilityReadiness("decision_intelligence", "READY" if decision_ready else "EXCLUDED", None if decision_ready else "DEPENDENCY_NOT_READY", None if decision_ready else "Karar çıktısı için güncel simülasyon ve Geçmiş Performans Testi kanıtı gerekli.", blocked_by=None if decision_ready else "backtest_or_simulation"))
+            materials.append(MaterialReadiness(code, name if isinstance(name, str) else None, available, latest, tuple(rows), str(item.get("scope_source") or "LATEST_UPLOAD"), tuple(item.get("temporal_warnings") or ())))
 
-        fully = sum(any(row.capability == "backtest" and row.status == "READY" for row in material.capabilities) for material in materials)
-        partial = sum(any(row.status == "READY" for row in material.capabilities) and not any(row.capability == "backtest" and row.status == "READY" for row in material.capabilities) for material in materials)
-        coverage = AnalysisCoverage(len(materials), fully, partial, len(materials) - fully - partial, tuple(exclusions))
+        fully = sum(any(row.capability == "decision_intelligence" and row.status == "READY" for row in material.capabilities) for material in materials)
+        partial = sum(any(row.status == "READY" for row in material.capabilities) and not any(row.capability == "decision_intelligence" and row.status == "READY" for row in material.capabilities) for material in materials)
+        scope = snapshot.get("scope") if isinstance(snapshot.get("scope"), dict) else {}
+        coverage = AnalysisCoverage(len(materials), fully, partial, len(materials) - fully - partial, tuple(exclusions), str(scope.get("scope_mode") or "LATEST_UPLOAD"), int(scope.get("latest_upload_count") or 0), int(scope.get("absent_from_latest_upload_count") or 0), int(scope.get("current_snapshot_warning_count") or 0), int(scope.get("stale_master_warning_count") or 0))
         supplier = snapshot.get("supplier", {})
         supplier_ready = isinstance(supplier, dict) and bool(supplier.get("available"))
-        backtest_status = "READY" if fully == len(materials) and fully else "READY_WITH_EXCLUSIONS" if fully else "BLOCKED"
-        message = None if backtest_status == "READY" else ("Uygun ürünler için Geçmiş Performans Testi yürütülecek; desteklenmeyen ürünler kapsam dışında raporlanacak." if fully else "Hiçbir ürün Geçmiş Performans Testi için yeterli geçmiş veriye sahip değil.")
+        backtest_eligible = sum(any(row.capability == "backtest" and row.status == "READY" for row in material.capabilities) for material in materials)
+        backtest_status = "READY" if backtest_eligible == len(materials) and backtest_eligible else "READY_WITH_EXCLUSIONS" if backtest_eligible else "BLOCKED"
+        message = None if backtest_status == "READY" else ("Uygun ürünler için Geçmiş Performans Testi yürütülecek; desteklenmeyen ürünler kapsam dışında raporlanacak." if backtest_eligible else "Hiçbir ürün Geçmiş Performans Testi için yeterli geçmiş veriye sahip değil.")
         capabilities = (
             CapabilityReadiness("forecast", "READY" if materials else "BLOCKED", None if materials else "NO_DEMAND_HISTORY", None if materials else "Talep Tahmini için talep geçmişi bulunmuyor."),
             CapabilityReadiness("safety_stock", "READY" if materials else "BLOCKED", None if materials else "NO_DEMAND_HISTORY", None if materials else "Emniyet Stoku için talep geçmişi bulunmuyor."),
             CapabilityReadiness("supplier", "READY" if supplier_ready else "OPTIONAL_UNAVAILABLE", None if supplier_ready else "SUPPLIER_DATA_UNAVAILABLE", None if supplier_ready else "Tedarikçi verisi bulunmadığı için bu adım uygulanmayacak."),
-            CapabilityReadiness("simulation", "READY" if materials else "BLOCKED", None if materials else "NO_DEMAND_HISTORY", None if materials else "Simülasyon için talep geçmişi bulunmuyor."),
-            CapabilityReadiness("backtest", backtest_status, None if fully else "INSUFFICIENT_HISTORY", message, backtest_required, min((material.available_weeks for material in materials), default=0)),
-            CapabilityReadiness("decision_intelligence", "READY" if fully else "BLOCKED", None if fully else "DEPENDENCY_NOT_READY", None if fully else "Karar çıktısı için en az bir ürünün zorunlu analiz kanıtı gerekli.", blocked_by=None if fully else "backtest"),
+            CapabilityReadiness("simulation", "READY" if fully == len(materials) and fully else "READY_WITH_EXCLUSIONS" if any(any(row.capability == "simulation" and row.status == "READY" for row in material.capabilities) for material in materials) else "BLOCKED", None if any(any(row.capability == "simulation" and row.status == "READY" for row in material.capabilities) for material in materials) else "NO_CURRENT_SNAPSHOT", None if any(any(row.capability == "simulation" and row.status == "READY" for row in material.capabilities) for material in materials) else "Simülasyon için güncel dönem başı stok bilgisi bulunmuyor."),
+            CapabilityReadiness("backtest", backtest_status, None if backtest_eligible else "INSUFFICIENT_HISTORY", message, backtest_required, min((material.available_weeks for material in materials), default=0)),
+            CapabilityReadiness("decision_intelligence", "READY" if fully else "BLOCKED", None if fully else "DEPENDENCY_NOT_READY", None if fully else "Karar çıktısı için en az bir ürünün zorunlu analiz kanıtı gerekli.", blocked_by=None if fully else "backtest_or_simulation"),
         )
         status = "READY" if fully == len(materials) and fully else "READY_WITH_EXCLUSIONS" if fully else "BLOCKED"
         return BusinessWorkflowReadiness(str(dataset_id), status, capabilities, tuple(materials), coverage)

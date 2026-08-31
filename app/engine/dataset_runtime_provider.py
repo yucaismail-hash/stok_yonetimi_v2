@@ -105,7 +105,20 @@ class DatasetRuntimeProvider:
         except Exception as exc:
             raise DatasetInputUnavailableError("dataset payload cannot be loaded") from exc
         items, configured_service_level = self._runtime_items(dataset, request, payload)
-        return {"items": items, "supplier": self.supplier_evidence_status(payload, require_dataset_materials=True), "dataset_id": str(dataset.id), "service_level": configured_service_level}
+        latest_count = sum(item.get("scope_source") == "LATEST_UPLOAD" for item in items if isinstance(item, dict))
+        absent_count = sum(item.get("scope_source") == "ALL_ACTIVE_SKUS" for item in items if isinstance(item, dict))
+        stale_master_count = sum(
+            "EFFECTIVE_MASTER_FROM_PRIOR_UPLOAD" in item.get("temporal_warnings", [])
+            for item in items if isinstance(item, dict)
+        )
+        return {
+            "items": items, "supplier": self.supplier_evidence_status(payload, require_dataset_materials=True),
+            "dataset_id": str(dataset.id), "service_level": configured_service_level,
+            "scope": {"scope_mode": request.params.get("scope_mode", "LATEST_UPLOAD"), "total_selected_count": len(items),
+                      "latest_upload_count": latest_count, "absent_from_latest_upload_count": absent_count,
+                      "current_snapshot_warning_count": absent_count,
+                      "stale_master_warning_count": stale_master_count},
+        }
 
     def _official_v3_items(self, dataset, request, payload):
         if dataset.state != DatasetState.APPROVED:
@@ -134,29 +147,87 @@ class DatasetRuntimeProvider:
         histories = {}
         for (material_code, period), revision in latest.items():
             histories.setdefault(material_code, []).append((parse_weekly_period(period), float(revision.proposed_quantity)))
+        scope_mode = request.params.get("scope_mode", "LATEST_UPLOAD")
+        if scope_mode not in {"LATEST_UPLOAD", "ALL_ACTIVE_SKUS"}:
+            raise DatasetInputUnavailableError("unsupported Business Workflow scope mode")
+        latest_inputs = {product.material_code: product for product in inputs}
+        # Immutable version inputs are the effective-master source.  Read the
+        # accepted lineage even for LATEST_UPLOAD: an empty optional master cell
+        # means "not updated", not a destructive clear of a prior valid value.
+        prior = self._session.query(DatasetVersionProductInput, DatasetEvent).join(
+                DatasetVersion, DatasetVersionProductInput.dataset_version_id == DatasetVersion.id
+            ).join(Dataset, DatasetVersion.dataset_id == Dataset.id).join(
+                DatasetEvent, DatasetEvent.dataset_id == Dataset.id
+            ).filter(
+                DatasetVersionProductInput.company_id == request.company_id,
+                DatasetVersionProductInput.is_deleted.is_(False), Dataset.state == DatasetState.APPROVED,
+                DatasetEvent.event_type == "accepted", DatasetEvent.created_at <= accepted.created_at,
+            ).order_by(DatasetEvent.created_at.desc(), DatasetEvent.id.desc(), DatasetVersionProductInput.id.desc()).all()
+        lineage_by_material = {}
+        for product, _event in prior:
+            lineage_by_material.setdefault(product.material_code, []).append(product)
+        effective_inputs = latest_inputs if scope_mode == "LATEST_UPLOAD" else {
+            material_code: lineage[0] for material_code, lineage in lineage_by_material.items()
+        }
         items = []
-        for product in inputs:
+        for material_code, product in sorted(effective_inputs.items()):
+            is_current = material_code in latest_inputs
+            master, master_from_prior = self._effective_master_values(
+                product, lineage_by_material.get(material_code, [product])
+            )
             ordered_history = sorted(histories.get(product.material_code, []), key=lambda row: (row[0].year, row[0].week))
             values = [quantity for _, quantity in ordered_history]
+            temporal_warnings = []
+            if not is_current:
+                # Current operational state is explicitly not inherited.
+                temporal_warnings.append("CURRENT_SNAPSHOT_UNAVAILABLE")
+            if master_from_prior:
+                temporal_warnings.append("EFFECTIVE_MASTER_FROM_PRIOR_UPLOAD")
             items.append({
                 "sku_code": product.material_code,
                 "demand_history": values,
                 # Readiness needs explainable, persisted evidence boundaries.  The
                 # periods are derived from the same accepted revision set as values.
                 "history_periods": [period.period for period, _ in ordered_history],
-                "lead_time_days": float(product.lead_time_days),
-                "initial_stock": float(product.initial_stock),
-                "eoq": float(product.lot_size),
-                "product_level": product.product_level,
-                "product_group": product.product_group,
-                "product_class": product.product_class,
-                "unit_cost": float(product.unit_cost) if product.unit_cost is not None else None,
-                "holding_rate": float(product.holding_rate) if product.holding_rate is not None else None,
-                "stockout_cost": float(product.stockout_cost) if product.stockout_cost is not None else None,
+                "lead_time_days": float(master["lead_time_days"]),
+                "initial_stock": float(product.initial_stock) if is_current else None,
+                "eoq": float(master["lot_size"]),
+                "product_level": master["product_level"],
+                "product_group": master["product_group"],
+                "product_class": master["product_class"],
+                "unit_cost": float(master["unit_cost"]) if master["unit_cost"] is not None else None,
+                "holding_rate": float(master["holding_rate"]) if master["holding_rate"] is not None else None,
+                "stockout_cost": float(master["stockout_cost"]) if master["stockout_cost"] is not None else None,
                 "demand_type": demand_type,
                 "dataset_version_id": str(version.id),
+                "scope_source": "LATEST_UPLOAD" if is_current else "ALL_ACTIVE_SKUS",
+                "current_snapshot_available": is_current,
+                "temporal_warnings": temporal_warnings,
             })
         return items
+
+    @staticmethod
+    def _effective_master_values(product, lineage):
+        """Preserve the last accepted non-empty effective-master value only.
+
+        `initial_stock` deliberately does not belong here: it is a current
+        period snapshot and is handled by the selected workflow scope above.
+        """
+        fields = (
+            "lead_time_days", "lot_size", "unit_cost", "holding_rate", "stockout_cost",
+            "product_level", "product_group", "product_class",
+        )
+        values, inherited = {}, False
+        for field in fields:
+            value = getattr(product, field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                for previous in lineage[1:]:
+                    candidate = getattr(previous, field)
+                    if candidate is not None and (not isinstance(candidate, str) or candidate.strip()):
+                        value, inherited = candidate, True
+                        break
+            values[field] = value
+        return values, inherited
 
     @staticmethod
     def supplier_evidence_status(payload, require_dataset_materials=False):

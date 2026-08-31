@@ -37,7 +37,7 @@ class CanonicalBusinessWorkflowService:
     def __init__(self, acceptance_service=None):
         self._acceptance = acceptance_service or BusinessWorkflowAcceptanceService()
 
-    def start(self, session, company_id: UUID, user_id: UUID):
+    def start(self, session, company_id: UUID, user_id: UUID, scope_mode: str = "LATEST_UPLOAD"):
         current = CanonicalExcelIngestionService().get_current_accepted(session, company_id)
         if current is None:
             raise WorkflowDatasetUnavailableError("No workflow-ready dataset is available")
@@ -48,7 +48,7 @@ class CanonicalBusinessWorkflowService:
                 company_id=company_id,
                 user_id=user_id,
                 dataset_id=dataset_id,
-                request_metadata={"source": "canonical_business_workflow_api"},
+                request_metadata={"source": "canonical_business_workflow_api", "params": {"scope_mode": scope_mode}},
             )
         except BusinessWorkflowNotReadyError as exc:
             raise WorkflowReadinessBlockedError(exc.readiness) from exc

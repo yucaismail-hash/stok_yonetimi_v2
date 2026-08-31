@@ -109,7 +109,10 @@ class BusinessWorkflowPresentationService:
         exclusions = coverage.get("exclusions")
         if not isinstance(exclusions, list) or not all(isinstance(item, dict) for item in exclusions):
             return None
-        return AnalysisCoveragePresentation(**{field: coverage[field] for field in required}, exclusions=tuple(exclusions))
+        optional = ("scope_mode", "latest_upload_count", "absent_from_latest_upload_count", "current_snapshot_warning_count", "stale_master_warning_count")
+        values = {field: coverage[field] for field in required}
+        values.update({field: coverage[field] for field in optional if field in coverage})
+        return AnalysisCoveragePresentation(**values, exclusions=tuple(exclusions))
 
     @staticmethod
     def _finalization_view(row):

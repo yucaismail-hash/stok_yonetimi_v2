@@ -17,6 +17,7 @@ class BusinessWorkflowStartRequest(BaseModel):
     """The first workflow has no client-controlled tenant or dataset inputs."""
 
     model_config = ConfigDict(extra="forbid")
+    scope_mode: Literal["LATEST_UPLOAD", "ALL_ACTIVE_SKUS"] = "LATEST_UPLOAD"
 
 
 class CapabilityReadinessResponse(BaseModel):

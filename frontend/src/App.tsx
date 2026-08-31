@@ -25,7 +25,7 @@ import RiskPage from './features/risk/RiskPage';
 import ProfilePage from './features/profile/ProfilePage';
 import AdminPage from './features/admin/AdminPage';
 import TaskListPage from './features/tasks/TaskListPage';
-import { BusinessAnalysisPage, BusinessWorkflowHistoryPage, BusinessWorkflowResultsLandingPage, BusinessWorkflowResultsPage } from './features/business-workflow';
+import { BusinessAnalysisPage, BusinessWorkflowHistoryPage, BusinessWorkflowResultsLandingPage, BusinessWorkflowResultsPage, DataManagementPage } from './features/business-workflow';
 
 // ✅ ACADEMY
 import { AcademyPage, ArticlePage } from './features/academy';
@@ -109,6 +109,7 @@ function AppRoutes() {
       <Route element={<PrivateRoute />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/business-analysis" element={<BusinessAnalysisPage />} />
+        <Route path="/data-management" element={<DataManagementPage />} />
         <Route path="/business-results" element={<BusinessWorkflowResultsLandingPage />} />
         <Route path="/business-history" element={<BusinessWorkflowHistoryPage />} />
         <Route path="/executions/:executionId/results" element={<BusinessWorkflowResultsPage />} />

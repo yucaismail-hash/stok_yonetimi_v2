@@ -15,6 +15,9 @@ class BusinessWorkflowExportTests(unittest.TestCase):
             "status": "EXCLUDED", "message": "Bu ürün için en az 16 haftalık geçmiş veri gerekir. Mevcut geçmiş: 7 hafta.",
             "available_weeks": 7, "required_weeks": 16, "latest_observation_period": "2026-W07",
         }],
+        "scope_mode": "ALL_ACTIVE_SKUS", "latest_upload_count": 1,
+        "absent_from_latest_upload_count": 2, "current_snapshot_warning_count": 2,
+        "stale_master_warning_count": 1,
     }
 
     def test_coverage_summary_and_exclusions_sheet_are_exported(self):
@@ -24,6 +27,8 @@ class BusinessWorkflowExportTests(unittest.TestCase):
         book = load_workbook(workbook)
         self.assertEqual(book.sheetnames, ["Özet", "Analiz_Edilmeyenler"])
         self.assertEqual(book["Özet"]["B2"].value, 3)
+        self.assertEqual(book["Özet"]["B6"].value, "ALL_ACTIVE_SKUS")
+        self.assertEqual(book["Özet"]["B10"].value, 1)
         self.assertEqual(book["Analiz_Edilmeyenler"]["A2"].value, "SKU-C")
         self.assertEqual(book["Analiz_Edilmeyenler"]["G2"].value, 16)
 

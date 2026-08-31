@@ -54,8 +54,10 @@ class BusinessWorkflowAcceptanceService:
    metadata['readiness']=readiness_data
    metadata['capability_material_codes']={
     'backtest':list(readiness.eligible_material_codes('backtest')),
+    'simulation':list(readiness.eligible_material_codes('simulation')),
     'decision_intelligence':list(readiness.eligible_material_codes('decision_intelligence')),
    }
+   metadata['scope_mode']=readiness.coverage.scope_mode if readiness.coverage else 'LATEST_UPLOAD'
    execution=RuntimeExecution(execution_id=uuid7(),company_id=company_id,user_id=user_id,dataset_id=dataset_id,workflow_id='business-'+str(uuid7()),analysis_type=BUSINESS_WORKFLOW_TYPE,state='queued',progress=0,current_stage='planning',accepted_at=datetime.now(timezone.utc),queued_at=datetime.now(timezone.utc),trace_id=trace_id,correlation_id=correlation_id,contract_version='1.0.0',metadata_={'workflow_type':BUSINESS_WORKFLOW_TYPE,'workflow_version':workflow_version,'request_metadata':metadata,'supplier_enrichment':supplier})
    rows=[{'workflow_id':execution.workflow_id,'task_id':tid,'capability':cap,'task_order':i,'required':True,'skippable':False,'dependencies':deps,'state':'pending','max_attempts':3,'timeout_seconds':300} for i,(tid,cap,deps) in enumerate(graph)]
    RuntimeStore(s).create_execution(execution,rows);s.commit();return BusinessWorkflowAcceptanceResult(execution.execution_id,'CREATED',execution.state,float(execution.progress))

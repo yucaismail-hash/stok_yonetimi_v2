@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { useStartBusinessWorkflow } from './api';
+import { useStartBusinessWorkflow, type BusinessWorkflowScopeMode } from './api';
 
 /**
  * Keeps the existing, device-local pointer to a Business Workflow execution.
@@ -24,8 +24,8 @@ export function useBusinessWorkflowEntry(companyId?: string) {
     setDuplicateExecution(false);
   }, [markerKey]);
 
-  const startBusinessWorkflow = useCallback(() => {
-    startWorkflow.mutate(undefined, {
+  const startBusinessWorkflow = useCallback((scopeMode: BusinessWorkflowScopeMode = 'LATEST_UPLOAD') => {
+    startWorkflow.mutate(scopeMode, {
       onSuccess: (response) => {
         if (markerKey) window.localStorage.setItem(markerKey, response.execution_id);
         setDuplicateExecution(response.duplicate);

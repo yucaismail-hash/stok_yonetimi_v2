@@ -40,8 +40,8 @@ class StubWorkflowService:
     mode = "ok"
     calls = []
 
-    def start(self, session, company_id, user_id):
-        self.calls.append(("start", session, company_id, user_id))
+    def start(self, session, company_id, user_id, scope_mode="LATEST_UPLOAD"):
+        self.calls.append(("start", session, company_id, user_id, scope_mode))
         if self.mode == "no_dataset":
             raise WorkflowDatasetUnavailableError("No workflow-ready dataset is available")
         if self.mode == "not_ready":
@@ -111,7 +111,12 @@ class CanonicalBusinessWorkflowApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.json()["execution_id"], str(EXECUTION_ID))
         self.assertFalse(response.json()["duplicate"])
-        self.assertEqual(StubWorkflowService.calls, [("start", db, COMPANY_ID, USER_ID)])
+        self.assertEqual(StubWorkflowService.calls, [("start", db, COMPANY_ID, USER_ID, "LATEST_UPLOAD")])
+
+    def test_all_active_scope_is_forwarded_without_client_tenant_authority(self):
+        response, db = _request("POST", "/api/v2/workflows/business", json={"scope_mode": "ALL_ACTIVE_SKUS"})
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(StubWorkflowService.calls, [("start", db, COMPANY_ID, USER_ID, "ALL_ACTIVE_SKUS")])
 
     def test_duplicate_active_returns_existing(self):
         StubWorkflowService.mode = "duplicate"

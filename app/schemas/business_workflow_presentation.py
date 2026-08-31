@@ -36,6 +36,11 @@ class AnalysisCoveragePresentation(BaseModel):
     partially_analyzed_count: int
     excluded_count: int
     exclusions: tuple[dict[str, Any], ...]
+    scope_mode: str = "LATEST_UPLOAD"
+    latest_upload_count: int = 0
+    absent_from_latest_upload_count: int = 0
+    current_snapshot_warning_count: int = 0
+    stale_master_warning_count: int = 0
 
 
 class DecisionFinalizationPresentation(BaseModel):

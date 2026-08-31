@@ -7,6 +7,7 @@ export const ROUTES = {
   BUSINESS_ANALYSIS: '/business-analysis',
   BUSINESS_RESULTS: '/business-results',
   BUSINESS_HISTORY: '/business-history',
+  DATA_MANAGEMENT: '/data-management',
   SAFETY_STOCK: '/safety-stock',
   FORECAST: '/forecast',
   SIMULATION: '/simulation',

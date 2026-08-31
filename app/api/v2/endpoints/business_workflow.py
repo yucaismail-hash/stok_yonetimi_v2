@@ -57,7 +57,7 @@ def start_business_workflow(
 ):
     try:
         execution, duplicate = CanonicalBusinessWorkflowService().start(
-            db, current_user.company_id, current_user.id,
+            db, current_user.company_id, current_user.id, _request.scope_mode,
         )
     except WorkflowReadinessBlockedError as exc:
         raise HTTPException(status_code=409, detail={"code": "BUSINESS_WORKFLOW_NOT_READY", "readiness": exc.readiness.to_dict()}) from exc
@@ -81,11 +81,13 @@ def start_business_workflow(
 
 
 @router.get("/workflows/business/readiness", response_model=BusinessWorkflowReadinessResponse)
-def get_business_workflow_readiness(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+def get_business_workflow_readiness(scope_mode: str = "LATEST_UPLOAD", db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    if scope_mode not in {"LATEST_UPLOAD", "ALL_ACTIVE_SKUS"}:
+        raise HTTPException(status_code=422, detail="Unsupported workflow scope mode")
     current = CanonicalExcelIngestionService().get_current_accepted(db, current_user.company_id)
     if current is None:
         raise HTTPException(status_code=409, detail="No workflow-ready dataset is available")
-    readiness = BusinessWorkflowReadinessService().evaluate(db, current_user.company_id, current_user.id, UUID(current["dataset_id"]))
+    readiness = BusinessWorkflowReadinessService().evaluate(db, current_user.company_id, current_user.id, UUID(current["dataset_id"]), params={"scope_mode": scope_mode})
     return readiness.to_dict()
 
 

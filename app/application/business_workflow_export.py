@@ -23,6 +23,11 @@ class BusinessWorkflowExportService:
         summary.append(["Tam analiz", coverage.get("fully_analyzed_count", 0)])
         summary.append(["Kısmi analiz", coverage.get("partially_analyzed_count", 0)])
         summary.append(["Analiz edilmeyen", coverage.get("excluded_count", 0)])
+        summary.append(["Kapsam modu", coverage.get("scope_mode", "LATEST_UPLOAD")])
+        summary.append(["Son yüklemede bulunan", coverage.get("latest_upload_count", 0)])
+        summary.append(["Son yüklemede olmayan", coverage.get("absent_from_latest_upload_count", 0)])
+        summary.append(["Güncel snapshot uyarısı", coverage.get("current_snapshot_warning_count", 0)])
+        summary.append(["Önceki yüklemeden taşınan master uyarısı", coverage.get("stale_master_warning_count", 0)])
         exclusions = workbook.create_sheet("Analiz_Edilmeyenler")
         exclusions.append(["Ürün kodu", "Ürün adı", "Modül", "Durum", "Açıklama", "Mevcut hafta", "Gerekli hafta", "Son gözlem dönemi"])
         for item in coverage.get("exclusions", []):

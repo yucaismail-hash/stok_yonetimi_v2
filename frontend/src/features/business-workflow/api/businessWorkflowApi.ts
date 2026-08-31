@@ -12,6 +12,8 @@ export type ExecutionStatus =
   | 'failed'
   | 'cancelled';
 
+export type BusinessWorkflowScopeMode = 'LATEST_UPLOAD' | 'ALL_ACTIVE_SKUS';
+
 export interface BusinessWorkflowStartResponse {
   execution_id: string;
   status: ExecutionStatus;
@@ -45,6 +47,8 @@ export interface MaterialReadiness {
   available_weeks: number;
   latest_observation_period: string | null;
   capabilities: CapabilityReadiness[];
+  scope_source: string;
+  temporal_warnings: string[];
 }
 
 export interface AnalysisCoverage {
@@ -53,6 +57,11 @@ export interface AnalysisCoverage {
   partially_analyzed_count: number;
   excluded_count: number;
   exclusions: AnalysisExclusion[];
+  scope_mode: BusinessWorkflowScopeMode;
+  latest_upload_count: number;
+  absent_from_latest_upload_count: number;
+  current_snapshot_warning_count: number;
+  stale_master_warning_count: number;
 }
 
 export interface AnalysisExclusion {
@@ -313,18 +322,18 @@ export function classifyBusinessWorkflowError(error: unknown, endpoint: 'start' 
   return new BusinessWorkflowApiError('unknown', status);
 }
 
-export async function startBusinessWorkflow(): Promise<BusinessWorkflowStartResponse> {
+export async function startBusinessWorkflow(scopeMode: BusinessWorkflowScopeMode = 'LATEST_UPLOAD'): Promise<BusinessWorkflowStartResponse> {
   try {
-    const response = await api.post<BusinessWorkflowStartResponse>('/api/v2/workflows/business', {});
+    const response = await api.post<BusinessWorkflowStartResponse>('/api/v2/workflows/business', { scope_mode: scopeMode });
     return response.data;
   } catch (error) {
     throw classifyBusinessWorkflowError(error, 'start');
   }
 }
 
-export async function getBusinessWorkflowReadiness(): Promise<BusinessWorkflowReadinessResponse> {
+export async function getBusinessWorkflowReadiness(scopeMode: BusinessWorkflowScopeMode = 'LATEST_UPLOAD'): Promise<BusinessWorkflowReadinessResponse> {
   try {
-    const response = await api.get<BusinessWorkflowReadinessResponse>('/api/v2/workflows/business/readiness');
+    const response = await api.get<BusinessWorkflowReadinessResponse>('/api/v2/workflows/business/readiness', { params: { scope_mode: scopeMode } });
     return response.data;
   } catch (error) {
     throw classifyBusinessWorkflowError(error, 'start');

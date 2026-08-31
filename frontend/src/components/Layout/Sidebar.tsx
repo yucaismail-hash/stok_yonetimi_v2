@@ -14,6 +14,7 @@ import {
   History,
   Workflow,
   BadgeCheck,
+  Database,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -41,6 +42,7 @@ const menuGroups = [
         icon: <Workflow size={18} strokeWidth={1.8} />,
         requiresDataset: true,
       },
+      { path: '/data-management', label: 'Veri Yönetimi', icon: <Database size={18} strokeWidth={1.8} /> },
       {
         path: '/business-results',
         label: 'Sonuçlar & Kararlar',

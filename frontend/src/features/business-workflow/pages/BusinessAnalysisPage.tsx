@@ -1,11 +1,12 @@
-import { Alert, Box, Button, Card, CardContent, Chip, Grid, Paper, Stack, Step, StepLabel, Stepper, Typography } from '@mui/material';
+import { Alert, Box, Button, Card, CardContent, Chip, Grid, MenuItem, Paper, Select, Stack, Step, StepLabel, Stepper, Typography } from '@mui/material';
+import { useState } from 'react';
 import { CheckCircle, PlayArrow } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 
 import { ROUTES } from '../../../constants/routes';
 import { useAuth } from '../../../hooks/useAuth';
 import { useCurrentPilotDataset } from '../../dataset/api/pilotDatasetQueries';
-import { BusinessWorkflowApiError, useBusinessWorkflowReadiness } from '../api';
+import { BusinessWorkflowApiError, type BusinessWorkflowScopeMode, useBusinessWorkflowReadiness } from '../api';
 import { BusinessWorkflowTracking } from '../components/BusinessWorkflowTracking';
 import { useBusinessWorkflowEntry } from '../useBusinessWorkflowEntry';
 
@@ -40,7 +41,8 @@ export default function BusinessAnalysisPage() {
   const { user } = useAuth();
   const dataset = useCurrentPilotDataset(user?.company_id);
   const entry = useBusinessWorkflowEntry(user?.company_id);
-  const readiness = useBusinessWorkflowReadiness(Boolean(dataset.data));
+  const [scopeMode, setScopeMode] = useState<BusinessWorkflowScopeMode>('LATEST_UPLOAD');
+  const readiness = useBusinessWorkflowReadiness(scopeMode, Boolean(dataset.data));
   const workflowBlocked = readiness.data?.status === 'BLOCKED';
   const coverage = readiness.data?.coverage;
 
@@ -96,6 +98,14 @@ export default function BusinessAnalysisPage() {
             <Card variant="outlined">
               <CardContent><Stack spacing={1.25}>
                 <Typography component="h2" variant="h6">Veri Uygunluk Kontrolü</Typography>
+                <Stack spacing={0.5} sx={{ maxWidth: 620 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 600 }}>Analiz kapsamı</Typography>
+                  <Select size="small" value={scopeMode} onChange={(event) => setScopeMode(event.target.value as BusinessWorkflowScopeMode)} inputProps={{ 'aria-label': 'Analiz kapsamı' }}>
+                    <MenuItem value="LATEST_UPLOAD">Yalnızca son yüklemedeki SKU'ları analiz et</MenuItem>
+                    <MenuItem value="ALL_ACTIVE_SKUS">Sistemde kayıtlı tüm aktif SKU'ları analiz et</MenuItem>
+                  </Select>
+                  {scopeMode === 'ALL_ACTIVE_SKUS' && <Alert severity="warning">Son yüklemede bulunmayan SKU’larda geçmiş ve etkili master veriler kullanılabilir; güncel stok, açık sipariş ve planlanan teslim verisi taşınmaz. Sonuç kalitesi etkilenebilir.</Alert>}
+                </Stack>
                 {readiness.isPending && <Typography role="status" color="text.secondary">İşletme analizi uygunluğu kontrol ediliyor…</Typography>}
                 {readiness.isError && <Alert severity="warning" action={<Button color="inherit" onClick={() => readiness.refetch()}>Tekrar dene</Button>}>İşletme analizi uygunluğu şu anda doğrulanamadı. Başlatma sınırı sunucuda korunur.</Alert>}
                 {readiness.data?.capabilities.map((capability) => (
@@ -130,7 +140,7 @@ export default function BusinessAnalysisPage() {
               <Card variant="outlined"><CardContent><Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
                 <Typography component="h2" variant="h6">İşletme analizini başlatın</Typography>
                 <Typography color="text.secondary">Aktif veri setiniz için bütünleşik analiz akışı güvenli biçimde sıraya alınır.</Typography>
-                <Button variant="contained" startIcon={<PlayArrow />} onClick={entry.startBusinessWorkflow} disabled={entry.startWorkflow.isPending || workflowBlocked || readiness.isPending}>
+                <Button variant="contained" startIcon={<PlayArrow />} onClick={() => entry.startBusinessWorkflow(scopeMode)} disabled={entry.startWorkflow.isPending || workflowBlocked || readiness.isPending}>
                   {entry.startWorkflow.isPending ? 'İşletme analizi başlatılıyor…' : 'İşletme Analizini Başlat'}
                 </Button>
                 {entry.startWorkflow.isError && <Alert severity="warning">{startErrorMessage(entry.startWorkflow.error)}</Alert>}
