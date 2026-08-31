@@ -11,6 +11,9 @@ import {
   School,
   Truck,
   Sparkles,
+  History,
+  Workflow,
+  BadgeCheck,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -30,7 +33,28 @@ const menuGroups = [
     ]
   },
   {
-    title: 'KLASİK ARAÇLAR',
+    title: 'KARAR MERKEZİ',
+    items: [
+      {
+        path: '/business-analysis',
+        label: 'İşletme Analizi',
+        icon: <Workflow size={18} strokeWidth={1.8} />,
+        requiresDataset: true,
+      },
+      {
+        path: '/business-results',
+        label: 'Sonuçlar & Kararlar',
+        icon: <BadgeCheck size={18} strokeWidth={1.8} />,
+      },
+      {
+        path: '/business-history',
+        label: 'İşlem Geçmişi',
+        icon: <History size={18} strokeWidth={1.8} />,
+      },
+    ]
+  },
+  {
+    title: 'TEKİL ANALİZ ARAÇLARI',
     items: [
       {
         path: '/safety-stock', 

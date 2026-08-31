@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   Alert,
   Box,
@@ -16,15 +16,12 @@ import {
   Typography,
 } from '@mui/material';
 import { CheckCircle, CloudUpload, Dataset } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 
 import ImportWizard from '../../components/ImportWizard';
 import { useAuth } from '../../hooks/useAuth';
 import { useCurrentPilotDataset } from '../dataset/api/pilotDatasetQueries';
-import {
-  BusinessWorkflowApiError,
-  BusinessWorkflowTracking,
-  useStartBusinessWorkflow,
-} from '../business-workflow';
+import { ROUTES } from '../../constants/routes';
 
 const onboardingSteps = ['Excel dosyanızı yükleyin', 'Veriyi doğrulayın', 'Veri setini kabul edin'];
 
@@ -61,36 +58,10 @@ function SummaryCard({ label, value }: { label: string; value: string }) {
 }
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const currentDataset = useCurrentPilotDataset(user?.company_id);
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [executionId, setExecutionId] = useState<string | undefined>();
-  const [duplicateExecution, setDuplicateExecution] = useState(false);
-  const startWorkflow = useStartBusinessWorkflow();
-  const executionMarkerKey = user?.company_id
-    ? `stokonomi:business-workflow:active-execution:${user.company_id}`
-    : undefined;
-
-  useEffect(() => {
-    setExecutionId(executionMarkerKey ? window.localStorage.getItem(executionMarkerKey) || undefined : undefined);
-    setDuplicateExecution(false);
-  }, [executionMarkerKey]);
-
-  const clearUnavailableExecution = useCallback(() => {
-    if (executionMarkerKey) window.localStorage.removeItem(executionMarkerKey);
-    setExecutionId(undefined);
-    setDuplicateExecution(false);
-  }, [executionMarkerKey]);
-
-  const startBusinessWorkflow = () => {
-    startWorkflow.mutate(undefined, {
-      onSuccess: (response) => {
-        if (executionMarkerKey) window.localStorage.setItem(executionMarkerKey, response.execution_id);
-        setDuplicateExecution(response.duplicate);
-        setExecutionId(response.execution_id);
-      },
-    });
-  };
 
   const displayName = user?.full_name?.trim() || user?.email || 'Kullanıcı';
 
@@ -182,53 +153,15 @@ export default function DashboardPage() {
           </Box>
           <Chip label="Analize Hazır" color="success" sx={{ alignSelf: 'flex-start' }} />
 
-          {executionId ? (
-            <Stack spacing={1}>
-              {duplicateExecution && <Alert severity="info">Devam eden analiz bulundu; mevcut çalışmayı gösteriyoruz.</Alert>}
-              <Button
-                variant="outlined"
-                onClick={() => document.getElementById('business-workflow-tracking')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                Devam Eden Analizi Gör
-              </Button>
-              {startWorkflow.isError && (
-                <Alert severity="warning">
-                  Analiz yeniden başlatılamadı. Lütfen bağlantınızı kontrol edip tekrar deneyin.
-                </Alert>
-              )}
-              <BusinessWorkflowTracking
-                executionId={executionId}
-                onUnavailable={clearUnavailableExecution}
-                onStartAgain={startBusinessWorkflow}
-              />
-            </Stack>
-          ) : (
-            <Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
-              <Button
-                variant="contained"
-                onClick={startBusinessWorkflow}
-                disabled={startWorkflow.isPending}
-                aria-describedby="business-workflow-help"
-              >
-                {startWorkflow.isPending ? 'Analiz başlatılıyor…' : 'Analizi Başlat'}
-              </Button>
-              <Typography id="business-workflow-help" variant="body2" color="text.secondary">
-                Hazır veri setiniz için tüm business workflow analizleri sıraya alınır.
-              </Typography>
-              {startWorkflow.isError && (
-                <Alert severity="warning">
-                  {startWorkflow.error instanceof BusinessWorkflowApiError && startWorkflow.error.kind === 'dataset-unavailable'
-                    ? 'Veri setiniz henüz analiz için hazır değil.'
-                    : startWorkflow.error instanceof BusinessWorkflowApiError && startWorkflow.error.kind === 'service-unavailable'
-                      ? 'Analiz kuyruğu geçici olarak kullanılamıyor. Lütfen daha sonra tekrar deneyin.'
-                      : startWorkflow.error instanceof BusinessWorkflowApiError && startWorkflow.error.kind === 'unauthorized'
-                        ? 'Oturumunuz sona ermiş olabilir. Lütfen tekrar giriş yapın.'
-                        : 'Analiz başlatılamadı. Bağlantınızı kontrol edip tekrar deneyin.'}
-                </Alert>
-              )}
-            </Stack>
-          )}
+          <Card variant="outlined"><CardContent><Stack spacing={1} sx={{ alignItems: 'flex-start' }}>
+            <Typography component="h2" variant="h6">Bütünleşik işletme analizi</Typography>
+            <Typography id="business-workflow-help" variant="body2" color="text.secondary">
+              Tahmin, stok, tedarikçi uygunluğu, simülasyon, geçmiş performans ve karar çıktıları tek bir işletme analizi akışında hazırlanır.
+            </Typography>
+            <Button variant="contained" onClick={() => navigate(ROUTES.BUSINESS_ANALYSIS)} aria-describedby="business-workflow-help">
+              İşletme Analizini Başlat
+            </Button>
+          </Stack></CardContent></Card>
         </Stack>
       )}
 
