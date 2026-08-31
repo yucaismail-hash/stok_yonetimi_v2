@@ -21,6 +21,22 @@ export interface BusinessWorkflowStartResponse {
   duplicate: boolean;
 }
 
+export interface CapabilityReadiness {
+  capability: string;
+  status: 'READY' | 'WARNING' | 'BLOCKED' | 'OPTIONAL_UNAVAILABLE';
+  reason_code: string | null;
+  message: string | null;
+  required_weeks: number | null;
+  available_weeks: number | null;
+  blocked_by: string | null;
+}
+
+export interface BusinessWorkflowReadinessResponse {
+  dataset_id: string;
+  status: 'READY' | 'BLOCKED';
+  capabilities: CapabilityReadiness[];
+}
+
 export interface ExecutionDetail {
   execution_id: string;
   status: ExecutionStatus;
@@ -268,6 +284,15 @@ export function classifyBusinessWorkflowError(error: unknown, endpoint: 'start' 
 export async function startBusinessWorkflow(): Promise<BusinessWorkflowStartResponse> {
   try {
     const response = await api.post<BusinessWorkflowStartResponse>('/api/v2/workflows/business', {});
+    return response.data;
+  } catch (error) {
+    throw classifyBusinessWorkflowError(error, 'start');
+  }
+}
+
+export async function getBusinessWorkflowReadiness(): Promise<BusinessWorkflowReadinessResponse> {
+  try {
+    const response = await api.get<BusinessWorkflowReadinessResponse>('/api/v2/workflows/business/readiness');
     return response.data;
   } catch (error) {
     throw classifyBusinessWorkflowError(error, 'start');

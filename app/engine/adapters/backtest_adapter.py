@@ -1,8 +1,9 @@
 """Adapter for the real rolling Safety Stock BacktestEngine."""
 from app.engine.capability_executor import CapabilityInputValidationError
 from app.engine.capability_dataflow import selected_backtest_strategy, CapabilityDataflowError
+DEFAULT_TEST_WINDOW = 12
 def backtest_adapter(implementation, prepared, request):
- p=request.params; mode=p.get('mode','COMPARE_CANDIDATES'); window=p.get('test_window',12)
+ p=request.params; mode=p.get('mode','COMPARE_CANDIDATES'); window=p.get('test_window',DEFAULT_TEST_WINDOW)
  if isinstance(window,bool) or not isinstance(window,int) or window<1: raise CapabilityInputValidationError('invalid test_window')
  strategies=p.get('strategies')
  if mode=='VALIDATE_SELECTED':

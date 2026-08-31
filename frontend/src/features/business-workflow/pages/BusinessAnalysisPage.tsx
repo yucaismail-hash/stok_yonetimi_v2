@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../../../constants/routes';
 import { useAuth } from '../../../hooks/useAuth';
 import { useCurrentPilotDataset } from '../../dataset/api/pilotDatasetQueries';
-import { BusinessWorkflowApiError } from '../api';
+import { BusinessWorkflowApiError, useBusinessWorkflowReadiness } from '../api';
 import { BusinessWorkflowTracking } from '../components/BusinessWorkflowTracking';
 import { useBusinessWorkflowEntry } from '../useBusinessWorkflowEntry';
 
@@ -17,6 +17,11 @@ const workflowSteps = [
   'Geçmiş Performans Testi',
   'Karar Zekâsı',
 ];
+
+const capabilityLabels: Record<string, string> = {
+  forecast: 'Talep Tahmini', safety_stock: 'Emniyet Stoku', supplier: 'Tedarikçi Analizi',
+  simulation: 'Simülasyon', backtest: 'Geçmiş Performans Testi', decision_intelligence: 'Karar Zekâsı',
+};
 
 function SummaryCard({ label, value }: { label: string; value: string }) {
   return <Card variant="outlined"><CardContent><Typography variant="body2" color="text.secondary">{label}</Typography><Typography variant="h6">{value}</Typography></CardContent></Card>;
@@ -35,6 +40,8 @@ export default function BusinessAnalysisPage() {
   const { user } = useAuth();
   const dataset = useCurrentPilotDataset(user?.company_id);
   const entry = useBusinessWorkflowEntry(user?.company_id);
+  const readiness = useBusinessWorkflowReadiness(Boolean(dataset.data));
+  const workflowBlocked = readiness.data?.status === 'BLOCKED';
 
   return (
     <Box sx={{ width: '100%', maxWidth: 1280, mx: 'auto' }}>
@@ -70,6 +77,23 @@ export default function BusinessAnalysisPage() {
             </Card>
 
             <Card variant="outlined">
+              <CardContent><Stack spacing={1.25}>
+                <Typography component="h2" variant="h6">Veri Uygunluk Kontrolü</Typography>
+                {readiness.isPending && <Typography role="status" color="text.secondary">İşletme analizi uygunluğu kontrol ediliyor…</Typography>}
+                {readiness.isError && <Alert severity="warning" action={<Button color="inherit" onClick={() => readiness.refetch()}>Tekrar dene</Button>}>İşletme analizi uygunluğu şu anda doğrulanamadı. Başlatma sınırı sunucuda korunur.</Alert>}
+                {readiness.data?.capabilities.map((capability) => (
+                  <Stack key={capability.capability} direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', alignItems: { sm: 'center' }, borderBottom: 1, borderColor: 'divider', pb: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600 }}>{capabilityLabels[capability.capability] || capability.capability}</Typography>
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                      <Chip size="small" color={capability.status === 'READY' ? 'success' : capability.status === 'BLOCKED' ? 'error' : 'default'} label={capability.status === 'READY' ? 'Çalıştırılabilir' : capability.status === 'OPTIONAL_UNAVAILABLE' ? 'Uygulanmayacak' : 'Engellendi'} />
+                      {capability.message && <Typography variant="body2" color="text.secondary">{capability.message}</Typography>}
+                    </Stack>
+                  </Stack>
+                ))}
+              </Stack></CardContent>
+            </Card>
+
+            <Card variant="outlined">
               <CardContent>
                 <Stack spacing={2}>
                   <Box><Typography component="h2" variant="h6">Entegre analiz akışı</Typography><Typography color="text.secondary">Adımlar sırayla ve arka planda yürütülür; tedarikçi adımı uygun olduğunda eklenir.</Typography></Box>
@@ -89,7 +113,7 @@ export default function BusinessAnalysisPage() {
               <Card variant="outlined"><CardContent><Stack spacing={1.5} sx={{ alignItems: 'flex-start' }}>
                 <Typography component="h2" variant="h6">İşletme analizini başlatın</Typography>
                 <Typography color="text.secondary">Aktif veri setiniz için bütünleşik analiz akışı güvenli biçimde sıraya alınır.</Typography>
-                <Button variant="contained" startIcon={<PlayArrow />} onClick={entry.startBusinessWorkflow} disabled={entry.startWorkflow.isPending}>
+                <Button variant="contained" startIcon={<PlayArrow />} onClick={entry.startBusinessWorkflow} disabled={entry.startWorkflow.isPending || workflowBlocked || readiness.isPending}>
                   {entry.startWorkflow.isPending ? 'İşletme analizi başlatılıyor…' : 'İşletme Analizini Başlat'}
                 </Button>
                 {entry.startWorkflow.isError && <Alert severity="warning">{startErrorMessage(entry.startWorkflow.error)}</Alert>}

@@ -5,6 +5,7 @@ from uuid import UUID
 from app.application.business_workflow_acceptance import (
     BUSINESS_WORKFLOW_TYPE,
     BusinessWorkflowAcceptanceService,
+    BusinessWorkflowNotReadyError,
 )
 from app.application.canonical_excel_ingestion import CanonicalExcelIngestionService
 from app.engine.runtime_store import RuntimeStore
@@ -12,6 +13,12 @@ from app.engine.runtime_store import RuntimeStore
 
 class WorkflowDatasetUnavailableError(RuntimeError):
     pass
+
+
+class WorkflowReadinessBlockedError(WorkflowDatasetUnavailableError):
+    def __init__(self, readiness):
+        self.readiness = readiness
+        super().__init__("BUSINESS_WORKFLOW_NOT_READY")
 
 
 class WorkflowNotFoundError(LookupError):
@@ -36,12 +43,15 @@ class CanonicalBusinessWorkflowService:
             raise WorkflowDatasetUnavailableError("No workflow-ready dataset is available")
 
         dataset_id = UUID(current["dataset_id"])
-        accepted = self._acceptance.accept_or_resolve(
-            company_id=company_id,
-            user_id=user_id,
-            dataset_id=dataset_id,
-            request_metadata={"source": "canonical_business_workflow_api"},
-        )
+        try:
+            accepted = self._acceptance.accept_or_resolve(
+                company_id=company_id,
+                user_id=user_id,
+                dataset_id=dataset_id,
+                request_metadata={"source": "canonical_business_workflow_api"},
+            )
+        except BusinessWorkflowNotReadyError as exc:
+            raise WorkflowReadinessBlockedError(exc.readiness) from exc
         execution = RuntimeStore(session).get_execution(accepted.execution_id, company_id)
         if execution is None:
             raise RuntimeError("Accepted workflow could not be read back")

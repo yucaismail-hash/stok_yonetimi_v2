@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.application.canonical_business_workflow import (
     CanonicalBusinessWorkflowService,
     WorkflowDatasetUnavailableError,
+    WorkflowReadinessBlockedError,
     WorkflowNotFoundError,
     WorkflowResultNotReadyError,
     WorkflowResultUnavailableError,
@@ -25,7 +26,10 @@ from app.schemas.workflow import (
     BusinessWorkflowStartRequest,
     BusinessWorkflowStartResponse,
     BusinessWorkflowStatusResponse,
+    BusinessWorkflowReadinessResponse,
 )
+from app.application.business_workflow_readiness import BusinessWorkflowReadinessService
+from app.application.canonical_excel_ingestion import CanonicalExcelIngestionService
 from app.schemas.business_workflow_presentation import (
     BusinessWorkflowDecisionPresentationResponse,
 )
@@ -53,6 +57,8 @@ def start_business_workflow(
         execution, duplicate = CanonicalBusinessWorkflowService().start(
             db, current_user.company_id, current_user.id,
         )
+    except WorkflowReadinessBlockedError as exc:
+        raise HTTPException(status_code=409, detail={"code": "BUSINESS_WORKFLOW_NOT_READY", "readiness": exc.readiness.to_dict()}) from exc
     except WorkflowDatasetUnavailableError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except HTTPException:
@@ -70,6 +76,15 @@ def start_business_workflow(
         dataset_id=execution.dataset_id,
         duplicate=duplicate,
     )
+
+
+@router.get("/workflows/business/readiness", response_model=BusinessWorkflowReadinessResponse)
+def get_business_workflow_readiness(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+    current = CanonicalExcelIngestionService().get_current_accepted(db, current_user.company_id)
+    if current is None:
+        raise HTTPException(status_code=409, detail="No workflow-ready dataset is available")
+    readiness = BusinessWorkflowReadinessService().evaluate(db, current_user.company_id, current_user.id, UUID(current["dataset_id"]))
+    return readiness.to_dict()
 
 
 @router.get(

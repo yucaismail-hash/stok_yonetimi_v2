@@ -93,6 +93,20 @@ class DatasetRuntimeProvider:
         # Legacy pilot datasets predate DatasetVersionProductInput. Remove this fallback only when they are retired.
         return (payload.get("items", []) if isinstance(payload, dict) else []), {"mode": "automatic"}
 
+    def preflight(self, request):
+        """Return canonical persisted evidence for readiness checks; never writes or invokes analytics."""
+        if request.capability not in (Capability.DEMAND_FORECAST, Capability.SAFETY_STOCK, Capability.SIMULATION, Capability.BACKTEST):
+            raise DatasetInputUnavailableError("capability dataset input is unavailable")
+        dataset = self._session.query(Dataset).filter_by(id=request.dataset_id, company_id=request.company_id, user_id=request.user_id, is_active=True).one_or_none()
+        if not dataset or not dataset.encrypted_data:
+            raise DatasetInputUnavailableError("authorized dataset is unavailable")
+        try:
+            payload = self._encryption_service_factory(self._session).decrypt_dataset(request.user_id, dataset.encrypted_data)
+        except Exception as exc:
+            raise DatasetInputUnavailableError("dataset payload cannot be loaded") from exc
+        items, configured_service_level = self._runtime_items(dataset, request, payload)
+        return {"items": items, "supplier": self.supplier_evidence_status(payload, require_dataset_materials=True), "dataset_id": str(dataset.id), "service_level": configured_service_level}
+
     def _official_v3_items(self, dataset, request, payload):
         if dataset.state != DatasetState.APPROVED:
             raise DatasetInputUnavailableError("official V3 dataset is not accepted")

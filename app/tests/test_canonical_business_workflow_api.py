@@ -11,9 +11,11 @@ from fastapi import FastAPI
 import app.api.v2.endpoints.business_workflow as workflow_api
 from app.application.canonical_business_workflow import (
     WorkflowDatasetUnavailableError,
+    WorkflowReadinessBlockedError,
     WorkflowNotFoundError,
     WorkflowResultNotReadyError,
 )
+from app.application.business_workflow_readiness import BusinessWorkflowReadiness, CapabilityReadiness
 from app.auth import get_current_user
 from app.database import get_db
 
@@ -42,6 +44,8 @@ class StubWorkflowService:
         self.calls.append(("start", session, company_id, user_id))
         if self.mode == "no_dataset":
             raise WorkflowDatasetUnavailableError("No workflow-ready dataset is available")
+        if self.mode == "not_ready":
+            raise WorkflowReadinessBlockedError(BusinessWorkflowReadiness(str(DATASET_ID), "BLOCKED", (CapabilityReadiness("backtest", "BLOCKED", "INSUFFICIENT_HISTORY", "Geçmiş veri yetersiz.", 16, 12),)))
         return _execution(), self.mode == "duplicate"
 
     @classmethod
@@ -94,6 +98,13 @@ class CanonicalBusinessWorkflowApiTests(unittest.TestCase):
         StubWorkflowService.mode = "no_dataset"
         response, _ = _request("POST", "/api/v2/workflows/business", json={})
         self.assertEqual(response.status_code, 409)
+
+    def test_known_mandatory_readiness_block_is_structured(self):
+        StubWorkflowService.mode = "not_ready"
+        response, _ = _request("POST", "/api/v2/workflows/business", json={})
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"]["code"], "BUSINESS_WORKFLOW_NOT_READY")
+        self.assertEqual(response.json()["detail"]["readiness"]["capabilities"][0]["reason_code"], "INSUFFICIENT_HISTORY")
 
     def test_ready_dataset_start_is_tenant_scoped(self):
         response, db = _request("POST", "/api/v2/workflows/business", json={})

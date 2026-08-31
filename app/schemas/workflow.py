@@ -19,6 +19,22 @@ class BusinessWorkflowStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class CapabilityReadinessResponse(BaseModel):
+    capability: str
+    status: Literal["READY", "WARNING", "BLOCKED", "OPTIONAL_UNAVAILABLE"]
+    reason_code: Optional[str] = None
+    message: Optional[str] = None
+    required_weeks: Optional[int] = None
+    available_weeks: Optional[int] = None
+    blocked_by: Optional[str] = None
+
+
+class BusinessWorkflowReadinessResponse(BaseModel):
+    dataset_id: UUID
+    status: Literal["READY", "BLOCKED"]
+    capabilities: list[CapabilityReadinessResponse]
+
+
 class BusinessWorkflowStartResponse(BaseModel):
     execution_id: UUID
     status: RuntimeStatus

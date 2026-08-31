@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   BusinessWorkflowApiError,
   getBusinessWorkflowDecision,
+  getBusinessWorkflowReadiness,
   getExecution,
   getExecutionResult,
   recordDecisionFeedback,
@@ -24,6 +25,7 @@ export const businessWorkflowKeys = {
   execution: (executionId: string) => ['business-workflow', 'execution', executionId] as const,
   result: (executionId: string) => ['business-workflow', 'result', executionId] as const,
   decision: (executionId: string) => ['business-workflow', 'decision', executionId] as const,
+  readiness: ['business-workflow', 'readiness'] as const,
   feedback: (executionId: string, snapshotId: string) => ['business-workflow', 'decision-feedback', executionId, snapshotId] as const,
 };
 
@@ -39,6 +41,16 @@ export function isActiveExecution(status?: ExecutionStatus) {
 
 export function useStartBusinessWorkflow() {
   return useMutation({ mutationFn: startBusinessWorkflow });
+}
+
+export function useBusinessWorkflowReadiness(enabled = true) {
+  return useQuery({
+    queryKey: businessWorkflowKeys.readiness,
+    queryFn: getBusinessWorkflowReadiness,
+    enabled,
+    staleTime: 30_000,
+    retry: retryNonClientError,
+  });
 }
 
 export function useExecution(executionId?: string) {
