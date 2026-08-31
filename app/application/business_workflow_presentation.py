@@ -18,6 +18,7 @@ from app.models.business_workflow_decision_finalization import (
 from app.models.decision_snapshot import DecisionSnapshot, DecisionSnapshotCandidate
 from app.schemas.business_workflow_presentation import (
     AggregatePresentation,
+    AnalysisCoveragePresentation,
     BusinessWorkflowDecisionPresentationResponse,
     DecisionAssociationPresentation,
     DecisionCandidatePresentation,
@@ -96,6 +97,21 @@ class BusinessWorkflowPresentationService:
         )
 
     @staticmethod
+    def _coverage_view(aggregate):
+        if aggregate is None or not isinstance(aggregate.inline_result, dict):
+            return None
+        coverage = aggregate.inline_result.get("analysis_coverage")
+        if not isinstance(coverage, dict):
+            return None
+        required = ("total_scope_count", "fully_analyzed_count", "partially_analyzed_count", "excluded_count")
+        if not all(isinstance(coverage.get(field), int) and coverage[field] >= 0 for field in required):
+            return None
+        exclusions = coverage.get("exclusions")
+        if not isinstance(exclusions, list) or not all(isinstance(item, dict) for item in exclusions):
+            return None
+        return AnalysisCoveragePresentation(**{field: coverage[field] for field in required}, exclusions=tuple(exclusions))
+
+    @staticmethod
     def _finalization_view(row):
         if row is None:
             return None
@@ -164,6 +180,7 @@ class BusinessWorkflowPresentationService:
             ).one_or_none()
             execution_view = self._execution_view(execution)
             aggregate_view = self._aggregate_view(aggregate)
+            coverage_view = self._coverage_view(aggregate)
             finalization_view = self._finalization_view(finalization)
         finally:
             session.close()
@@ -220,4 +237,5 @@ class BusinessWorkflowPresentationService:
             aggregate=aggregate_view,
             decision_finalization=finalization_view,
             decisions=tuple(decision_items),
+            analysis_coverage=coverage_view,
         )

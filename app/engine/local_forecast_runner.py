@@ -102,7 +102,9 @@ class LocalForecastRunner:
                 upstream={'safety_stock':store.get_validated_upstream_result(execution_id,'safety_stock',company_id)}
             params=(execution.metadata_ or {}).get('request_metadata',{}).get('params',{})
             if capability is Capability.BACKTEST: params={**params,'mode':'VALIDATE_SELECTED'}
-            request=CapabilityExecutionRequest(execution_id,execution.workflow_id,task_id,capability,company_id,execution.user_id,execution.dataset_id,task.timeout_seconds or 300,params=params,upstream_results=upstream,attempt=attempt.attempt_number)
+            scope=(execution.metadata_ or {}).get('request_metadata',{}).get('capability_material_codes',{})
+            material_codes=scope.get('backtest') if capability is Capability.BACKTEST and isinstance(scope,dict) else None
+            request=CapabilityExecutionRequest(execution_id,execution.workflow_id,task_id,capability,company_id,execution.user_id,execution.dataset_id,task.timeout_seconds or 300,material_codes=material_codes,params=params,upstream_results=upstream,attempt=attempt.attempt_number)
             result=await self._executor(session).execute(request)
             if result.state is not TaskStatus.COMPLETED:
                 error=result.errors[0].to_dict()

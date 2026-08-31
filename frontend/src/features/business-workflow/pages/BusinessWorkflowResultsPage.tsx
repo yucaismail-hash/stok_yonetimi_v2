@@ -25,6 +25,7 @@ import {
   type DecisionCandidatePresentation,
   type DecisionFinalizationPresentation,
   type DecisionPresentationItem,
+  type AnalysisCoverage,
   useBusinessWorkflowDecision,
   useExecution,
 } from '../api';
@@ -165,6 +166,17 @@ function finalizationLimitationLabel(limitation: Record<string, unknown>) {
   return materialCode ? `${materialCode} için karar kanıtı tamamlanamadı.` : 'Bir malzeme için karar kanıtı tamamlanamadı.';
 }
 
+function AnalysisCoverageCard({ coverage }: { coverage: AnalysisCoverage }) {
+  return <Card variant="outlined"><CardContent><Stack spacing={1.25}>
+    <Typography component="h2" variant="h6">Analiz Kapsamı</Typography>
+    <Typography variant="body2" color="text.secondary">Toplam ürün: {coverage.total_scope_count} · Tam analiz: {coverage.fully_analyzed_count} · Kısmi analiz: {coverage.partially_analyzed_count} · Analiz edilmeyen: {coverage.excluded_count}</Typography>
+    {coverage.exclusions.map((item, index) => <Paper key={`${item.material_code}-${item.capability}-${index}`} variant="outlined" sx={{ p: 1.25 }}>
+      <Typography variant="body2" sx={{ fontWeight: 600 }}>{item.product_name || item.material_code} · {item.capability}</Typography>
+      <Typography variant="body2" color="text.secondary">{item.message}</Typography>
+    </Paper>)}
+  </Stack></CardContent></Card>;
+}
+
 export default function BusinessWorkflowResultsPage() {
   const { executionId } = useParams<{ executionId: string }>();
   const navigate = useNavigate();
@@ -239,6 +251,7 @@ export default function BusinessWorkflowResultsPage() {
 
         {!workflowActive && decision.isSuccess && (
           <>
+            {decision.data.analysis_coverage && <AnalysisCoverageCard coverage={decision.data.analysis_coverage} />}
             <Alert severity={finalizationState.severity}>
               <Typography component="div" variant="subtitle2">{finalizationState.title}</Typography>
               <Typography variant="body2">{finalizationState.description}</Typography>

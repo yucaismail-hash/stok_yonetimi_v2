@@ -42,6 +42,7 @@ export default function BusinessAnalysisPage() {
   const entry = useBusinessWorkflowEntry(user?.company_id);
   const readiness = useBusinessWorkflowReadiness(Boolean(dataset.data));
   const workflowBlocked = readiness.data?.status === 'BLOCKED';
+  const coverage = readiness.data?.coverage;
 
   return (
     <Box sx={{ width: '100%', maxWidth: 1280, mx: 'auto' }}>
@@ -61,7 +62,9 @@ export default function BusinessAnalysisPage() {
 
         {dataset.data && (
           <>
-            <Alert severity="success" icon={<CheckCircle fontSize="inherit" />}>Veri setiniz işletme analizi için hazır.</Alert>
+            <Alert severity={workflowBlocked ? 'warning' : readiness.data?.status === 'READY_WITH_EXCLUSIONS' ? 'info' : 'success'} icon={<CheckCircle fontSize="inherit" />}>
+              {workflowBlocked ? 'Veri seti zorunlu iş akışı için henüz yeterli değil.' : readiness.data?.status === 'READY_WITH_EXCLUSIONS' ? 'İşletme analizi uygun ürünlerde yürütülecek; kapsam dışı ürünler raporlanacak.' : 'Veri setiniz işletme analizi için hazır.'}
+            </Alert>
             <Card variant="outlined">
               <CardContent>
                 <Stack spacing={2}>
@@ -75,6 +78,20 @@ export default function BusinessAnalysisPage() {
                 </Stack>
               </CardContent>
             </Card>
+
+            {coverage && <Card variant="outlined"><CardContent><Stack spacing={1.25}>
+              <Typography component="h2" variant="h6">Analiz Kapsamı</Typography>
+              <Grid container spacing={1}>
+                <Grid size={{ xs: 6, md: 3 }}><SummaryCard label="Toplam ürün" value={coverage.total_scope_count.toLocaleString('tr-TR')} /></Grid>
+                <Grid size={{ xs: 6, md: 3 }}><SummaryCard label="Tam analiz" value={coverage.fully_analyzed_count.toLocaleString('tr-TR')} /></Grid>
+                <Grid size={{ xs: 6, md: 3 }}><SummaryCard label="Kısmi analiz" value={coverage.partially_analyzed_count.toLocaleString('tr-TR')} /></Grid>
+                <Grid size={{ xs: 6, md: 3 }}><SummaryCard label="Analiz edilmeyen" value={coverage.excluded_count.toLocaleString('tr-TR')} /></Grid>
+              </Grid>
+              {coverage.exclusions.map((item, index) => <Paper key={`${item.material_code}-${item.capability}-${index}`} variant="outlined" sx={{ p: 1.25 }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{item.product_name || item.material_code} · {capabilityLabels[item.capability] || item.capability}</Typography>
+                <Typography variant="body2" color="text.secondary">{item.message}</Typography>
+              </Paper>)}
+            </Stack></CardContent></Card>}
 
             <Card variant="outlined">
               <CardContent><Stack spacing={1.25}>

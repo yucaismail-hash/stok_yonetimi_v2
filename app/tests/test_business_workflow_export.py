@@ -1,0 +1,38 @@
+import unittest
+
+from openpyxl import load_workbook
+
+from app.application.business_workflow_export import BusinessWorkflowExportService
+from app.application.business_workflow_presentation import BusinessWorkflowPresentationService
+
+
+class BusinessWorkflowExportTests(unittest.TestCase):
+    coverage = {
+        "total_scope_count": 3, "fully_analyzed_count": 2,
+        "partially_analyzed_count": 1, "excluded_count": 0,
+        "exclusions": [{
+            "material_code": "SKU-C", "product_name": "Kısa Geçmiş", "capability": "backtest",
+            "status": "EXCLUDED", "message": "Bu ürün için en az 16 haftalık geçmiş veri gerekir. Mevcut geçmiş: 7 hafta.",
+            "available_weeks": 7, "required_weeks": 16, "latest_observation_period": "2026-W07",
+        }],
+    }
+
+    def test_coverage_summary_and_exclusions_sheet_are_exported(self):
+        workbook = BusinessWorkflowExportService.build_workbook({
+            "analysis_coverage": self.coverage,
+        })
+        book = load_workbook(workbook)
+        self.assertEqual(book.sheetnames, ["Özet", "Analiz_Edilmeyenler"])
+        self.assertEqual(book["Özet"]["B2"].value, 3)
+        self.assertEqual(book["Analiz_Edilmeyenler"]["A2"].value, "SKU-C")
+        self.assertEqual(book["Analiz_Edilmeyenler"]["G2"].value, 16)
+
+    def test_presentation_exposes_only_valid_persisted_coverage(self):
+        aggregate = type("Aggregate", (), {"inline_result": {"analysis_coverage": self.coverage}})()
+        coverage = BusinessWorkflowPresentationService._coverage_view(aggregate)
+        self.assertEqual(coverage.total_scope_count, 3)
+        self.assertEqual(coverage.exclusions[0]["material_code"], "SKU-C")
+
+
+if __name__ == "__main__":
+    unittest.main()

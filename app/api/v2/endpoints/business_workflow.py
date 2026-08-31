@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.application.canonical_business_workflow import (
@@ -30,6 +31,7 @@ from app.schemas.workflow import (
 )
 from app.application.business_workflow_readiness import BusinessWorkflowReadinessService
 from app.application.canonical_excel_ingestion import CanonicalExcelIngestionService
+from app.application.business_workflow_export import BusinessWorkflowExportService
 from app.schemas.business_workflow_presentation import (
     BusinessWorkflowDecisionPresentationResponse,
 )
@@ -150,6 +152,29 @@ def get_business_workflow_result(
         dataset_id=execution.dataset_id,
         completed_at=execution.completed_at,
         result=result,
+    )
+
+
+@router.get("/executions/{execution_id}/export")
+def export_business_workflow_result(
+    execution_id: UUID,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Export durable aggregate coverage; this endpoint is intentionally read-only."""
+    try:
+        _, result = CanonicalBusinessWorkflowService.get_result(db, current_user.company_id, execution_id)
+    except WorkflowNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except WorkflowResultNotReadyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except WorkflowResultUnavailableError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    workbook = BusinessWorkflowExportService.build_workbook(result)
+    return StreamingResponse(
+        workbook,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename=business-workflow-{execution_id}.xlsx"},
     )
 
 

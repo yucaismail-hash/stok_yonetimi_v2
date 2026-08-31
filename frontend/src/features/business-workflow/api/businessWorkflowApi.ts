@@ -23,7 +23,7 @@ export interface BusinessWorkflowStartResponse {
 
 export interface CapabilityReadiness {
   capability: string;
-  status: 'READY' | 'WARNING' | 'BLOCKED' | 'OPTIONAL_UNAVAILABLE';
+  status: 'READY' | 'READY_WITH_EXCLUSIONS' | 'WARNING' | 'BLOCKED' | 'EXCLUDED' | 'OPTIONAL_UNAVAILABLE';
   reason_code: string | null;
   message: string | null;
   required_weeks: number | null;
@@ -33,8 +33,38 @@ export interface CapabilityReadiness {
 
 export interface BusinessWorkflowReadinessResponse {
   dataset_id: string;
-  status: 'READY' | 'BLOCKED';
+  status: 'READY' | 'READY_WITH_EXCLUSIONS' | 'BLOCKED';
   capabilities: CapabilityReadiness[];
+  materials: MaterialReadiness[];
+  coverage: AnalysisCoverage | null;
+}
+
+export interface MaterialReadiness {
+  material_code: string;
+  product_name: string | null;
+  available_weeks: number;
+  latest_observation_period: string | null;
+  capabilities: CapabilityReadiness[];
+}
+
+export interface AnalysisCoverage {
+  total_scope_count: number;
+  fully_analyzed_count: number;
+  partially_analyzed_count: number;
+  excluded_count: number;
+  exclusions: AnalysisExclusion[];
+}
+
+export interface AnalysisExclusion {
+  material_code: string;
+  product_name: string | null;
+  capability: string;
+  status: string;
+  reason_code: string;
+  message: string;
+  available_weeks: number;
+  required_weeks: number;
+  latest_observation_period: string | null;
 }
 
 export interface ExecutionDetail {
@@ -128,6 +158,7 @@ export interface BusinessWorkflowAggregateResult {
   backtest?: AnalyticalModuleResult<BacktestResultItem>;
   supplier?: { suppliers: SupplierResultItem[]; mapping_count?: number; provenance?: Record<string, unknown> };
   provenance?: Record<string, string>;
+  analysis_coverage?: AnalysisCoverage;
 }
 
 export interface BusinessWorkflowResultResponse {
@@ -230,6 +261,7 @@ export interface BusinessWorkflowDecisionPresentationResponse {
   aggregate: AggregatePresentation | null;
   decision_finalization: DecisionFinalizationPresentation | null;
   decisions: DecisionPresentationItem[];
+  analysis_coverage: AnalysisCoverage | null;
 }
 
 export interface DecisionFeedbackRequest {

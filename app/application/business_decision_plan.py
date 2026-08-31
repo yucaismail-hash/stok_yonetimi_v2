@@ -24,7 +24,9 @@ class BusinessDecisionPlanService:
    demand=params.get('demand_type') or (params.get('forecast_vintage') or {}).get('demand_type')
    if not cutoff or not demand: raise ValueError('Business Workflow lacks authoritative Decision scope')
    forecast=s.query(RuntimeResultReference).filter_by(execution_id=execution_id,company_id=company_id,result_type='forecast',validation_status='validated').first()
-   materials=tuple(sorted({item.get('material_code') for item in (forecast.inline_result or {}).get('items',[]) if isinstance(item,dict) and item.get('material_code')})) if forecast else ()
+   forecast_materials={item.get('material_code') for item in (forecast.inline_result or {}).get('items',[]) if isinstance(item,dict) and item.get('material_code')} if forecast else set()
+   scoped=(req.get('capability_material_codes') or {}).get('decision_intelligence')
+   materials=tuple(sorted(forecast_materials if not isinstance(scoped,list) else forecast_materials.intersection(scoped)))
   finally:s.close()
   resolver=DecisionEvidenceResolver(); policy=DecisionPolicy(); snapshots=DecisionSnapshotService();items=[];limits=[]
   for material in materials:

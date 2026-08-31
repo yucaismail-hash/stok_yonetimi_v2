@@ -136,10 +136,14 @@ class DatasetRuntimeProvider:
             histories.setdefault(material_code, []).append((parse_weekly_period(period), float(revision.proposed_quantity)))
         items = []
         for product in inputs:
-            values = [quantity for _, quantity in sorted(histories.get(product.material_code, []), key=lambda row: (row[0].year, row[0].week))]
+            ordered_history = sorted(histories.get(product.material_code, []), key=lambda row: (row[0].year, row[0].week))
+            values = [quantity for _, quantity in ordered_history]
             items.append({
                 "sku_code": product.material_code,
                 "demand_history": values,
+                # Readiness needs explainable, persisted evidence boundaries.  The
+                # periods are derived from the same accepted revision set as values.
+                "history_periods": [period.period for period, _ in ordered_history],
                 "lead_time_days": float(product.lead_time_days),
                 "initial_stock": float(product.initial_stock),
                 "eoq": float(product.lot_size),

@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.application.actual_weekly_ledger import ActualWeeklyLedgerService
 from app.application.business_workflow_acceptance import BusinessWorkflowAcceptanceService
+from app.application.business_workflow_readiness import BusinessWorkflowReadinessService
 from app.application.canonical_excel_ingestion import CanonicalExcelIngestionService, template_bytes
 from app.engine.capability_contracts import CapabilityExecutionRequest
 from app.engine.capability_registry import Capability
@@ -36,6 +37,22 @@ def workbook(*, week_three=None, blank_economics=False, through_week=52):
             sheet.cell(2, headers.index(field) + 1).value = None
         for week in range(through_week + 1, 53):
             sheet.cell(2, headers.index(f"2026-W{week:02d}") + 1).value = None
+    data = io.BytesIO(); book.save(data); return data.getvalue()
+
+
+def incremental_workbook(*, new_period, new_value, corrected_week_three=None):
+    """A one-week V3 upload, optionally with one historical correction."""
+    book = load_workbook(io.BytesIO(template_bytes()))
+    sheet = book["Temel_Veriler"]
+    headers = [cell.value for cell in sheet[1]]
+    for header in headers:
+        if isinstance(header, str) and header.startswith("2026-W"):
+            sheet.cell(2, headers.index(header) + 1).value = None
+    next_column = len(headers) + 1
+    sheet.cell(1, next_column).value = new_period
+    sheet.cell(2, next_column).value = new_value
+    if corrected_week_three is not None:
+        sheet.cell(2, headers.index("2026-W03") + 1).value = corrected_week_three
     data = io.BytesIO(); book.save(data); return data.getvalue()
 
 
@@ -118,6 +135,27 @@ def main():
         assert prepared["service_level"] == {"mode":"manual", "value":0.91}
         assert service.accept(session, company.id, user.id, dataset.id)["idempotent"]
         print("ACCEPT_RUNTIME_IDEMPOTENCY_PASS")
+
+        # The later upload contains one period only.  Readiness must resolve the
+        # persisted effective history, rather than the latest workbook payload.
+        incremental, _ = service.stage(session, company.id, user.id, "incremental.xlsx", incremental_workbook(new_period="2027-W01", new_value=53), demand_type="sales")
+        service.accept(session, company.id, user.id, incremental.id); session.expire_all()
+        effective = DatasetRuntimeProvider(session).preflight(request(company, user, incremental, "sales"))["items"][0]
+        readiness = BusinessWorkflowReadinessService().evaluate(session, company.id, user.id, incremental.id)
+        assert len(effective["demand_history"]) == 53 and effective["history_periods"][-1] == "2027-W01"
+        assert readiness.materials[0].available_weeks == 53 and readiness.status == "READY"
+        print("EFFECTIVE_HISTORY_52_PLUS_1_PASS")
+
+        correction_company, correction_user = owner(session, "correction"); companies.append(correction_company.id)
+        correction_base, _ = service.stage(session, correction_company.id, correction_user.id, "correction-base.xlsx", workbook(), demand_type="sales")
+        service.accept(session, correction_company.id, correction_user.id, correction_base.id)
+        correction_delta, _ = service.stage(session, correction_company.id, correction_user.id, "correction-delta.xlsx", incremental_workbook(new_period="2027-W01", new_value=53, corrected_week_three=999), demand_type="sales")
+        service.accept(session, correction_company.id, correction_user.id, correction_delta.id); session.expire_all()
+        corrected_item = DatasetRuntimeProvider(session).preflight(request(correction_company, correction_user, correction_delta, "sales"))["items"][0]
+        corrected_readiness = BusinessWorkflowReadinessService().evaluate(session, correction_company.id, correction_user.id, correction_delta.id)
+        assert len(corrected_item["demand_history"]) == 53 and corrected_item["demand_history"][2] == 999.0
+        assert corrected_readiness.materials[0].available_weeks == 53
+        print("EFFECTIVE_HISTORY_CORRECTION_NO_DOUBLE_COUNT_PASS")
 
         optional, _ = service.stage(session, company.id, user.id, "optional-economics.xlsx", workbook(blank_economics=True, through_week=12), demand_type="sales")
         validation = session.query(DatasetValidationResult).filter_by(dataset_id=optional.id).one()

@@ -21,7 +21,7 @@ class BusinessWorkflowStartRequest(BaseModel):
 
 class CapabilityReadinessResponse(BaseModel):
     capability: str
-    status: Literal["READY", "WARNING", "BLOCKED", "OPTIONAL_UNAVAILABLE"]
+    status: Literal["READY", "READY_WITH_EXCLUSIONS", "WARNING", "BLOCKED", "EXCLUDED", "OPTIONAL_UNAVAILABLE"]
     reason_code: Optional[str] = None
     message: Optional[str] = None
     required_weeks: Optional[int] = None
@@ -31,8 +31,10 @@ class CapabilityReadinessResponse(BaseModel):
 
 class BusinessWorkflowReadinessResponse(BaseModel):
     dataset_id: UUID
-    status: Literal["READY", "BLOCKED"]
+    status: Literal["READY", "READY_WITH_EXCLUSIONS", "BLOCKED"]
     capabilities: list[CapabilityReadinessResponse]
+    materials: list[Dict[str, Any]] = []
+    coverage: Optional[Dict[str, Any]] = None
 
 
 class BusinessWorkflowStartResponse(BaseModel):

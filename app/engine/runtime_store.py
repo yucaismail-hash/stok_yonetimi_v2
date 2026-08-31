@@ -66,7 +66,9 @@ class RuntimeStore:
         task_for_type={result_types[task.capability]:task for task in required.values()}
         if set(by_type) != expected or any(ref.runtime_task_id != task_for_type[ref.result_type].id for ref in by_type.values()):
             raise RuntimeStoreAggregationError('validated task evidence is incomplete')
-        metadata=execution.metadata_ or {}; envelope={'execution_id':str(execution.execution_id),'workflow_type':'business_workflow','workflow_version':metadata.get('workflow_version'),'dataset_id':str(execution.dataset_id),'company_id':str(execution.company_id),**{name:by_type[name].inline_result for name in expected},'provenance':{f'{name}_result_reference_id':str(by_type[name].id) for name in sorted(expected)}}
+        metadata=execution.metadata_ or {}; request_metadata=metadata.get('request_metadata') or {}; readiness=request_metadata.get('readiness')
+        envelope={'execution_id':str(execution.execution_id),'workflow_type':'business_workflow','workflow_version':metadata.get('workflow_version'),'dataset_id':str(execution.dataset_id),'company_id':str(execution.company_id),**{name:by_type[name].inline_result for name in expected},'provenance':{f'{name}_result_reference_id':str(by_type[name].id) for name in sorted(expected)}}
+        if isinstance(readiness,dict) and isinstance(readiness.get('coverage'),dict): envelope['analysis_coverage']=readiness['coverage']
         return self.register_result_reference(company_id,execution_id,'business_workflow',envelope)
     def get_validated_upstream_result(self, execution_id, result_type, company_id, compatible_versions=('1.0.0',)):
         """Resolve only same-tenant, validated, version-compatible analytical evidence."""

@@ -30,6 +30,14 @@ class AggregatePresentation(BaseModel):
     available_result_types: tuple[str, ...]
 
 
+class AnalysisCoveragePresentation(BaseModel):
+    total_scope_count: int
+    fully_analyzed_count: int
+    partially_analyzed_count: int
+    excluded_count: int
+    exclusions: tuple[dict[str, Any], ...]
+
+
 class DecisionFinalizationPresentation(BaseModel):
     id: UUID
     status: str
@@ -98,3 +106,4 @@ class BusinessWorkflowDecisionPresentationResponse(BaseModel):
     aggregate: AggregatePresentation | None
     decision_finalization: DecisionFinalizationPresentation | None
     decisions: tuple[DecisionPresentationItem, ...]
+    analysis_coverage: AnalysisCoveragePresentation | None = None
