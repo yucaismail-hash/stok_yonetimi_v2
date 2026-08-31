@@ -24,8 +24,8 @@ export default function LandingPage() {
       <ApproachSection />
       <DecisionSystemSection />
       <IntelligenceLevelsSection />
-      <HumanAiSection />
       <FreeEntrySection />
+      <HumanAiSection />
       <AcademySection />
       <DevelopmentStatusSection />
       <FinalCtaSection />

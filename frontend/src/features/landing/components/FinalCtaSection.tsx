@@ -194,18 +194,6 @@ export function FinalCtaSection() {
             </Button>
           </Stack>
 
-          <Typography
-            variant="caption"
-            sx={{
-              color: (theme) => alpha(theme.palette.common.white, 0.3),
-              fontSize: '0.7rem',
-              letterSpacing: '0.3px',
-              display: 'block',
-              mt: 2,
-            }}
-          >
-            Stokonomi şu anda geliştirme aşamasındadır.
-          </Typography>
         </Box>
       </Container>
     </Box>

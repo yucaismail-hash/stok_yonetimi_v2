@@ -47,7 +47,7 @@ export function ProblemSection() {
     <Box
       id="problem"
       sx={{
-        py: { xs: 8, md: 12 },
+        py: { xs: 8, md: 10 },
         bgcolor: (theme) => theme.palette.background.default,
       }}
     >
@@ -65,7 +65,7 @@ export function ProblemSection() {
             textAlign: 'center',
             maxWidth: 800,
             mx: 'auto',
-            mb: { xs: 6, md: 8 },
+            mb: { xs: 5, md: 6 },
           }}
         >
           <Typography
