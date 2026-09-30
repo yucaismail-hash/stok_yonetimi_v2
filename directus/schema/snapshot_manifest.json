@@ -1,5 +1,5 @@
 {
-  "format_version": 1,
+  "format_version": 2,
   "captured_at_utc": "2026-09-29T08:49:36.1311899Z",
   "source": {
     "service": "stokonomi-directus",
@@ -12,7 +12,8 @@
   "artifacts": {
     "schema": {
       "path": "schema.snapshot.json",
-      "sha256": "8199725754d7dbac67cf299f9256dc2f077d4e169f3e35f08b46c574d248eef2",
+      "semantic_sha256": "188dc2fe1feceb5eb96cc90b2f6099de2fbc296815c3dc87b4ca47b965a81652",
+      "raw_capture_sha256": "8199725754d7dbac67cf299f9256dc2f077d4e169f3e35f08b46c574d248eef2",
       "collections": 1,
       "fields": 15,
       "system_fields": 12,
@@ -20,7 +21,8 @@
     },
     "permissions": {
       "path": "permissions.snapshot.json",
-      "sha256": "33e58789ed879c1000ffb1c0ddc10d7a0f39d500d1b745d93a9a19a692b2c8b2",
+      "semantic_sha256": "b7868aba80179e411ec04e2930cf35ed25ab45dd98dfe521ff6ec8c25bf1ec06",
+      "raw_capture_sha256": "33e58789ed879c1000ffb1c0ddc10d7a0f39d500d1b745d93a9a19a692b2c8b2",
       "roles": 1,
       "policies": 2,
       "permission_rules": 20,

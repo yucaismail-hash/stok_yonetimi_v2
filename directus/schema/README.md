@@ -16,7 +16,11 @@ CURRENT metadata baseline'ıdır. D1 içerik modelini değiştirmez.
 - R2 access: **not performed**
 
 Exact capture time and SHA-256 fingerprints are recorded in
-`snapshot_manifest.json`.
+`snapshot_manifest.json`. Reconstruction authority uses a semantic fingerprint:
+parsed JSON is serialized with sorted keys, compact separators and UTF-8 before
+SHA-256 hashing. This makes LF, CRLF and insignificant JSON whitespace
+equivalent without hiding actual schema changes. The original capture-byte
+hashes remain recorded as provenance only.
 
 ## Files
 

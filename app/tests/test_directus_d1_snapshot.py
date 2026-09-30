@@ -1,6 +1,12 @@
-import hashlib
+import copy
 import json
 from pathlib import Path
+
+from directus.scripts.snapshot_integrity import (
+    semantic_sha256,
+    semantic_sha256_file,
+    semantic_sha256_json_bytes,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -12,12 +18,9 @@ def _load(name: str):
     return json.loads((SCHEMA_DIR / name).read_text(encoding="utf-8"))
 
 
-def _sha256(name: str) -> str:
-    return hashlib.sha256((SCHEMA_DIR / name).read_bytes()).hexdigest()
-
-
 def test_manifest_fingerprints_match_snapshot_files():
     manifest = _load("snapshot_manifest.json")
+    assert manifest["format_version"] == 2
     assert manifest["source"] == {
         "service": "stokonomi-directus",
         "environment": "production",
@@ -26,11 +29,32 @@ def test_manifest_fingerprints_match_snapshot_files():
         "access": "HTTP GET metadata only",
         "content_records_exported": False,
     }
-    assert manifest["artifacts"]["schema"]["sha256"] == _sha256(
-        "schema.snapshot.json"
+    assert manifest["artifacts"]["schema"]["semantic_sha256"] == (
+        semantic_sha256_file(SCHEMA_DIR / "schema.snapshot.json")
     )
-    assert manifest["artifacts"]["permissions"]["sha256"] == _sha256(
-        "permissions.snapshot.json"
+    assert manifest["artifacts"]["permissions"]["semantic_sha256"] == (
+        semantic_sha256_file(SCHEMA_DIR / "permissions.snapshot.json")
+    )
+
+    snapshot = _load("schema.snapshot.json")
+    expected = manifest["artifacts"]["schema"]["semantic_sha256"]
+    formatted = json.dumps(snapshot, ensure_ascii=False, indent=4).encode("utf-8")
+    lf_payload = formatted.replace(b"\r\n", b"\n")
+    crlf_payload = lf_payload.replace(b"\n", b"\r\n")
+    compact_payload = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
+    assert semantic_sha256_json_bytes(lf_payload) == expected
+    assert semantic_sha256_json_bytes(crlf_payload) == expected
+    assert semantic_sha256_json_bytes(compact_payload) == expected
+
+    mutated = copy.deepcopy(snapshot)
+    mutated["version"] += 1
+    assert semantic_sha256(mutated) != expected
+
+    assert manifest["artifacts"]["schema"]["raw_capture_sha256"] == (
+        "8199725754d7dbac67cf299f9256dc2f077d4e169f3e35f08b46c574d248eef2"
+    )
+    assert manifest["artifacts"]["permissions"]["raw_capture_sha256"] == (
+        "33e58789ed879c1000ffb1c0ddc10d7a0f39d500d1b745d93a9a19a692b2c8b2"
     )
     assert manifest["production_requests"]["methods"] == ["GET"]
     assert manifest["production_requests"]["write_methods"] == []

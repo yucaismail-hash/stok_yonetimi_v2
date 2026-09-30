@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import os
 import sys
@@ -18,6 +17,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
 from app.services.content.directus_client import DirectusAcademyClient, DirectusConfig
+from directus.scripts.snapshot_integrity import semantic_sha256
 
 
 BASE_URL = os.getenv("DIRECTUS_D1_URL", "http://localhost:18055").rstrip("/")
@@ -95,13 +95,7 @@ async def verify() -> None:
             )
         )
         assert reconstructed_snapshot == governed_snapshot
-        canonical_snapshot = json.dumps(
-            reconstructed_snapshot,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-        schema_fingerprint = hashlib.sha256(canonical_snapshot).hexdigest()
+        schema_fingerprint = semantic_sha256(reconstructed_snapshot)
 
         suffix = uuid4().hex[:12]
         common = {
