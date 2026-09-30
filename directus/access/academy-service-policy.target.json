@@ -1,0 +1,78 @@
+{
+  "format_version": 1,
+  "status": "TARGET_NOT_APPLIED",
+  "directus": "12.2.0",
+  "policy": {
+    "name": "Stokonomi Academy Backend Reader",
+    "admin_access": false,
+    "app_access": false
+  },
+  "permissions": [
+    {
+      "collection": "academy_articles",
+      "action": "read",
+      "permissions": {
+        "_and": [
+          {
+            "status": {
+              "_eq": "published"
+            }
+          },
+          {
+            "published_at": {
+              "_nnull": true
+            }
+          },
+          {
+            "published_at": {
+              "_lte": "$NOW"
+            }
+          }
+        ]
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "id",
+        "status",
+        "sort",
+        "slug",
+        "title",
+        "description",
+        "category",
+        "published_at",
+        "updated_at",
+        "reading_time",
+        "sections",
+        "seo_title",
+        "seo_description",
+        "featured_image",
+        "featured_image_alt"
+      ]
+    }
+  ],
+  "explicitly_not_granted": [
+    "academy_articles:create",
+    "academy_articles:update",
+    "academy_articles:delete",
+    "academy_articles:share",
+    "directus_files:read",
+    "directus_schema:*",
+    "directus_system_collections:*"
+  ],
+  "runtime_consumers": [
+    "published Academy list",
+    "published Academy detail",
+    "sitemap generation"
+  ],
+  "media_boundary": {
+    "featured_image_foreign_key_read": true,
+    "directus_files_metadata_read_required_by_current_backend": false,
+    "reason": "The CURRENT backend selects and returns only the featured_image UUID without expanding directus_files or requesting assets."
+  },
+  "production_assignment": {
+    "status": "UNKNOWN",
+    "verification_phase": "D5",
+    "mutation_authorized": false
+  }
+}

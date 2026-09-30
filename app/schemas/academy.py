@@ -146,6 +146,13 @@ class AcademyArticleDirectusDto(AcademySchema):
     featured_image_alt: StrictStr | None
     sort: StrictInt | None
 
+    @field_validator("published_at", "updated_at")
+    @classmethod
+    def timestamps_must_be_timezone_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Academy timestamps must be timezone-aware")
+        return value
+
 
 class AcademyArticleListItem(AcademySchema):
     id: UUID

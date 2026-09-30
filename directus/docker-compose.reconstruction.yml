@@ -1,0 +1,49 @@
+name: stokonomi-directus-d1
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: directus_d1
+      POSTGRES_PASSWORD: directus_d1_local_only
+      POSTGRES_DB: directus_d1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U directus_d1 -d directus_d1"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - directus_d1_postgres:/var/lib/postgresql
+
+  directus:
+    image: directus/directus:12.2.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "18055:8055"
+    environment:
+      SECRET: directus-d1-local-reconstruction-secret-not-for-production
+      PUBLIC_URL: http://localhost:18055
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: directus_d1
+      DB_USER: directus_d1
+      DB_PASSWORD: directus_d1_local_only
+      ADMIN_EMAIL: d1-admin@example.com
+      ADMIN_PASSWORD: directus-d1-local-admin-password
+      CORS_ENABLED: "false"
+      RATE_LIMITER_ENABLED: "false"
+      TELEMETRY: "false"
+      WEBSOCKETS_ENABLED: "false"
+      STORAGE_LOCATIONS: local
+      STORAGE_LOCAL_DRIVER: local
+      STORAGE_LOCAL_ROOT: /directus/uploads
+    volumes:
+      - ./schema:/directus/schema:ro
+      - directus_d1_uploads:/directus/uploads
+
+volumes:
+  directus_d1_postgres:
+  directus_d1_uploads:

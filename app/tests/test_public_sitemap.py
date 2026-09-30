@@ -11,7 +11,7 @@ import app.api.public.sitemap as sitemap_module
 from app.api.public import PUBLIC_SITEMAP_PATH_PATTERN
 from app.api.public.sitemap import SITEMAP_CACHE_CONTROL, router
 from app.schemas.academy import AcademyArticleListItem
-from app.services.content.directus_client import DirectusTimeoutError
+from app.services.content.directus_client import DirectusPayloadError, DirectusTimeoutError
 
 
 ARTICLE_ID = UUID("c1e10e42-d621-41e9-ac29-1c7739962f01")
@@ -74,10 +74,30 @@ def test_sitemap_uses_updated_at_then_published_at(monkeypatch):
     assert updated_at.isoformat() in response.text
 
 
+def test_sitemap_serializes_the_complete_collected_article_universe(monkeypatch):
+    articles = [
+        _article().model_copy(update={"slug": f"article-{index}"})
+        for index in range(0, 51)
+    ]
+    response = _request(monkeypatch, StubService(articles))
+    assert response.status_code == 200
+    assert response.text.count("<url>") == 53
+    assert "/akademi/article-0</loc>" in response.text
+    assert "/akademi/article-50</loc>" in response.text
+
+
 def test_sitemap_safely_maps_content_timeout(monkeypatch):
     response = _request(monkeypatch, StubService(failure=DirectusTimeoutError("secret")))
     assert response.status_code == 504
     assert "secret" not in response.text
+
+
+def test_sitemap_fails_closed_on_malformed_content(monkeypatch):
+    response = _request(
+        monkeypatch, StubService(failure=DirectusPayloadError("malformed item"))
+    )
+    assert response.status_code == 502
+    assert "malformed item" not in response.text
 
 
 def test_sitemap_auth_exemption_is_exact():

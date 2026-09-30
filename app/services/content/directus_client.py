@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -11,6 +12,11 @@ import httpx
 from pydantic import ValidationError
 
 from app.schemas.academy import AcademyArticleDirectusDto
+from app.services.content.academy_publication_policy import (
+    directus_datetime,
+    is_publicly_eligible,
+    utc_now,
+)
 
 
 LIST_FIELDS = (
@@ -45,6 +51,9 @@ DETAIL_FIELDS = (
     "featured_image",
     "featured_image_alt",
 )
+
+DEFAULT_PAGE_SIZE = 50
+MAX_PAGE_SIZE = 100
 
 
 class DirectusError(RuntimeError):
@@ -142,42 +151,78 @@ class DirectusAcademyClient:
         config: DirectusConfig | None = None,
         *,
         transport: httpx.AsyncBaseTransport | None = None,
+        page_size: int = DEFAULT_PAGE_SIZE,
     ) -> None:
+        if page_size < 1 or page_size > MAX_PAGE_SIZE:
+            raise DirectusConfigurationError(
+                f"Academy page_size must be between 1 and {MAX_PAGE_SIZE}"
+            )
         self._config = config or DirectusConfig.from_env()
         self._transport = transport
+        self._page_size = page_size
 
-    async def get_published_articles(self) -> list[AcademyArticleDirectusDto]:
-        payload = await self._get_items(
-            {
-                "filter[status][_eq]": "published",
-                "fields": ",".join(LIST_FIELDS),
-                "sort": "-published_at,sort",
-            }
-        )
+    async def get_published_articles(
+        self, governed_at: datetime | None = None
+    ) -> list[AcademyArticleDirectusDto]:
+        eligible_at = governed_at or utc_now()
+        eligible_at_query = directus_datetime(eligible_at)
         articles: list[AcademyArticleDirectusDto] = []
-        for item in payload:
-            if not isinstance(item, dict):
-                raise DirectusPayloadError("Directus returned an invalid Academy item")
-            # These fields are intentionally excluded from the lightweight list query.
-            normalized_item = {
-                **item,
-                "sections": [],
-                "seo_title": None,
-                "seo_description": None,
-            }
-            article = self._validate_article(normalized_item)
-            if article.status != "published":
-                raise DirectusPayloadError("Directus returned a non-published Academy item")
-            articles.append(article)
+        seen_ids: set[object] = set()
+        seen_slugs: set[str] = set()
+        page = 1
+        while True:
+            payload = await self._get_items(
+                {
+                    "filter[_and][0][status][_eq]": "published",
+                    "filter[_and][1][published_at][_nnull]": "true",
+                    "filter[_and][2][published_at][_lte]": eligible_at_query,
+                    "fields": ",".join(LIST_FIELDS),
+                    "sort": "-published_at,sort,id",
+                    "limit": str(self._page_size),
+                    "page": str(page),
+                }
+            )
+            if len(payload) > self._page_size:
+                raise DirectusPayloadError("Directus exceeded the requested Academy page size")
+            for item in payload:
+                if not isinstance(item, dict):
+                    raise DirectusPayloadError("Directus returned an invalid Academy item")
+                # These fields are intentionally excluded from the lightweight list query.
+                normalized_item = {
+                    **item,
+                    "sections": [],
+                    "seo_title": None,
+                    "seo_description": None,
+                }
+                article = self._validate_article(normalized_item)
+                try:
+                    eligible = is_publicly_eligible(article, eligible_at)
+                except ValueError as exc:
+                    raise DirectusPayloadError(
+                        "Directus returned invalid Academy publication time"
+                    ) from exc
+                if not eligible:
+                    raise DirectusPayloadError("Directus returned an ineligible Academy item")
+                if article.id in seen_ids or article.slug in seen_slugs:
+                    raise DirectusPayloadError("Directus returned a duplicate paginated Academy item")
+                seen_ids.add(article.id)
+                seen_slugs.add(article.slug)
+                articles.append(article)
+            if len(payload) < self._page_size:
+                break
+            page += 1
         return articles
 
     async def get_published_article_by_slug(
-        self, slug: str
+        self, slug: str, governed_at: datetime | None = None
     ) -> AcademyArticleDirectusDto | None:
+        eligible_at = governed_at or utc_now()
         payload = await self._get_items(
             {
                 "filter[_and][0][slug][_eq]": slug,
                 "filter[_and][1][status][_eq]": "published",
+                "filter[_and][2][published_at][_nnull]": "true",
+                "filter[_and][3][published_at][_lte]": directus_datetime(eligible_at),
                 "limit": "1",
                 "fields": ",".join(DETAIL_FIELDS),
             }
@@ -187,8 +232,14 @@ class DirectusAcademyClient:
         if len(payload) != 1 or not isinstance(payload[0], dict):
             raise DirectusPayloadError("Directus returned an invalid Academy detail result")
         article = self._validate_article(payload[0])
-        if article.status != "published":
-            raise DirectusPayloadError("Directus returned a non-published Academy item")
+        try:
+            eligible = is_publicly_eligible(article, eligible_at)
+        except ValueError as exc:
+            raise DirectusPayloadError(
+                "Directus returned invalid Academy publication time"
+            ) from exc
+        if not eligible:
+            raise DirectusPayloadError("Directus returned an ineligible Academy item")
         return article
 
     async def _get_items(self, params: dict[str, str]) -> list[Any]:

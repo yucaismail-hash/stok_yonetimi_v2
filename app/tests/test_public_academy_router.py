@@ -48,13 +48,13 @@ class StubClient:
         self.list_calls = 0
         self.detail_slugs = []
 
-    async def get_published_articles(self):
+    async def get_published_articles(self, governed_at=None):
         self.list_calls += 1
         if self.failure:
             raise self.failure
         return [_article()]
 
-    async def get_published_article_by_slug(self, slug):
+    async def get_published_article_by_slug(self, slug, governed_at=None):
         self.detail_slugs.append(slug)
         if self.failure:
             raise self.failure

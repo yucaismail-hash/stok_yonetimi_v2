@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "captured_at_utc": "2026-09-29T10:44:02.2039312Z",
+  "image": {
+    "tags": [
+      "ghcr.io/directus/directus:12.2.0",
+      "directus/directus:12.2.0"
+    ],
+    "identity": "sha256:4fb64fd8c264b187aab11f5a23fb2bc789df129d81c944a1628c082419613b67",
+    "repo_digest": "sha256:4fb64fd8c264b187aab11f5a23fb2bc789df129d81c944a1628c082419613b67",
+    "cli_version": "12.2.0",
+    "tags_resolve_to_same_identity": true
+  },
+  "runs": [
+    {
+      "run": 1,
+      "clean_database": true,
+      "official_schema_apply": "PASS",
+      "snapshot_exact_equality": "PASS",
+      "synthetic_acceptance": "PASS",
+      "backend_client": "PASS",
+      "schema_fingerprint": "188dc2fe1feceb5eb96cc90b2f6099de2fbc296815c3dc87b4ca47b965a81652",
+      "cleanup": "PASS"
+    },
+    {
+      "run": 2,
+      "clean_database": true,
+      "official_schema_apply": "PASS",
+      "snapshot_exact_equality": "PASS",
+      "synthetic_acceptance": "PASS",
+      "backend_client": "PASS",
+      "schema_fingerprint": "188dc2fe1feceb5eb96cc90b2f6099de2fbc296815c3dc87b4ca47b965a81652",
+      "cleanup": "PASS"
+    }
+  ],
+  "converged": true,
+  "production_access": false,
+  "production_mutations": 0
+}

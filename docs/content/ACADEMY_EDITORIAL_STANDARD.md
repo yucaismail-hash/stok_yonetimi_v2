@@ -36,8 +36,13 @@ Mevcut read-only durum örneği: `emniyet-stoku-nedir` published; `stok-yonetimi
 ### Published
 
 - Yayınlanmış içeriktir.
-- `published_at` girilmeden published yapılmaz.
-- Public Content API, `/akademi`, makale sayfası, landing Academy alanı ve sitemap zincirine girer.
+- `published_at` timezone bilgisiyle birlikte girilmeden published yapılmaz.
+- İçerik yalnız `status = published`, `published_at` dolu ve `published_at` o anki
+  UTC zamandan küçük veya eşitse public kabul edilir.
+- Gelecekteki `published_at` planlı yayındır; zamanı gelene kadar liste, detay ve
+  sitemap içinde görünmez.
+- Uygun olduğunda Public Content API, `/akademi`, makale sayfası, landing Academy
+  alanı ve sitemap zincirine birlikte girer.
 
 ### Archived
 

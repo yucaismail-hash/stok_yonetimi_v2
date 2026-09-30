@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "captured_at_utc": "2026-09-29T08:49:36.1311899Z",
+  "source": {
+    "service": "stokonomi-directus",
+    "environment": "production",
+    "directus": "12.2.0",
+    "database_vendor": "postgres",
+    "access": "HTTP GET metadata only",
+    "content_records_exported": false
+  },
+  "artifacts": {
+    "schema": {
+      "path": "schema.snapshot.json",
+      "sha256": "8199725754d7dbac67cf299f9256dc2f077d4e169f3e35f08b46c574d248eef2",
+      "collections": 1,
+      "fields": 15,
+      "system_fields": 12,
+      "relations": 1
+    },
+    "permissions": {
+      "path": "permissions.snapshot.json",
+      "sha256": "33e58789ed879c1000ffb1c0ddc10d7a0f39d500d1b745d93a9a19a692b2c8b2",
+      "roles": 1,
+      "policies": 2,
+      "permission_rules": 20,
+      "flows": 0,
+      "presets": "unavailable"
+    }
+  },
+  "production_requests": {
+    "methods": [
+      "GET"
+    ],
+    "write_methods": [],
+    "direct_database_connection": false,
+    "r2_access": false
+  }
+}

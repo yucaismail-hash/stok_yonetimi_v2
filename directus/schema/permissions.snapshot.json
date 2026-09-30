@@ -1,0 +1,485 @@
+{
+  "format_version": 1,
+  "directus": "12.2.0",
+  "roles": [
+    {
+      "id": "07b50342-b216-49f2-bc35-a243cbe3b1f6",
+      "name": "Administrator",
+      "icon": "verified",
+      "description": "$t:admin_description",
+      "parent": null,
+      "policies": [
+        {
+          "id": "de2d5341-a150-4d05-af8f-46efae8104c4",
+          "policy": {
+            "id": "0e28b25a-4463-4d59-8153-ea835bd71f4e",
+            "name": "Administrator"
+          }
+        }
+      ]
+    }
+  ],
+  "policies": [
+    {
+      "id": "0e28b25a-4463-4d59-8153-ea835bd71f4e",
+      "name": "Administrator",
+      "icon": "verified",
+      "description": "$t:admin_description",
+      "admin_access": true,
+      "app_access": true,
+      "roles": [
+        {
+          "id": "de2d5341-a150-4d05-af8f-46efae8104c4",
+          "role": {
+            "id": "07b50342-b216-49f2-bc35-a243cbe3b1f6",
+            "name": "Administrator"
+          }
+        }
+      ]
+    },
+    {
+      "id": "abf8a154-5b1c-4a46-ac9c-7300570f4f17",
+      "name": "$t:public_label",
+      "icon": "public",
+      "description": "$t:public_description",
+      "admin_access": false,
+      "app_access": false,
+      "roles": [
+        {
+          "id": "08d30c3f-7db4-471b-8ac0-53f1ca806ffe",
+          "role": null
+        }
+      ]
+    }
+  ],
+  "permissions": [
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_collections",
+      "action": "read",
+      "permissions": {},
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_fields",
+      "action": "read",
+      "permissions": {},
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_relations",
+      "action": "read",
+      "permissions": {},
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_translations",
+      "action": "read",
+      "permissions": {},
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_activity",
+      "action": "read",
+      "permissions": {
+        "user": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_comments",
+      "action": "read",
+      "permissions": {
+        "user_created": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_comments",
+      "action": "create",
+      "permissions": {},
+      "validation": {
+        "comment": {
+          "_nnull": true
+        }
+      },
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_comments",
+      "action": "update",
+      "permissions": {
+        "user_created": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "comment"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_comments",
+      "action": "delete",
+      "permissions": {
+        "user_created": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_presets",
+      "action": "read",
+      "permissions": {
+        "_or": [
+          {
+            "user": {
+              "_eq": "$CURRENT_USER"
+            }
+          },
+          {
+            "_and": [
+              {
+                "user": {
+                  "_null": true
+                }
+              },
+              {
+                "role": {
+                  "_eq": "$CURRENT_ROLE"
+                }
+              }
+            ]
+          },
+          {
+            "_and": [
+              {
+                "user": {
+                  "_null": true
+                }
+              },
+              {
+                "role": {
+                  "_null": true
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_presets",
+      "action": "create",
+      "permissions": {},
+      "validation": {
+        "user": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_presets",
+      "action": "update",
+      "permissions": {
+        "user": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": {
+        "user": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_presets",
+      "action": "delete",
+      "permissions": {
+        "user": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_roles",
+      "action": "read",
+      "permissions": {
+        "id": {
+          "_in": "$CURRENT_ROLES"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_settings",
+      "action": "read",
+      "permissions": {},
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "id",
+        "project_url",
+        "project_logo",
+        "module_bar",
+        "storage_asset_transform",
+        "storage_asset_presets",
+        "custom_aspect_ratios",
+        "basemaps",
+        "mapbox_key",
+        "visual_editor_urls",
+        "collaborative_editing_enabled",
+        "report_error_url",
+        "ai_openai_compatible_models",
+        "ai_openai_allowed_models",
+        "ai_anthropic_allowed_models",
+        "ai_google_allowed_models",
+        "mcp_prompts_collection",
+        "default_save_action",
+        "ai_translation_default_model",
+        "ai_translation_glossary",
+        "ai_translation_style_guide"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_translations",
+      "action": "read",
+      "permissions": {},
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_notifications",
+      "action": "read",
+      "permissions": {
+        "recipient": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_notifications",
+      "action": "update",
+      "permissions": {
+        "recipient": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "status"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_shares",
+      "action": "read",
+      "permissions": {
+        "user_created": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "*"
+      ]
+    },
+    {
+      "id": null,
+      "policy": null,
+      "collection": "directus_users",
+      "action": "read",
+      "permissions": {
+        "id": {
+          "_eq": "$CURRENT_USER"
+        }
+      },
+      "validation": null,
+      "presets": null,
+      "fields": [
+        "id",
+        "first_name",
+        "last_name",
+        "last_page",
+        "email",
+        "password",
+        "location",
+        "title",
+        "description",
+        "tags",
+        "provider",
+        "preferences_divider",
+        "avatar",
+        "language",
+        "appearance",
+        "theme_light",
+        "theme_dark",
+        "tfa_secret",
+        "status",
+        "role"
+      ]
+    }
+  ],
+  "effective_access": {
+    "metadata_inspection_token": {
+      "academy_articles": {
+        "create": {
+          "access": "full",
+          "fields": [
+            "*"
+          ]
+        },
+        "read": {
+          "access": "full",
+          "fields": [
+            "*"
+          ]
+        },
+        "update": {
+          "access": "full",
+          "fields": [
+            "*"
+          ]
+        },
+        "delete": {
+          "access": "full",
+          "fields": [
+            "*"
+          ]
+        },
+        "share": {
+          "access": "full",
+          "fields": [
+            "*"
+          ]
+        }
+      }
+    },
+    "public": {
+      "status": "unavailable",
+      "reason": "GET /permissions/me returned HTTP 403 without authentication"
+    }
+  },
+  "flows": [],
+  "presets": {
+    "status": "unavailable",
+    "reason": "GET /presets returned HTTP 403 for the metadata inspection token"
+  },
+  "omitted": [
+    "directus_users and all user profile fields",
+    "static and temporary tokens",
+    "passwords and password hashes",
+    "session data",
+    "TFA secrets",
+    "authentication-provider data",
+    "personal preset ownership"
+  ],
+  "unknown": [
+    "DIRECTUS_SERVICE_TOKEN user identity, role/policy assignment, and least-privilege scope"
+  ]
+}

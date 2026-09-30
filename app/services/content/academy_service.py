@@ -1,6 +1,7 @@
 """Published-only Academy content service."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from datetime import datetime
 
 from app.schemas.academy import (
     AcademyArticleDetail,
@@ -8,6 +9,11 @@ from app.schemas.academy import (
     AcademyArticleListItem,
 )
 from app.services.content.directus_client import DirectusAcademyClient, DirectusPayloadError
+from app.services.content.academy_publication_policy import (
+    is_publicly_eligible,
+    require_aware,
+    utc_now,
+)
 
 
 class AcademyArticleNotFoundError(LookupError):
@@ -15,31 +21,55 @@ class AcademyArticleNotFoundError(LookupError):
 
 
 class AcademyService:
-    def __init__(self, client: DirectusAcademyClient) -> None:
+    def __init__(
+        self,
+        client: DirectusAcademyClient,
+        *,
+        now_provider: Callable[[], datetime] = utc_now,
+    ) -> None:
         self._client = client
+        self._now_provider = now_provider
 
     async def get_articles(self) -> list[AcademyArticleListItem]:
-        articles = await self._client.get_published_articles()
-        self._require_published(articles)
+        governed_at = self._governed_at()
+        articles = await self._client.get_published_articles(governed_at=governed_at)
+        self._require_eligible(articles, governed_at)
         try:
             return [AcademyArticleListItem.from_directus(article) for article in articles]
         except ValueError as exc:
             raise DirectusPayloadError("Directus returned invalid public Academy data") from exc
 
     async def get_article_by_slug(self, slug: str) -> AcademyArticleDetail:
-        article = await self._client.get_published_article_by_slug(slug)
+        governed_at = self._governed_at()
+        article = await self._client.get_published_article_by_slug(
+            slug, governed_at=governed_at
+        )
         if article is None:
             raise AcademyArticleNotFoundError("Published Academy article was not found")
-        self._require_published([article])
+        self._require_eligible([article], governed_at)
         try:
             return AcademyArticleDetail.from_directus(article)
         except ValueError as exc:
             raise DirectusPayloadError("Directus returned invalid public Academy data") from exc
 
     @staticmethod
-    def _require_published(articles: Iterable[AcademyArticleDirectusDto]) -> None:
-        if any(article.status != "published" or article.published_at is None for article in articles):
+    def _require_eligible(
+        articles: Iterable[AcademyArticleDirectusDto], governed_at: datetime
+    ) -> None:
+        try:
+            all_eligible = all(
+                is_publicly_eligible(article, governed_at) for article in articles
+            )
+        except ValueError as exc:
+            raise DirectusPayloadError("Directus returned invalid public Academy data") from exc
+        if not all_eligible:
             raise DirectusPayloadError("Directus returned invalid public Academy data")
+
+    def _governed_at(self) -> datetime:
+        try:
+            return require_aware(self._now_provider(), name="governed_at")
+        except ValueError as exc:
+            raise DirectusPayloadError("Academy governed time is invalid") from exc
 
 
 def get_academy_service() -> AcademyService:

@@ -54,6 +54,14 @@ def test_nullable_updated_at_is_accepted():
     assert AcademyArticleDirectusDto.model_validate(payload).updated_at is None
 
 
+@pytest.mark.parametrize("field", ["published_at", "updated_at"])
+def test_naive_timestamp_is_rejected(field):
+    payload = _article_payload()
+    payload[field] = "2026-08-13T00:00:00"
+    with pytest.raises(ValidationError, match="timezone-aware"):
+        AcademyArticleDirectusDto.model_validate(payload)
+
+
 def test_nullable_featured_image_is_accepted():
     assert AcademyArticleDirectusDto.model_validate(_article_payload()).featured_image is None
 
